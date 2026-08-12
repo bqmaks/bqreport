@@ -10,8 +10,11 @@
 #' @param covariates Optional adjustment covariates selected with tidyselect.
 #' @param weights Optional single configured weight column.
 #' @param cluster Optional matched-set cluster column.
+#' @param strata Optional columns defining independent analysis strata. Only
+#'   observed complete combinations are compiled.
 #' @param variance Variance estimator. Defaults to `robust` for IPW and
 #'   `model_based` otherwise.
+#' @param rules Optional concrete `analysis_rules`.
 #' @param confidence_level Confidence level in the open interval `(0, 1)`.
 #'
 #' @return An `analysis_plan` tibble.
@@ -23,16 +26,22 @@ plan_analysis <- function(
   covariates = tidyselect::any_of(character()),
   weights = tidyselect::any_of(character()),
   cluster = tidyselect::any_of(character()),
+  strata = tidyselect::any_of(character()),
   variance = NULL,
+  rules = NULL,
   confidence_level = 0.95
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
+  if (!is.null(rules) && !inherits(rules, "analysis_rules")) {
+    stop_method_contract("`rules` must be an analysis_rules object.")
+  }
   outcome_selection <- tidyselect::eval_select(rlang::enquo(outcomes), .data)
   predictor_selection <- tidyselect::eval_select(rlang::enquo(predictors), .data)
   covariate_selection <- tidyselect::eval_select(rlang::enquo(covariates), .data)
   weight_selection <- tidyselect::eval_select(rlang::enquo(weights), .data)
   cluster_selection <- tidyselect::eval_select(rlang::enquo(cluster), .data)
+  strata_selection <- tidyselect::eval_select(rlang::enquo(strata), .data)
   if (length(weight_selection) > 1L) stop_plan("Select at most one weight.", "bq_error_invalid_weight")
   if (length(cluster_selection) > 1L) stop_plan("Select at most one cluster.", "bq_error_invalid_cluster")
   if (length(cluster_selection) && !is.null(variance) && variance != "cluster_robust") {
@@ -44,17 +53,27 @@ plan_analysis <- function(
     predictor = names(predictor_selection),
     stringsAsFactors = FALSE
   )
+  stratum_specs <- compile_stratum_specs(.data, names(strata_selection), registry)
+  task_index <- expand.grid(
+    pair = seq_len(nrow(pairs)),
+    stratum = seq_along(stratum_specs),
+    KEEP.OUT.ATTRS = FALSE
+  )
 
-  if (nrow(pairs) == 0L) {
+  if (nrow(pairs) == 0L || length(stratum_specs) == 0L) {
     return(empty_analysis_plan())
   }
 
-  rows <- lapply(seq_len(nrow(pairs)), function(i) {
-    outcome_name <- pairs$outcome[[i]]
-    predictor_name <- pairs$predictor[[i]]
+  rows <- lapply(seq_len(nrow(task_index)), function(i) {
+    pair_i <- task_index$pair[[i]]
+    stratum_spec <- stratum_specs[[task_index$stratum[[i]]]]
+    outcome_name <- pairs$outcome[[pair_i]]
+    predictor_name <- pairs$predictor[[pair_i]]
     outcome_spec <- registry[match(outcome_name, registry$name), , drop = FALSE]
     predictor_spec <- registry[match(predictor_name, registry$name), , drop = FALSE]
-    method <- default_method_spec(outcome_spec$type[[1]])
+    matched_rule <- resolve_method_rule(rules, .data, outcome_name)
+    method <- if (is.null(matched_rule)) default_method_spec(outcome_spec$type[[1]]) else matched_rule$method
+    method_policy <- if (is.null(matched_rule)) "system_default" else "user_rule"
     same_variable <- identical(outcome_spec$var_id[[1]], predictor_spec$var_id[[1]])
     unsupported_predictor <- predictor_spec$type[[1]] %in% c(
       "unknown", "identifier", "date", "datetime"
@@ -92,7 +111,9 @@ plan_analysis <- function(
       registry[match(names(covariate_selection), registry$name), , drop = FALSE],
       if (length(weight_selection)) registry[match(names(weight_selection), registry$name), , drop = FALSE] else NULL,
       variance,
-      if (length(cluster_selection)) registry[match(names(cluster_selection), registry$name), , drop = FALSE] else NULL
+      if (length(cluster_selection)) registry[match(names(cluster_selection), registry$name), , drop = FALSE] else NULL,
+      method_policy,
+      stratum_spec
     )
   })
 
@@ -110,7 +131,9 @@ analysis_plan_row <- function(
   covariate_specs = NULL,
   weight_spec = NULL,
   variance = NULL,
-  cluster_spec = NULL
+  cluster_spec = NULL,
+  method_policy = "system_default",
+  stratum_spec = empty_stratum_spec()
 ) {
   outcome <- outcome_spec$name[[1]]
   predictor <- predictor_spec$name[[1]]
@@ -127,6 +150,8 @@ analysis_plan_row <- function(
     method_id <- method_engine <- method_estimator <- method_ci <- NA_character_
     method_family <- method_link <- method_effect <- NA_character_
     method_reason <- reason
+    method_function_id <- method_function_hash <- NA_character_
+    method_packages <- "stats"
   } else {
     candidate_method_ids <- method$method
     method_id <- method$method
@@ -137,7 +162,14 @@ analysis_plan_row <- function(
     method_link <- method$link
     method_effect <- method$effect_measure
     method_reason <- method$selection_reason
+    method_function_id <- method$function_id
+    method_function_hash <- method$function_hash
+    method_packages <- method$required_packages
   }
+  method_exponentiate <- if (is.null(method)) FALSE else method$exponentiate
+  method_model_scale <- if (is.null(method)) NA_character_ else method$model_scale
+  method_output_scale <- if (is.null(method)) NA_character_ else method$scale
+  method_spec_object <- method
   tibble::tibble(
     analysis_id = paste0("analysis_", uuid::UUIDgenerate()),
     analysis_type = "univariable_regression",
@@ -146,15 +178,20 @@ analysis_plan_row <- function(
     covariate_ids = list(if (is.null(covariate_specs)) character() else covariate_specs$var_id),
     weight_id = weight_id,
     cluster_id = cluster_id,
+    stratum_ids = list(stratum_spec$var_ids),
     outcome = outcome,
     predictor = predictor,
     covariates = list(covariate_names),
     weight = weight_name,
     cluster = cluster_name,
+    strata = list(stratum_spec$names),
+    stratum_values = list(stratum_spec$values),
+    stratum_label = stratum_spec$label,
+    n_excluded_strata = stratum_spec$n_excluded,
     design = NA_character_,
     data_layout = "cross_sectional",
     reshape_spec = list(NULL),
-    method_policy = "system_default",
+    method_policy = method_policy,
     selector_id = NA_character_,
     candidate_methods = list(candidate_method_ids),
     method = method_id,
@@ -165,11 +202,15 @@ analysis_plan_row <- function(
     family = method_family,
     link = method_link,
     effect_measure = method_effect,
+    model_scale = method_model_scale,
+    scale = method_output_scale,
+    exponentiate = method_exponentiate,
     selection_reason = method_reason,
     selection_diagnostics = list(tibble::tibble()),
-    function_id = NA_character_,
-    function_hash = NA_character_,
-    required_packages = list("stats"),
+    function_id = method_function_id,
+    function_hash = method_function_hash,
+    required_packages = list(method_packages),
+    method_object = list(method_spec_object),
     contrast_ids = list(contrast_ids),
     adjust_method = "none",
     missing_policy = "complete_case",
@@ -193,28 +234,14 @@ analysis_plan_row <- function(
 
 default_method_spec <- function(outcome_type) {
   if (identical(outcome_type, "continuous")) {
-    return(list(
-      method = "linear_model",
-      engine = "lm",
-      estimator = "ordinary_least_squares",
-      ci_method = "t",
-      family = "gaussian",
-      link = "identity",
-      effect_measure = "mean_difference",
-      selection_reason = "System default for a continuous outcome."
-    ))
+    method <- linear_model()
+    method$selection_reason <- "System default for a continuous outcome."
+    return(method)
   }
   if (identical(outcome_type, "binary")) {
-    return(list(
-      method = "logistic_model",
-      engine = "glm",
-      estimator = "maximum_likelihood",
-      ci_method = "wald",
-      family = "binomial",
-      link = "logit",
-      effect_measure = "odds_ratio",
-      selection_reason = "System default for a binary outcome."
-    ))
+    method <- logistic_model()
+    method$selection_reason <- "System default for a binary outcome."
+    return(method)
   }
   NULL
 }
@@ -232,9 +259,38 @@ empty_analysis_plan <- function() {
     "invalid",
     NA_character_,
     0.95,
-    character(), NULL, NULL, NULL, NULL
+    character(), NULL, NULL, NULL, NULL, "system_default", empty_stratum_spec()
   )
   new_analysis_plan(prototype[0, , drop = FALSE])
+}
+
+empty_stratum_spec <- function() {
+  list(
+    var_ids = character(), names = character(), values = list(),
+    label = NA_character_, n_excluded = 0L
+  )
+}
+
+compile_stratum_specs <- function(data, names, registry) {
+  if (length(names) == 0L) return(list(empty_stratum_spec()))
+  stratum_data <- tibble::as_tibble(data)[names]
+  complete <- rep(TRUE, nrow(stratum_data))
+  for (name in names) {
+    complete <- complete & !special_missing_mask(data[[name]])
+  }
+  observed <- unique(stratum_data[complete, , drop = FALSE])
+  if (nrow(observed) == 0L) return(list())
+  lapply(seq_len(nrow(observed)), function(i) {
+    values <- as.list(observed[i, , drop = FALSE])
+    list(
+      var_ids = registry$var_id[match(names, registry$name)],
+      names = names,
+      values = values,
+      label = paste0(names, "=", vapply(values, as.character, character(1)),
+        collapse = "; "),
+      n_excluded = as.integer(sum(!complete))
+    )
+  })
 }
 
 contrast_ids_for <- function(data, predictor_id) {
@@ -267,6 +323,14 @@ validate_plan <- function(plan, data) {
     outcome_row <- match(out$outcome_id[[i]], registry$var_id)
     predictor_row <- match(out$predictor_id[[i]], registry$var_id)
     issues <- character()
+    missing_packages <- out$required_packages[[i]][
+      !vapply(out$required_packages[[i]], requireNamespace, logical(1), quietly = TRUE)
+    ]
+    if (length(missing_packages)) {
+      issues <- c(issues, paste0(
+        "Missing required packages: ", paste(missing_packages, collapse = ", "), "."
+      ))
+    }
 
     if (is.na(outcome_row) || is.na(predictor_row)) {
       issues <- c(issues, "A variable referenced by stable id is absent from the data.")
@@ -277,6 +341,17 @@ validate_plan <- function(plan, data) {
 
     outcome_spec <- registry[outcome_row, , drop = FALSE]
     predictor_spec <- registry[predictor_row, , drop = FALSE]
+    stratum_rows <- match(out$stratum_ids[[i]], registry$var_id)
+    if (anyNA(stratum_rows)) {
+      issues <- c(issues, "A stratification variable is absent from the data.")
+      analysis_data <- data[0, , drop = FALSE]
+    } else {
+      current_strata_names <- registry$name[stratum_rows]
+      out$strata[[i]] <- current_strata_names
+      names(out$stratum_values[[i]]) <- current_strata_names
+      analysis_data <- data[stratum_mask(data, current_strata_names,
+        out$stratum_values[[i]]), , drop = FALSE]
+    }
     covariate_rows <- match(out$covariate_ids[[i]], registry$var_id)
     if (anyNA(covariate_rows)) issues <- c(issues, "A covariate is absent from the data.")
     covariate_names <- registry$name[covariate_rows[!is.na(covariate_rows)]]
@@ -287,12 +362,12 @@ validate_plan <- function(plan, data) {
     out$covariates[[i]] <- covariate_names
     out$formula[[i]] <- new_analysis_formula(outcome_name, c(predictor_name, covariate_names))
 
-    outcome <- data[[outcome_name]]
-    predictor <- data[[predictor_name]]
+    outcome <- analysis_data[[outcome_name]]
+    predictor <- analysis_data[[predictor_name]]
     missing_outcome <- special_missing_mask(outcome)
     missing_predictor <- special_missing_mask(predictor)
     analyzed <- !(missing_outcome | missing_predictor)
-    for (name in covariate_names) analyzed <- analyzed & !special_missing_mask(data[[name]])
+    for (name in covariate_names) analyzed <- analyzed & !special_missing_mask(analysis_data[[name]])
     if (!is.na(out$weight_id[[i]])) {
       weight_row <- match(out$weight_id[[i]], registry$var_id)
       if (is.na(weight_row)) {
@@ -300,7 +375,7 @@ validate_plan <- function(plan, data) {
       } else {
         weight_name <- registry$name[[weight_row]]
         out$weight[[i]] <- weight_name
-        weights <- data[[weight_name]]
+        weights <- analysis_data[[weight_name]]
         missing_weights <- is.na(weights)
         negative_weights <- !missing_weights & weights < 0
         if (any(missing_weights)) issues <- c(issues, "Weight contains missing values.")
@@ -328,7 +403,7 @@ validate_plan <- function(plan, data) {
       } else {
         cluster_name <- registry$name[[cluster_row]]
         out$cluster[[i]] <- cluster_name
-        cluster_values <- data[[cluster_name]]
+        cluster_values <- analysis_data[[cluster_name]]
         missing_cluster <- is.na(cluster_values)
         analyzed <- analyzed & !missing_cluster
         sizes <- table(cluster_values[!missing_cluster])
@@ -344,7 +419,7 @@ validate_plan <- function(plan, data) {
         if (!requireNamespace("sandwich", quietly = TRUE)) issues <- c(issues, "Cluster-robust variance requires package `sandwich`.")
       }
     }
-    n_total <- nrow(data)
+    n_total <- nrow(analysis_data)
     out$n_total[[i]] <- n_total
     out$n_eligible[[i]] <- n_total
     out$n_analyzed[[i]] <- sum(analyzed)
@@ -413,6 +488,17 @@ validate_plan <- function(plan, data) {
   }
 
   new_analysis_plan(out)
+}
+
+stratum_mask <- function(data, names, values) {
+  if (length(names) == 0L) return(rep(TRUE, nrow(data)))
+  mask <- rep(TRUE, nrow(data))
+  for (i in seq_along(names)) {
+    column <- data[[names[[i]]]]
+    value <- values[[i]]
+    mask <- mask & !is.na(column) & column == value
+  }
+  mask
 }
 
 #' Approve reviewed analysis tasks

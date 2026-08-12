@@ -11,7 +11,9 @@ plan_analysis(
   covariates = tidyselect::any_of(character()),
   weights = tidyselect::any_of(character()),
   cluster = tidyselect::any_of(character()),
+  strata = tidyselect::any_of(character()),
   variance = NULL,
+  rules = NULL,
   confidence_level = 0.95
 )
 }
@@ -28,8 +30,13 @@ plan_analysis(
 
 \item{cluster}{Optional matched-set cluster column.}
 
+\item{strata}{Optional columns defining independent analysis strata. Only
+observed complete combinations are compiled.}
+
 \item{variance}{Variance estimator. Defaults to \code{robust} for IPW and
 \code{model_based} otherwise.}
+
+\item{rules}{Optional concrete \code{analysis_rules}.}
 
 \item{confidence_level}{Confidence level in the open interval \verb{(0, 1)}.}
 }

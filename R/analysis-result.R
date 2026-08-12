@@ -54,6 +54,27 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
 
     frame <- build_analysis_frame(spec, data)
     captured_warnings <- character()
+    if (identical(spec$engine[[1]], "custom_function")) {
+      custom_result <- tryCatch(
+        execute_custom_method(spec, frame, data),
+        error = function(condition) condition
+      )
+      if (inherits(custom_result, "error")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "fit", "error", class(custom_result)[[1]],
+          conditionMessage(custom_result)
+        )
+        next
+      }
+      if (!is.null(custom_result$model)) model_list[[analysis_id]] <- custom_result$model
+      if (nrow(custom_result$estimates)) estimate_rows[[length(estimate_rows) + 1L]] <- custom_result$estimates
+      if (nrow(custom_result$tests)) test_rows[[length(test_rows) + 1L]] <- custom_result$tests
+      if (nrow(custom_result$contrasts)) contrast_rows[[length(contrast_rows) + 1L]] <- custom_result$contrasts
+      if (nrow(custom_result$diagnostics)) diagnostic_rows[[length(diagnostic_rows) + 1L]] <- custom_result$diagnostics
+      if (nrow(custom_result$issues)) issue_rows[[length(issue_rows) + 1L]] <- custom_result$issues
+      provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
+      next
+    }
     fit <- tryCatch(
       withCallingHandlers(
         fit_builtin_engine(spec, frame),
@@ -130,7 +151,94 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   )
 }
 
+execute_custom_method <- function(spec, frame, data) {
+  method <- spec$method_object[[1]]
+  missing_packages <- method$required_packages[
+    !vapply(method$required_packages, requireNamespace, logical(1), quietly = TRUE)
+  ]
+  if (length(missing_packages)) {
+    stop_method_output(paste0("Missing required packages: ", paste(missing_packages, collapse = ", "), "."))
+  }
+  registry <- variables(data)
+  registered_contrasts <- contrasts(data)
+  selected_contrasts <- if (nrow(registered_contrasts) == 0L) {
+    registered_contrasts
+  } else {
+    registered_contrasts[
+      registered_contrasts$contrast_id %in% spec$contrast_ids[[1]], , drop = FALSE
+    ]
+  }
+  context <- structure(list(
+    analysis_id = spec$analysis_id[[1]], formula = spec$formula[[1]],
+    model_frame = frame, model_matrix = stats::model.matrix(spec$formula[[1]], frame),
+    response = frame[[spec$outcome[[1]]]], weights = if ("..bq_weight" %in% names(frame)) frame$..bq_weight else NULL,
+    offset = NULL,
+    outcome_spec = registry[match(spec$outcome_id[[1]], registry$var_id), , drop = FALSE],
+    predictor_spec = registry[match(spec$predictor_id[[1]], registry$var_id), , drop = FALSE],
+    design_spec = list(cluster = spec$cluster[[1]], variance = spec$variance[[1]]),
+    contrast_specs = selected_contrasts,
+    missing_counts = tibble::tibble(
+      n_total = spec$n_total[[1]], n_analyzed = spec$n_analyzed[[1]],
+      n_missing_outcome = spec$n_missing_outcome[[1]],
+      n_missing_predictor = spec$n_missing_predictor[[1]]
+    ), confidence_level = spec$confidence_level[[1]]
+  ), class = "analysis_context")
+  output <- method$run(context)
+  if (!inherits(output, "analysis_output")) {
+    stop_method_output("Custom method must return `analysis_output()`.")
+  }
+  output$estimates <- validate_custom_component(output$estimates, estimates_prototype(),
+    "estimates", spec, method, required = TRUE)
+  if (isTRUE(method$exponentiate) && nrow(output$estimates)) {
+    output$estimates$estimate <- exp(output$estimates$estimate)
+    output$estimates$conf_low <- exp(output$estimates$conf_low)
+    output$estimates$conf_high <- exp(output$estimates$conf_high)
+    output$estimates$scale <- method$scale
+  }
+  output$tests <- validate_custom_component(output$tests, tests_prototype(), "tests", spec, method)
+  output$contrasts <- validate_custom_component(output$contrasts, contrasts_prototype(), "contrasts", spec, method)
+  if (isTRUE(method$exponentiate) && nrow(output$contrasts)) {
+    output$contrasts$estimate <- exp(output$contrasts$estimate)
+    output$contrasts$conf_low <- exp(output$contrasts$conf_low)
+    output$contrasts$conf_high <- exp(output$contrasts$conf_high)
+    output$contrasts$scale <- method$scale
+  }
+  output$diagnostics <- validate_custom_component(output$diagnostics, diagnostics_prototype(), "diagnostics", spec, method)
+  output$issues <- validate_custom_component(output$issues, issues_prototype(), "issues", spec, method)
+  output
+}
+
+validate_custom_component <- function(x, prototype, component, spec, method, required = FALSE) {
+  if (is.null(x)) {
+    if (required) stop_method_output(paste0("Custom output must contain `", component, "`."))
+    return(prototype)
+  }
+  if (!inherits(x, "data.frame")) stop_method_output(paste0("`", component, "` must be a data frame."))
+  if ("stratum_label" %in% names(prototype) && !"stratum_label" %in% names(x)) {
+    x$stratum_label <- rep(spec$stratum_label[[1]], nrow(x))
+  }
+  missing <- setdiff(names(prototype), names(x))
+  if (length(missing)) stop_method_output(paste0("`", component, "` is missing columns: ", paste(missing, collapse = ", "), "."))
+  x <- tibble::as_tibble(x)[names(prototype)]
+  if (nrow(x) && any(x$analysis_id != spec$analysis_id[[1]])) stop_method_output("Custom output contains an incorrect `analysis_id`.")
+  if (component %in% c("estimates", "contrasts") && nrow(x)) {
+    expected_scale <- if (isTRUE(method$exponentiate)) method$model_scale else method$scale
+    if (any(x$effect_measure != method$effect_measure) || any(x$scale != expected_scale)) {
+      stop_method_output("Custom estimates violate the declared effect measure or scale.")
+    }
+  }
+  tryCatch(vctrs::vec_cast(x, prototype), error = function(error) {
+    stop_method_output(paste0("`", component, "` has incompatible column types."))
+  })
+}
+
+stop_method_output <- function(message) {
+  stop(structure(list(message = message, call = sys.call(-1L)),
+    class = c("bq_error_invalid_engine_output", "error", "condition")))
+}
+
 build_analysis_frame <- function(spec, data) {
+  data <- data[stratum_mask(data, spec$strata[[1]], spec$stratum_values[[1]]), , drop = FALSE]
   outcome_name <- spec$outcome[[1]]
   predictor_name <- spec$predictor[[1]]
   registry <- variables(data)
@@ -231,18 +339,25 @@ tidy_builtin_estimates <- function(fit, spec) {
     df <- rep(NA_real_, length(beta))
     critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
     p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
-    estimate <- exp(beta)
-    conf_low <- exp(beta - critical * standard_error)
-    conf_high <- exp(beta + critical * standard_error)
-    scale <- "ratio"
+    estimate <- beta
+    conf_low <- beta - critical * standard_error
+    conf_high <- beta + critical * standard_error
+    scale <- "link"
     std_error_scale <- "log_odds"
     n_events <- as.integer(sum(stats::model.response(stats::model.frame(fit)) == 1))
+  }
+  if (isTRUE(spec$exponentiate[[1]])) {
+    estimate <- exp(estimate)
+    conf_low <- exp(conf_low)
+    conf_high <- exp(conf_high)
+    scale <- "ratio"
   }
 
   tibble::tibble(
     analysis_id = spec$analysis_id[[1]],
     outcome = spec$outcome[[1]],
     predictor = spec$predictor[[1]],
+    stratum_label = spec$stratum_label[[1]],
     term = coefficient_metadata$term,
     level = coefficient_metadata$level,
     estimate = estimate,
@@ -395,6 +510,7 @@ bind_component <- function(rows, prototype) {
 estimates_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), outcome = character(), predictor = character(),
+    stratum_label = character(),
     term = character(), level = character(), estimate = double(),
     std_error = double(), std_error_scale = character(), conf_low = double(),
     conf_high = double(), statistic = double(), df = double(), p_value = double(),
