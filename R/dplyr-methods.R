@@ -60,7 +60,7 @@ invalidate_modified_variable <- function(out, before, name) {
 
   registry$storage_type[[row]] <- storage_type(new_column)
   registry$distribution[[row]] <- NA_character_
-  registry$transformation[[row]] <- NA_character_
+  registry$transformation[row] <- list(NULL)
   registry$status[[row]] <- "review"
 
   if (metadata_changed || storage_changed) {

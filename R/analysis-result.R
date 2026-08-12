@@ -325,6 +325,14 @@ validate_custom_component <- function(x, prototype, component, spec, method, req
   if ("stratum_label" %in% names(prototype) && !"stratum_label" %in% names(x)) {
     x$stratum_label <- rep(spec$stratum_label[[1]], nrow(x))
   }
+  if (identical(component, "estimates")) {
+    if (!"transformation_id" %in% names(x)) {
+      x$transformation_id <- rep(NA_character_, nrow(x))
+    }
+    if (!"transformation_label" %in% names(x)) {
+      x$transformation_label <- rep(NA_character_, nrow(x))
+    }
+  }
   missing <- setdiff(names(prototype), names(x))
   if (length(missing)) stop_method_output(paste0("`", component, "` is missing columns: ", paste(missing, collapse = ", "), "."))
   x <- tibble::as_tibble(x)[names(prototype)]
@@ -358,6 +366,10 @@ build_analysis_frame <- function(spec, data) {
   predictor <- analysis_vector(predictor_original)
   outcome[special_missing_mask(outcome_original)] <- NA
   predictor[special_missing_mask(predictor_original)] <- NA
+  predictor_transformation <- spec$transformation_specs[[1]][[spec$predictor_id[[1]]]]
+  predictor <- apply_transformation_spec(
+    predictor, predictor_transformation, predictor_name, spec$analysis_id[[1]]
+  )
 
   if (outcome_spec$type[[1]] == "binary") {
     event <- outcome_spec$event_value[[1]]
@@ -377,6 +389,11 @@ build_analysis_frame <- function(spec, data) {
     original <- data[[name]]
     value <- analysis_vector(original)
     value[special_missing_mask(original)] <- NA
+    covariate_id <- variables(data)$var_id[match(name, variables(data)$name)]
+    value <- apply_transformation_spec(
+      value, spec$transformation_specs[[1]][[covariate_id]],
+      name, spec$analysis_id[[1]]
+    )
     frame[[name]] <- value
   }
   if (!is.na(spec$weight[[1]])) frame[["..bq_weight"]] <- data[[spec$weight[[1]]]]
@@ -460,12 +477,17 @@ tidy_builtin_estimates <- function(fit, spec) {
     conf_high <- exp(conf_high)
     scale <- "ratio"
   }
+  transformation_metadata <- coefficient_transformation_metadata(
+    coefficient_metadata$term, spec
+  )
 
   tibble::tibble(
     analysis_id = spec$analysis_id[[1]],
     outcome = spec$outcome[[1]],
     predictor = spec$predictor[[1]],
     stratum_label = spec$stratum_label[[1]],
+    transformation_id = transformation_metadata$id,
+    transformation_label = transformation_metadata$label,
     term = coefficient_metadata$term,
     level = coefficient_metadata$level,
     estimate = estimate,
@@ -483,6 +505,22 @@ tidy_builtin_estimates <- function(fit, spec) {
     method = spec$method[[1]]
     , variance = spec$variance[[1]]
   )
+}
+
+coefficient_transformation_metadata <- function(terms, spec) {
+  ids <- rep(NA_character_, length(terms))
+  labels <- rep(NA_character_, length(terms))
+  variable_ids <- c(spec$predictor_id[[1]], spec$covariate_ids[[1]])
+  variable_names <- c(spec$predictor[[1]], spec$covariates[[1]])
+  for (i in seq_along(variable_ids)) {
+    transformation <- spec$transformation_specs[[1]][[variable_ids[[i]]]]
+    rows <- terms == variable_names[[i]]
+    if (!is.null(transformation)) {
+      ids[rows] <- transformation$id
+      labels[rows] <- transformation$label
+    }
+  }
+  list(id = ids, label = labels)
 }
 
 normalize_coefficient_metadata <- function(fit, spec) {
@@ -588,6 +626,8 @@ diagnose_builtin <- function(fit, spec) {
 }
 
 provenance_row <- function(spec) {
+  transformations <- spec$transformation_specs[[1]]
+  transformations <- transformations[!vapply(transformations, is.null, logical(1))]
   tibble::tibble(
     analysis_id = spec$analysis_id[[1]],
     method = spec$method[[1]],
@@ -596,7 +636,10 @@ provenance_row <- function(spec) {
     function_hash = spec$function_hash[[1]],
     r_version = as.character(getRversion()),
     required_packages = spec$required_packages,
-    package_versions = list(c(stats = as.character(utils::packageVersion("stats"))))
+    package_versions = list(c(stats = as.character(utils::packageVersion("stats")))),
+    transformation_ids = list(vapply(transformations, `[[`, character(1), "id")),
+    transformation_hashes = list(vapply(transformations, `[[`, character(1), "function_hash")),
+    transformation_parameters = list(lapply(transformations, `[[`, "parameters"))
   )
 }
 
@@ -619,6 +662,7 @@ estimates_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), outcome = character(), predictor = character(),
     stratum_label = character(),
+    transformation_id = character(), transformation_label = character(),
     term = character(), level = character(), estimate = double(),
     std_error = double(), std_error_scale = character(), conf_low = double(),
     conf_high = double(), statistic = double(), df = double(), p_value = double(),
@@ -666,6 +710,8 @@ provenance_prototype <- function() {
     analysis_id = character(), method = character(), engine = character(),
     function_id = character(), function_hash = character(), r_version = character(),
     required_packages = list(), package_versions = list()
+    , transformation_ids = list(), transformation_hashes = list(),
+    transformation_parameters = list()
   )
 }
 

@@ -59,7 +59,7 @@ test_that("mutate invalidates stale metadata for an unlocked variable", {
   x <- as_bq_data(tibble::tibble(group = c("a", "b", "a")))
   registry <- attr(x, "variable_registry")
   registry$distribution <- "gaussian"
-  registry$transformation <- "log"
+  registry$transformation[[1]] <- bqreport::log2_transform()
   registry$reference[[1]] <- "a"
   attr(x, "variable_registry") <- registry
 
@@ -70,7 +70,7 @@ test_that("mutate invalidates stale metadata for an unlocked variable", {
   expect_identical(updated$source, "default")
   expect_identical(updated$status, "review")
   expect_true(is.na(updated$distribution))
-  expect_true(is.na(updated$transformation))
+  expect_null(updated$transformation[[1]])
   expect_null(updated$reference[[1]])
 })
 

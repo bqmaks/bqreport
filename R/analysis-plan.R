@@ -138,6 +138,9 @@ analysis_plan_row <- function(
   outcome <- outcome_spec$name[[1]]
   predictor <- predictor_spec$name[[1]]
   covariate_names <- if (is.null(covariate_specs)) character() else covariate_specs$name
+  transformed_specs <- c(list(predictor_spec), if (is.null(covariate_specs)) list() else split(covariate_specs, seq_len(nrow(covariate_specs))))
+  transformation_specs <- lapply(transformed_specs, function(x) x$transformation[[1]])
+  names(transformation_specs) <- vapply(transformed_specs, function(x) x$var_id[[1]], character(1))
   weight_id <- if (is.null(weight_spec)) NA_character_ else weight_spec$var_id[[1]]
   weight_name <- if (is.null(weight_spec)) NA_character_ else weight_spec$name[[1]]
   weight_type <- if (is.null(weight_spec)) NA_character_ else weight_spec$weight_type[[1]]
@@ -182,6 +185,7 @@ analysis_plan_row <- function(
     outcome = outcome,
     predictor = predictor,
     covariates = list(covariate_names),
+    transformation_specs = list(transformation_specs),
     weight = weight_name,
     cluster = cluster_name,
     strata = list(stratum_spec$names),
@@ -383,6 +387,28 @@ validate_plan <- function(plan, data) {
     predictor <- analysis_data[[predictor_name]]
     missing_outcome <- special_missing_mask(outcome)
     missing_predictor <- special_missing_mask(predictor)
+    transformed_names <- c(predictor_name, covariate_names)
+    transformed_ids <- c(out$predictor_id[[i]], out$covariate_ids[[i]])
+    for (j in seq_along(transformed_names)) {
+      transformation <- out$transformation_specs[[i]][[transformed_ids[[j]]]]
+      if (!is.null(transformation)) {
+        transformed <- tryCatch(
+          apply_transformation_spec(
+            analysis_vector(analysis_data[[transformed_names[[j]]]]),
+            transformation, transformed_names[[j]], out$analysis_id[[i]]
+          ),
+          error = function(condition) condition
+        )
+        if (inherits(transformed, "error")) {
+          issues <- c(issues, conditionMessage(transformed))
+        } else if (n_distinct_values(transformed[!is.na(transformed)]) < 2L) {
+          issues <- c(issues, paste0(
+            "Variable `", transformed_names[[j]],
+            "` has no variation after transformation."
+          ))
+        }
+      }
+    }
     analyzed <- !(missing_outcome | missing_predictor)
     for (name in covariate_names) analyzed <- analyzed & !special_missing_mask(analysis_data[[name]])
     if (!is.na(out$weight_id[[i]])) {

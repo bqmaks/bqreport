@@ -67,7 +67,7 @@ new_variable_registry <- function(x) {
     weight_type = rep(NA_character_, n),
     cluster_type = rep(NA_character_, n),
     event_value = rep(list(NULL), n),
-    transformation = rep(NA_character_, n),
+    transformation = rep(list(NULL), n),
     missing_policy = rep("complete_case", n),
     source = ifelse(analytical_type == "unknown", "default", "inferred"),
     locked = rep(FALSE, n),
