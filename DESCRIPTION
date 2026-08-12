@@ -20,6 +20,8 @@ Imports:
     uuid,
     vctrs
 Suggests:
+    detectseparation,
+    logistf,
     sandwich,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

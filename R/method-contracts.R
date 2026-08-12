@@ -23,6 +23,114 @@ logistic_model <- function(ci_method = "wald", exponentiate = TRUE) {
     scale = if (exponentiate) "ratio" else "link")
 }
 
+#' Construct Firth penalized logistic regression
+#'
+#' @param exponentiate Whether coefficients and confidence limits are returned
+#'   as odds ratios rather than log odds.
+#' @return A concrete custom `method_spec` using the optional `logistf` backend.
+#' @export
+firth_logistic <- function(exponentiate = TRUE) {
+  check_exponentiate(exponentiate)
+  analysis_function(
+    id = "firth_logistic",
+    effect_measure = if (exponentiate) "odds_ratio" else "log_odds",
+    scale = if (exponentiate) "ratio" else "link",
+    model_scale = "link",
+    exponentiate = exponentiate,
+    required_packages = "logistf",
+    run = function(context) run_firth_logistic(context, exponentiate)
+  )
+}
+
+#' Select ordinary or Firth logistic regression before fitting
+#'
+#' The selector uses `detectseparation` during preflight. Finite maximum
+#' likelihood estimates select `logistic_model()`; complete or quasi-complete
+#' separation selects `firth_logistic()`. The selected method is fixed in the
+#' validated plan.
+#'
+#' @param exponentiate Whether either candidate returns odds ratios.
+#' @param id Stable selector identifier.
+#' @return A `method_selector` with `glm` and `firth` candidates.
+#' @export
+separation_logistic <- function(exponentiate = TRUE,
+                                id = "separation_glm_or_firth") {
+  check_exponentiate(exponentiate)
+  method_selector(
+    id = id,
+    candidates = list(
+      glm = logistic_model(exponentiate = exponentiate),
+      firth = firth_logistic(exponentiate = exponentiate)
+    ),
+    required_packages = "detectseparation",
+    select = function(context) {
+      args <- list(
+        formula = context$formula,
+        data = context$model_frame,
+        family = stats::binomial("logit"),
+        method = detectseparation::detect_separation
+      )
+      if (!is.null(context$weights)) args$weights <- context$weights
+      detection <- do.call(stats::glm, args)
+      separated <- any(is.infinite(stats::coef(detection)))
+      method_choice(
+        method = if (separated) "firth" else "glm",
+        reason = if (separated) {
+          "Detected complete or quasi-complete separation."
+        } else {
+          "Maximum-likelihood estimates are finite."
+        },
+        diagnostics = tibble::tibble(separation = separated)
+      )
+    }
+  )
+}
+
+run_firth_logistic <- function(context, exponentiate) {
+  args <- list(
+    formula = context$formula,
+    data = context$model_frame,
+    alpha = 1 - context$confidence_level,
+    na.action = stats::na.omit
+  )
+  if (!is.null(context$weights)) args$weights <- context$weights
+  fit <- do.call(logistf::logistf, args)
+  coefficient <- unname(fit$coefficients)
+  standard_error <- sqrt(diag(fit$var))
+  terms <- names(fit$coefficients)
+  output_measure <- if (exponentiate) {
+    "odds_ratio"
+  } else {
+    "log_odds"
+  }
+  # Output stays on the link scale; the common normalization layer performs
+  # optional exponentiation according to the selected method specification.
+  analysis_output(
+    model = fit,
+    estimates = tibble::tibble(
+      analysis_id = context$analysis_id,
+      outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]],
+      term = terms,
+      level = NA_character_,
+      estimate = coefficient,
+      std_error = unname(standard_error),
+      std_error_scale = "link",
+      conf_low = unname(fit$ci.lower),
+      conf_high = unname(fit$ci.upper),
+      statistic = coefficient / unname(standard_error),
+      df = NA_real_,
+      p_value = unname(fit$prob),
+      effect_measure = output_measure,
+      scale = "link",
+      n = as.integer(fit$n),
+      n_events = as.integer(sum(context$response == 1, na.rm = TRUE)),
+      method = "firth_logistic",
+      variance = "model_based"
+    )
+  )
+}
+
 new_method_spec <- function(id, engine, estimator, ci_method, family, link,
                             effect_measure, run = NULL, scale = NULL,
                             required_packages = "stats", exponentiate = FALSE,
