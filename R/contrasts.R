@@ -41,7 +41,50 @@ set_coding <- function(.data, .cols, coding = "treatment", reference) {
 #' @export
 against_reference <- function(reference) {
   check_scalar_setting(reference, "reference", "bq_error_invalid_comparison")
-  structure(list(type = "against_reference", reference = reference), class = "contrast_spec")
+  new_contrast_spec("against_reference", reference = reference)
+}
+
+#' Construct a custom comparison function
+#' @param id Stable function identifier.
+#' @param compute Function receiving `(model, context)` and returning a
+#'   normalized contrasts data frame.
+#' @param effect_measure Declared effect measure.
+#' @param scale Final output scale.
+#' @param model_scale Scale returned by `compute` before normalization.
+#' @param exponentiate Whether normalization exponentiates estimate and limits.
+#' @param required_packages Required packages checked during preflight.
+#' @return A backend-independent `contrast_spec`.
+#' @export
+comparison_function <- function(id, compute, effect_measure, scale,
+                                model_scale = scale, exponentiate = FALSE,
+                                required_packages = character()) {
+  check_contract_id(id)
+  check_contract_id(effect_measure, "effect_measure")
+  check_contract_id(scale, "scale")
+  check_contract_id(model_scale, "model_scale")
+  check_exponentiate(exponentiate)
+  if (!is.function(compute)) {
+    stop_comparison("`compute` must be a function.", "bq_error_invalid_comparison")
+  }
+  new_contrast_spec(
+    "custom_function", compute = compute, effect_measure = effect_measure,
+    scale = scale, model_scale = model_scale, exponentiate = exponentiate,
+    required_packages = required_packages, function_id = id,
+    function_hash = digest::digest(compute)
+  )
+}
+
+new_contrast_spec <- function(type, reference = NULL, compute = NULL,
+                              effect_measure = NA_character_, scale = NA_character_,
+                              model_scale = scale, exponentiate = FALSE,
+                              required_packages = character(), function_id = NA_character_,
+                              function_hash = NA_character_) {
+  structure(list(
+    type = type, reference = reference, compute = compute,
+    effect_measure = effect_measure, scale = scale, model_scale = model_scale,
+    exponentiate = exponentiate, required_packages = required_packages,
+    function_id = function_id, function_hash = function_hash
+  ), class = "contrast_spec")
 }
 
 #' Register target comparisons
@@ -66,7 +109,10 @@ set_comparisons <- function(.data, .cols, comparisons, adjust = "none") {
     contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
     predictor_id = registry$var_id[[row]], predictor = registry$name[[row]],
     comparison_type = comparisons$type, reference = list(comparisons$reference),
-    adjust_method = adjust
+    adjust_method = adjust, function_id = comparisons$function_id,
+    function_hash = comparisons$function_hash,
+    required_packages = list(comparisons$required_packages),
+    comparison_object = list(comparisons)
   ))
   current <- attr(.data, "contrast_registry", exact = TRUE)
   attr(.data, "contrast_registry") <- vctrs::vec_rbind(current, !!!additions)
@@ -82,7 +128,10 @@ compute_builtin_contrasts <- function(estimate_data, spec, data) {
   if (nrow(registry) == 0L) return(contrasts_prototype())
   requested <- spec$contrast_ids[[1]]
   if (length(requested) == 0L) return(contrasts_prototype())
-  registered <- registry[registry$contrast_id %in% requested, , drop = FALSE]
+  registered <- registry[
+    registry$contrast_id %in% requested & registry$comparison_type != "custom_function",
+    , drop = FALSE
+  ]
   if (nrow(registered) == 0L) return(contrasts_prototype())
   rows <- estimate_data$term == spec$predictor[[1]] & !is.na(estimate_data$level)
   if (!any(rows)) return(contrasts_prototype())

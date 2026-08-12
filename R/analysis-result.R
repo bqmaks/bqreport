@@ -72,6 +72,20 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       if (nrow(custom_result$contrasts)) contrast_rows[[length(contrast_rows) + 1L]] <- custom_result$contrasts
       if (nrow(custom_result$diagnostics)) diagnostic_rows[[length(diagnostic_rows) + 1L]] <- custom_result$diagnostics
       if (nrow(custom_result$issues)) issue_rows[[length(issue_rows) + 1L]] <- custom_result$issues
+      if (!is.null(custom_result$model)) {
+        additional_comparisons <- tryCatch(
+          compute_custom_comparisons(custom_result$model, spec, frame, data),
+          error = function(condition) condition
+        )
+        if (inherits(additional_comparisons, "error")) {
+          issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+            analysis_id, "contrasts", "error", class(additional_comparisons)[[1]],
+            conditionMessage(additional_comparisons)
+          )
+        } else if (nrow(additional_comparisons)) {
+          contrast_rows[[length(contrast_rows) + 1L]] <- additional_comparisons
+        }
+      }
       provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       next
     }
@@ -124,6 +138,18 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
     if (nrow(computed_contrasts) > 0L) {
       contrast_rows[[length(contrast_rows) + 1L]] <- computed_contrasts
     }
+    custom_comparisons <- tryCatch(
+      compute_custom_comparisons(fit, spec, frame, data),
+      error = function(condition) condition
+    )
+    if (inherits(custom_comparisons, "error")) {
+      issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+        analysis_id, "contrasts", "error", class(custom_comparisons)[[1]],
+        conditionMessage(custom_comparisons)
+      )
+    } else if (nrow(custom_comparisons)) {
+      contrast_rows[[length(contrast_rows) + 1L]] <- custom_comparisons
+    }
     test_rows[[length(test_rows) + 1L]] <- post_fit$tests
     diagnostic_rows[[length(diagnostic_rows) + 1L]] <- post_fit$diagnostics
     provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
@@ -151,6 +177,84 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   )
 }
 
+compute_custom_comparisons <- function(model, spec, frame, data) {
+  registry <- contrasts(data)
+  if (nrow(registry) == 0L) return(contrasts_prototype())
+  rows <- registry$contrast_id %in% spec$contrast_ids[[1]] &
+    registry$comparison_type == "custom_function"
+  registered <- registry[rows, , drop = FALSE]
+  if (nrow(registered) == 0L) return(contrasts_prototype())
+  outputs <- lapply(seq_len(nrow(registered)), function(i) {
+    comparison_row <- registered[i, , drop = FALSE]
+    comparison <- comparison_row$comparison_object[[1]]
+    missing_packages <- comparison$required_packages[
+      !vapply(comparison$required_packages, requireNamespace, logical(1), quietly = TRUE)
+    ]
+    if (length(missing_packages)) {
+      stop_comparison_output(paste0(
+        "Missing packages for comparison `", comparison$function_id, "`: ",
+        paste(missing_packages, collapse = ", "), "."
+      ))
+    }
+    context <- build_analysis_context(spec, frame, data)
+    context$comparison_spec <- comparison_row
+    output <- comparison$compute(model, context)
+    output <- validate_comparison_output(output, spec, comparison)
+    output$contrast_id <- comparison_row$contrast_id[[1]]
+    output$adjust_method <- comparison_row$adjust_method[[1]]
+    output$p_adjusted <- stats::p.adjust(
+      output$p_value, method = comparison_row$adjust_method[[1]]
+    )
+    if (isTRUE(comparison$exponentiate)) {
+      output$estimate <- exp(output$estimate)
+      output$conf_low <- exp(output$conf_low)
+      output$conf_high <- exp(output$conf_high)
+      output$scale <- comparison$scale
+    }
+    output
+  })
+  vctrs::vec_rbind(!!!outputs)
+}
+
+validate_comparison_output <- function(x, spec, comparison) {
+  if (!inherits(x, "data.frame")) {
+    stop_comparison_output("Custom comparison must return a data frame.")
+  }
+  prototype <- contrasts_prototype()
+  missing <- setdiff(names(prototype), names(x))
+  if (length(missing)) {
+    stop_comparison_output(paste0(
+      "Custom comparison output is missing columns: ",
+      paste(missing, collapse = ", "), "."
+    ))
+  }
+  x <- tibble::as_tibble(x)[names(prototype)]
+  if (nrow(x) && any(x$analysis_id != spec$analysis_id[[1]])) {
+    stop_comparison_output("Custom comparison returned an incorrect `analysis_id`.")
+  }
+  expected_scale <- if (isTRUE(comparison$exponentiate)) {
+    comparison$model_scale
+  } else {
+    comparison$scale
+  }
+  if (nrow(x) && (
+    any(x$effect_measure != comparison$effect_measure) ||
+      any(x$scale != expected_scale)
+  )) {
+    stop_comparison_output("Custom comparison violates effect measure or scale.")
+  }
+  tryCatch(vctrs::vec_cast(x, prototype), error = function(error) {
+    stop_comparison_output("Custom comparison output has incompatible column types.")
+  })
+}
+
+stop_comparison_output <- function(message) {
+  stop(structure(
+    list(message = message, call = sys.call(-1L)),
+    class = c("bq_error_invalid_comparison_output", "error", "condition")
+  ))
+}
+
 execute_custom_method <- function(spec, frame, data) {
   method <- spec$method_object[[1]]
   missing_packages <- method$required_packages[
@@ -159,30 +263,7 @@ execute_custom_method <- function(spec, frame, data) {
   if (length(missing_packages)) {
     stop_method_output(paste0("Missing required packages: ", paste(missing_packages, collapse = ", "), "."))
   }
-  registry <- variables(data)
-  registered_contrasts <- contrasts(data)
-  selected_contrasts <- if (nrow(registered_contrasts) == 0L) {
-    registered_contrasts
-  } else {
-    registered_contrasts[
-      registered_contrasts$contrast_id %in% spec$contrast_ids[[1]], , drop = FALSE
-    ]
-  }
-  context <- structure(list(
-    analysis_id = spec$analysis_id[[1]], formula = spec$formula[[1]],
-    model_frame = frame, model_matrix = stats::model.matrix(spec$formula[[1]], frame),
-    response = frame[[spec$outcome[[1]]]], weights = if ("..bq_weight" %in% names(frame)) frame$..bq_weight else NULL,
-    offset = NULL,
-    outcome_spec = registry[match(spec$outcome_id[[1]], registry$var_id), , drop = FALSE],
-    predictor_spec = registry[match(spec$predictor_id[[1]], registry$var_id), , drop = FALSE],
-    design_spec = list(cluster = spec$cluster[[1]], variance = spec$variance[[1]]),
-    contrast_specs = selected_contrasts,
-    missing_counts = tibble::tibble(
-      n_total = spec$n_total[[1]], n_analyzed = spec$n_analyzed[[1]],
-      n_missing_outcome = spec$n_missing_outcome[[1]],
-      n_missing_predictor = spec$n_missing_predictor[[1]]
-    ), confidence_level = spec$confidence_level[[1]]
-  ), class = "analysis_context")
+  context <- build_analysis_context(spec, frame, data)
   output <- method$run(context)
   if (!inherits(output, "analysis_output")) {
     stop_method_output("Custom method must return `analysis_output()`.")
@@ -206,6 +287,33 @@ execute_custom_method <- function(spec, frame, data) {
   output$diagnostics <- validate_custom_component(output$diagnostics, diagnostics_prototype(), "diagnostics", spec, method)
   output$issues <- validate_custom_component(output$issues, issues_prototype(), "issues", spec, method)
   output
+}
+
+build_analysis_context <- function(spec, frame, data) {
+  registry <- variables(data)
+  registered_contrasts <- contrasts(data)
+  selected_contrasts <- if (nrow(registered_contrasts) == 0L) {
+    registered_contrasts
+  } else {
+    registered_contrasts[
+      registered_contrasts$contrast_id %in% spec$contrast_ids[[1]], , drop = FALSE
+    ]
+  }
+  structure(list(
+    analysis_id = spec$analysis_id[[1]], formula = spec$formula[[1]],
+    model_frame = frame, model_matrix = stats::model.matrix(spec$formula[[1]], frame),
+    response = frame[[spec$outcome[[1]]]], weights = if ("..bq_weight" %in% names(frame)) frame$..bq_weight else NULL,
+    offset = NULL,
+    outcome_spec = registry[match(spec$outcome_id[[1]], registry$var_id), , drop = FALSE],
+    predictor_spec = registry[match(spec$predictor_id[[1]], registry$var_id), , drop = FALSE],
+    design_spec = list(cluster = spec$cluster[[1]], variance = spec$variance[[1]]),
+    contrast_specs = selected_contrasts,
+    missing_counts = tibble::tibble(
+      n_total = spec$n_total[[1]], n_analyzed = spec$n_analyzed[[1]],
+      n_missing_outcome = spec$n_missing_outcome[[1]],
+      n_missing_predictor = spec$n_missing_predictor[[1]]
+    ), confidence_level = spec$confidence_level[[1]]
+  ), class = "analysis_context")
 }
 
 validate_custom_component <- function(x, prototype, component, spec, method, required = FALSE) {

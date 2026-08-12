@@ -331,6 +331,23 @@ validate_plan <- function(plan, data) {
         "Missing required packages: ", paste(missing_packages, collapse = ", "), "."
       ))
     }
+    comparison_registry <- contrasts(data)
+    if (nrow(comparison_registry) > 0L) {
+      comparison_rows <- comparison_registry$contrast_id %in% out$contrast_ids[[i]]
+      comparison_packages <- unique(unlist(
+        comparison_registry$required_packages[comparison_rows],
+        use.names = FALSE
+      ))
+      missing_comparison_packages <- comparison_packages[
+        !vapply(comparison_packages, requireNamespace, logical(1), quietly = TRUE)
+      ]
+      if (length(missing_comparison_packages)) {
+        issues <- c(issues, paste0(
+          "Missing packages required by comparisons: ",
+          paste(missing_comparison_packages, collapse = ", "), "."
+        ))
+      }
+    }
 
     if (is.na(outcome_row) || is.na(predictor_row)) {
       issues <- c(issues, "A variable referenced by stable id is absent from the data.")
