@@ -1,0 +1,4 @@
+^AGENTS\.md$
+^snowflake\.log$
+^bqreport.*\.tar\.gz$
+^bqreport\.Rcheck$
