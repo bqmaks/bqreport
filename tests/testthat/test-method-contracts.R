@@ -123,3 +123,127 @@ test_that("logistic method controls exponentiation explicitly", {
   expect_false(link_plan$exponentiate)
   expect_identical(ratio$std_error, link$std_error)
 })
+
+test_that("method selector resolves one declared candidate during preflight", {
+  selector <- method_selector(
+    id = "sample_size_policy",
+    candidates = list(
+      standard = linear_model(ci_method = "t"),
+      large_sample = linear_model(ci_method = "wald")
+    ),
+    select = function(context) {
+      method_choice(
+        method = if (nrow(context$model_frame) >= 6L) "large_sample" else "standard",
+        reason = "Selected from the analyzed sample size.",
+        diagnostics = tibble::tibble(n = nrow(context$model_frame))
+      )
+    }
+  )
+  x <- as_bq_data(tibble::tibble(y = 1:6, x = c(2, 1, 4, 3, 6, 5))) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+
+  compiled <- plan_analysis(
+    x, rules = analysis_rules(where_continuous() ~ selector)
+  )
+  plan <- validate_plan(compiled, x)
+
+  expect_identical(compiled$method, NA_character_)
+  expect_identical(plan$method, "linear_model")
+  expect_identical(plan$ci_method, "wald")
+  expect_identical(plan$selector_id, "sample_size_policy")
+  expect_identical(plan$candidate_methods[[1]], c("standard", "large_sample"))
+  expect_identical(plan$selection_reason, "Selected from the analyzed sample size.")
+  expect_equal(plan$selection_diagnostics[[1]]$n, 6L)
+})
+
+test_that("method selector is not rerun during analysis", {
+  state <- new.env(parent = emptyenv())
+  state$n <- 0L
+  selector <- method_selector(
+    id = "counted_policy",
+    candidates = list(selected = linear_model()),
+    select = function(context) {
+      state$n <- state$n + 1L
+      method_choice("selected", "Only candidate.")
+    }
+  )
+  x <- as_bq_data(tibble::tibble(y = 1:5, x = c(5, 2, 4, 1, 3))) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+  plan <- validate_plan(plan_analysis(
+    x, rules = analysis_rules(where_continuous() ~ selector)
+  ), x)
+
+  expect_equal(state$n, 1L)
+  result <- run_analysis(plan, x)
+  expect_equal(state$n, 1L)
+  expect_identical(result$provenance$selector_id, "counted_policy")
+  expect_true(nzchar(result$provenance$selector_hash))
+  expect_identical(result$provenance$candidate_methods[[1]], "selected")
+  expect_identical(result$provenance$selection_reason, "Only candidate.")
+})
+
+test_that("invalid selector choices make the task invalid", {
+  x <- as_bq_data(tibble::tibble(y = 1:5, x = c(5, 2, 4, 1, 3))) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+  unknown <- method_selector(
+    "unknown_choice", list(allowed = linear_model()),
+    function(context) method_choice("not_declared", "Bad choice.")
+  )
+  malformed <- method_selector(
+    "malformed_choice", list(allowed = linear_model()),
+    function(context) list(method = "allowed")
+  )
+
+  unknown_plan <- validate_plan(plan_analysis(
+    x, rules = analysis_rules(where_continuous() ~ unknown)
+  ), x)
+  malformed_plan <- validate_plan(plan_analysis(
+    x, rules = analysis_rules(where_continuous() ~ malformed)
+  ), x)
+
+  expect_identical(unknown_plan$status, "invalid")
+  expect_match(unknown_plan$reason, "not an announced candidate")
+  expect_identical(malformed_plan$status, "invalid")
+  expect_match(malformed_plan$reason, "method_choice")
+})
+
+test_that("method selector constructor validates its public contract", {
+  expect_error(
+    method_selector("bad", list(linear_model()), function(context) NULL),
+    class = "bq_error_invalid_method_contract"
+  )
+  expect_error(
+    method_choice("method", "reason", diagnostics = list(value = 1)),
+    class = "bq_error_invalid_method_choice"
+  )
+})
+
+test_that("selector errors and missing selector packages are preflight issues", {
+  x <- as_bq_data(tibble::tibble(y = 1:5, x = c(5, 2, 4, 1, 3))) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+  failing <- method_selector(
+    "failing", list(allowed = linear_model()),
+    function(context) stop("deliberate selector failure")
+  )
+  missing_backend <- method_selector(
+    "missing_backend", list(allowed = linear_model()),
+    function(context) method_choice("allowed", "Available candidate."),
+    required_packages = "bqreportPackageThatCannotExist"
+  )
+
+  failed_plan <- validate_plan(plan_analysis(
+    x, rules = analysis_rules(where_continuous() ~ failing)
+  ), x)
+  missing_plan <- validate_plan(plan_analysis(
+    x, rules = analysis_rules(where_continuous() ~ missing_backend)
+  ), x)
+
+  expect_identical(failed_plan$status, "invalid")
+  expect_match(failed_plan$reason, "deliberate selector failure")
+  expect_identical(missing_plan$status, "invalid")
+  expect_match(missing_plan$reason, "bqreportPackageThatCannotExist")
+})

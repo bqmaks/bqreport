@@ -124,6 +124,64 @@ analysis_output <- function(model = NULL, estimates = NULL, tests = NULL,
     class = "analysis_output")
 }
 
+#' Construct a data-dependent method selector
+#'
+#' A selector is evaluated once during [validate_plan()] and must choose one of
+#' its explicitly named candidate methods. It is never used as a runtime
+#' fallback.
+#'
+#' @param id Stable selector identifier.
+#' @param candidates Named list of concrete `method_spec` objects.
+#' @param select Function accepting an `analysis_context` and returning
+#'   `method_choice()`.
+#' @param required_packages Packages needed to evaluate the selector.
+#' @return A `method_selector` specification.
+#' @export
+method_selector <- function(id, candidates, select,
+                            required_packages = character()) {
+  check_contract_id(id)
+  if (!is.list(candidates) || length(candidates) == 0L ||
+      is.null(names(candidates)) || any(!nzchar(names(candidates))) ||
+      anyDuplicated(names(candidates))) {
+    stop_method_contract("`candidates` must be a non-empty, uniquely named list.")
+  }
+  if (!all(vapply(candidates, inherits, logical(1), "method_spec"))) {
+    stop_method_contract("Every candidate must be a concrete method_spec.")
+  }
+  if (!is.function(select)) stop_method_contract("`select` must be a function.")
+  if (!is.character(required_packages) || anyNA(required_packages)) {
+    stop_method_contract("`required_packages` must be a character vector.")
+  }
+  structure(list(
+    id = id, candidates = candidates, select = select,
+    required_packages = unique(required_packages),
+    function_hash = digest::digest(select)
+  ), class = "method_selector")
+}
+
+#' Record a method selector decision
+#'
+#' @param method Name of one candidate declared in `method_selector()`.
+#' @param reason Human-readable basis for the decision.
+#' @param diagnostics A tidy data frame of unrounded pre-fit diagnostics.
+#' @return A `method_choice` object.
+#' @export
+method_choice <- function(method, reason, diagnostics = tibble::tibble()) {
+  if (!is.character(method) || length(method) != 1L || is.na(method) || !nzchar(method)) {
+    stop_method_choice("`method` must be one non-empty candidate name.")
+  }
+  if (!is.character(reason) || length(reason) != 1L || is.na(reason) || !nzchar(reason)) {
+    stop_method_choice("`reason` must be one non-empty string.")
+  }
+  if (!inherits(diagnostics, "data.frame")) {
+    stop_method_choice("`diagnostics` must be a data frame.")
+  }
+  structure(list(
+    method = method, reason = reason,
+    diagnostics = tibble::as_tibble(diagnostics)
+  ), class = "method_choice")
+}
+
 #' Define analysis method rules
 #' @param ... Two-sided formulas of selector to concrete method specification.
 #' @return An `analysis_rules` object.
@@ -135,7 +193,9 @@ analysis_rules <- function(...) {
   rules <- lapply(seq_along(formulas), function(i) {
     formula <- formulas[[i]]
     method <- eval(formula[[3]], environment(formula))
-    if (!inherits(method, "method_spec")) stop_method_contract("Rule RHS must return a method_spec.")
+    if (!inherits(method, c("method_spec", "method_selector"))) {
+      stop_method_contract("Rule RHS must return a method_spec or method_selector.")
+    }
     list(id = paste0("rule_", i), selector = formula[[2]],
       environment = environment(formula), method = method)
   })
@@ -167,4 +227,9 @@ check_contract_id <- function(x, argument = "id") {
 stop_method_contract <- function(message) {
   stop(structure(list(message = message, call = sys.call(-1L)),
     class = c("bq_error_invalid_method_contract", "error", "condition")))
+}
+
+stop_method_choice <- function(message) {
+  stop(structure(list(message = message, call = sys.call(-1L)),
+    class = c("bq_error_invalid_method_choice", "error", "condition")))
 }

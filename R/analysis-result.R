@@ -692,6 +692,11 @@ provenance_row <- function(spec) {
     analysis_id = spec$analysis_id[[1]],
     method = spec$method[[1]],
     engine = spec$engine[[1]],
+    selector_id = spec$selector_id[[1]],
+    selector_hash = spec$selector_hash[[1]],
+    candidate_methods = spec$candidate_methods,
+    selection_reason = spec$selection_reason[[1]],
+    selection_diagnostics = spec$selection_diagnostics,
     function_id = spec$function_id[[1]],
     function_hash = spec$function_hash[[1]],
     r_version = as.character(getRversion()),
@@ -769,6 +774,9 @@ issues_prototype <- function() {
 provenance_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), method = character(), engine = character(),
+    selector_id = character(), selector_hash = character(),
+    candidate_methods = list(), selection_reason = character(),
+    selection_diagnostics = list(),
     function_id = character(), function_hash = character(), r_version = character(),
     required_packages = list(), package_versions = list()
     , transformation_ids = list(), transformation_hashes = list(),

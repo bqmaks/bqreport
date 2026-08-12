@@ -75,8 +75,10 @@ plan_analysis <- function(
     outcome_spec <- registry[match(outcome_name, registry$name), , drop = FALSE]
     predictor_spec <- registry[match(predictor_name, registry$name), , drop = FALSE]
     matched_rule <- resolve_method_rule(rules, .data, outcome_name)
-    method <- if (is.null(matched_rule)) default_method_spec(outcome_spec$type[[1]]) else matched_rule$method
-    method_policy <- if (is.null(matched_rule)) "system_default" else "user_rule"
+    rule_value <- if (is.null(matched_rule)) NULL else matched_rule$method
+    selector <- if (inherits(rule_value, "method_selector")) rule_value else NULL
+    method <- if (is.null(matched_rule)) default_method_spec(outcome_spec$type[[1]]) else if (is.null(selector)) rule_value else NULL
+    method_policy <- if (is.null(matched_rule)) "system_default" else if (is.null(selector)) "user_rule" else "user_selector"
     same_variable <- identical(outcome_spec$var_id[[1]], predictor_spec$var_id[[1]])
     unsupported_predictor <- predictor_spec$type[[1]] %in% c(
       "unknown", "identifier", "date", "datetime"
@@ -84,14 +86,14 @@ plan_analysis <- function(
     needs_review <- outcome_spec$status[[1]] != "valid" ||
       predictor_spec$status[[1]] != "valid"
 
-    status <- if (is.null(method) || unsupported_predictor || same_variable) {
+    status <- if ((is.null(method) && is.null(selector)) || unsupported_predictor || same_variable) {
       "invalid"
     } else if (needs_review) {
       "review"
     } else {
       "ready"
     }
-    reason <- if (is.null(method)) {
+    reason <- if (is.null(method) && is.null(selector)) {
       paste0("Unsupported outcome type `", outcome_spec$type[[1]], "`.")
     } else if (unsupported_predictor) {
       paste0("Unsupported predictor type `", predictor_spec$type[[1]], "`.")
@@ -116,7 +118,8 @@ plan_analysis <- function(
       variance,
       if (length(cluster_selection)) registry[match(names(cluster_selection), registry$name), , drop = FALSE] else NULL,
       method_policy, stratum_spec,
-      registry[match(names(modifier_selection), registry$name), , drop = FALSE]
+      registry[match(names(modifier_selection), registry$name), , drop = FALSE],
+      selector
     )
   })
 
@@ -137,7 +140,8 @@ analysis_plan_row <- function(
   cluster_spec = NULL,
   method_policy = "system_default",
   stratum_spec = empty_stratum_spec(),
-  modifier_specs = NULL
+  modifier_specs = NULL,
+  selector = NULL
 ) {
   outcome <- outcome_spec$name[[1]]
   predictor <- predictor_spec$name[[1]]
@@ -154,12 +158,12 @@ analysis_plan_row <- function(
   cluster_type <- if (is.null(cluster_spec)) NA_character_ else cluster_spec$cluster_type[[1]]
   if (is.null(variance)) variance <- if (!is.null(cluster_spec)) "cluster_robust" else if (identical(weight_type, "ipw")) "robust" else "model_based"
   if (is.null(method)) {
-    candidate_method_ids <- character()
+    candidate_method_ids <- if (is.null(selector)) character() else names(selector$candidates)
     method_id <- method_engine <- method_estimator <- method_ci <- NA_character_
     method_family <- method_link <- method_effect <- NA_character_
     method_reason <- reason
     method_function_id <- method_function_hash <- NA_character_
-    method_packages <- "stats"
+    method_packages <- if (is.null(selector)) "stats" else selector$required_packages
   } else {
     candidate_method_ids <- method$method
     method_id <- method$method
@@ -203,7 +207,8 @@ analysis_plan_row <- function(
     data_layout = "cross_sectional",
     reshape_spec = list(NULL),
     method_policy = method_policy,
-    selector_id = NA_character_,
+    selector_id = if (is.null(selector)) NA_character_ else selector$id,
+    selector_hash = if (is.null(selector)) NA_character_ else selector$function_hash,
     candidate_methods = list(candidate_method_ids),
     method = method_id,
     engine = method_engine,
@@ -222,6 +227,7 @@ analysis_plan_row <- function(
     function_hash = method_function_hash,
     required_packages = list(method_packages),
     method_object = list(method_spec_object),
+    selector_object = list(selector),
     contrast_ids = list(contrast_ids),
     adjust_method = "none",
     missing_policy = "complete_case",
@@ -270,7 +276,7 @@ empty_analysis_plan <- function() {
     "invalid",
     NA_character_,
     0.95,
-    character(), NULL, NULL, NULL, NULL, "system_default", empty_stratum_spec(), NULL
+    character(), NULL, NULL, NULL, NULL, "system_default", empty_stratum_spec(), NULL, NULL
   )
   new_analysis_plan(prototype[0, , drop = FALSE])
 }
@@ -562,6 +568,34 @@ validate_plan <- function(plan, data) {
       }
     }
 
+    selector <- out$selector_object[[i]]
+    if (length(issues) == 0L && !is.null(selector) && is.na(out$method[[i]])) {
+      selection <- tryCatch({
+        spec <- new_analysis_plan(out[i, , drop = FALSE])
+        frame <- build_analysis_frame(spec, data)
+        choice <- selector$select(build_analysis_context(spec, frame, data))
+        validate_method_choice(choice, selector)
+      }, error = function(condition) condition)
+      if (inherits(selection, "error")) {
+        issues <- c(issues, paste0(
+          "Method selector `", selector$id, "` failed: ",
+          conditionMessage(selection)
+        ))
+      } else {
+        out <- apply_method_choice(out, i, selector, selection)
+        selected_packages <- out$required_packages[[i]]
+        missing_selected_packages <- selected_packages[
+          !vapply(selected_packages, requireNamespace, logical(1), quietly = TRUE)
+        ]
+        if (length(missing_selected_packages)) {
+          issues <- c(issues, paste0(
+            "Missing packages required by selected method: ",
+            paste(missing_selected_packages, collapse = ", "), "."
+          ))
+        }
+      }
+    }
+
     if (length(issues) > 0L) {
       out$status[[i]] <- "invalid"
       out$reason[[i]] <- append_reasons(out$reason[[i]], issues)
@@ -569,6 +603,44 @@ validate_plan <- function(plan, data) {
   }
 
   new_analysis_plan(out)
+}
+
+validate_method_choice <- function(choice, selector) {
+  if (!inherits(choice, "method_choice")) {
+    stop_method_choice("Selector must return `method_choice()`.")
+  }
+  if (!choice$method %in% names(selector$candidates)) {
+    stop_method_choice(paste0(
+      "Method `", choice$method, "` is not an announced candidate."
+    ))
+  }
+  if (!inherits(choice$diagnostics, "data.frame")) {
+    stop_method_choice("Choice diagnostics must be a data frame.")
+  }
+  choice
+}
+
+apply_method_choice <- function(plan, i, selector, choice) {
+  method <- selector$candidates[[choice$method]]
+  plan$method[[i]] <- method$method
+  plan$engine[[i]] <- method$engine
+  plan$estimator[[i]] <- method$estimator
+  plan$ci_method[[i]] <- method$ci_method
+  plan$family[[i]] <- method$family
+  plan$link[[i]] <- method$link
+  plan$effect_measure[[i]] <- method$effect_measure
+  plan$model_scale[[i]] <- method$model_scale
+  plan$scale[[i]] <- method$scale
+  plan$exponentiate[[i]] <- method$exponentiate
+  plan$selection_reason[[i]] <- choice$reason
+  plan$selection_diagnostics[[i]] <- tibble::as_tibble(choice$diagnostics)
+  plan$function_id[[i]] <- method$function_id
+  plan$function_hash[[i]] <- method$function_hash
+  plan$required_packages[[i]] <- unique(c(
+    selector$required_packages, method$required_packages
+  ))
+  plan$method_object[[i]] <- method
+  plan
 }
 
 stratum_mask <- function(data, names, values) {
