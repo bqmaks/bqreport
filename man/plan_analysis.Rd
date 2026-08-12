@@ -12,6 +12,7 @@ plan_analysis(
   weights = tidyselect::any_of(character()),
   cluster = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
+  effect_modifiers = tidyselect::any_of(character()),
   variance = NULL,
   rules = NULL,
   confidence_level = 0.95
@@ -32,6 +33,8 @@ plan_analysis(
 
 \item{strata}{Optional columns defining independent analysis strata. Only
 observed complete combinations are compiled.}
+
+\item{effect_modifiers}{Optional variables interacting with the predictor.}
 
 \item{variance}{Variance estimator. Defaults to \code{robust} for IPW and
 \code{model_based} otherwise.}

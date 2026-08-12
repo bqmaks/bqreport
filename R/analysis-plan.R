@@ -12,6 +12,7 @@
 #' @param cluster Optional matched-set cluster column.
 #' @param strata Optional columns defining independent analysis strata. Only
 #'   observed complete combinations are compiled.
+#' @param effect_modifiers Optional variables interacting with the predictor.
 #' @param variance Variance estimator. Defaults to `robust` for IPW and
 #'   `model_based` otherwise.
 #' @param rules Optional concrete `analysis_rules`.
@@ -27,6 +28,7 @@ plan_analysis <- function(
   weights = tidyselect::any_of(character()),
   cluster = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
+  effect_modifiers = tidyselect::any_of(character()),
   variance = NULL,
   rules = NULL,
   confidence_level = 0.95
@@ -42,6 +44,7 @@ plan_analysis <- function(
   weight_selection <- tidyselect::eval_select(rlang::enquo(weights), .data)
   cluster_selection <- tidyselect::eval_select(rlang::enquo(cluster), .data)
   strata_selection <- tidyselect::eval_select(rlang::enquo(strata), .data)
+  modifier_selection <- tidyselect::eval_select(rlang::enquo(effect_modifiers), .data)
   if (length(weight_selection) > 1L) stop_plan("Select at most one weight.", "bq_error_invalid_weight")
   if (length(cluster_selection) > 1L) stop_plan("Select at most one cluster.", "bq_error_invalid_cluster")
   if (length(cluster_selection) && !is.null(variance) && variance != "cluster_robust") {
@@ -112,8 +115,8 @@ plan_analysis <- function(
       if (length(weight_selection)) registry[match(names(weight_selection), registry$name), , drop = FALSE] else NULL,
       variance,
       if (length(cluster_selection)) registry[match(names(cluster_selection), registry$name), , drop = FALSE] else NULL,
-      method_policy,
-      stratum_spec
+      method_policy, stratum_spec,
+      registry[match(names(modifier_selection), registry$name), , drop = FALSE]
     )
   })
 
@@ -133,7 +136,8 @@ analysis_plan_row <- function(
   variance = NULL,
   cluster_spec = NULL,
   method_policy = "system_default",
-  stratum_spec = empty_stratum_spec()
+  stratum_spec = empty_stratum_spec(),
+  modifier_specs = NULL
 ) {
   outcome <- outcome_spec$name[[1]]
   predictor <- predictor_spec$name[[1]]
@@ -141,6 +145,7 @@ analysis_plan_row <- function(
   transformed_specs <- c(list(predictor_spec), if (is.null(covariate_specs)) list() else split(covariate_specs, seq_len(nrow(covariate_specs))))
   transformation_specs <- lapply(transformed_specs, function(x) x$transformation[[1]])
   names(transformation_specs) <- vapply(transformed_specs, function(x) x$var_id[[1]], character(1))
+  modifier_names <- if (is.null(modifier_specs)) character() else modifier_specs$name
   weight_id <- if (is.null(weight_spec)) NA_character_ else weight_spec$var_id[[1]]
   weight_name <- if (is.null(weight_spec)) NA_character_ else weight_spec$name[[1]]
   weight_type <- if (is.null(weight_spec)) NA_character_ else weight_spec$weight_type[[1]]
@@ -179,12 +184,14 @@ analysis_plan_row <- function(
     outcome_id = outcome_spec$var_id[[1]],
     predictor_id = predictor_spec$var_id[[1]],
     covariate_ids = list(if (is.null(covariate_specs)) character() else covariate_specs$var_id),
+    effect_modifier_ids = list(if (is.null(modifier_specs)) character() else modifier_specs$var_id),
     weight_id = weight_id,
     cluster_id = cluster_id,
     stratum_ids = list(stratum_spec$var_ids),
     outcome = outcome,
     predictor = predictor,
     covariates = list(covariate_names),
+    effect_modifiers = list(modifier_names),
     transformation_specs = list(transformation_specs),
     weight = weight_name,
     cluster = cluster_name,
@@ -202,7 +209,7 @@ analysis_plan_row <- function(
     engine = method_engine,
     estimator = method_estimator,
     ci_method = method_ci,
-    formula = list(new_analysis_formula(outcome, c(predictor, covariate_names))),
+    formula = list(new_analysis_formula(outcome, predictor, covariate_names, modifier_names)),
     family = method_family,
     link = method_link,
     effect_measure = method_effect,
@@ -263,7 +270,7 @@ empty_analysis_plan <- function() {
     "invalid",
     NA_character_,
     0.95,
-    character(), NULL, NULL, NULL, NULL, "system_default", empty_stratum_spec()
+    character(), NULL, NULL, NULL, NULL, "system_default", empty_stratum_spec(), NULL
   )
   new_analysis_plan(prototype[0, , drop = FALSE])
 }
@@ -338,6 +345,16 @@ validate_plan <- function(plan, data) {
     comparison_registry <- contrasts(data)
     if (nrow(comparison_registry) > 0L) {
       comparison_rows <- comparison_registry$contrast_id %in% out$contrast_ids[[i]]
+      conditional_rows <- comparison_rows &
+        comparison_registry$comparison_type == "within_levels"
+      missing_modifiers <- setdiff(
+        comparison_registry$modifier_id[conditional_rows],
+        out$effect_modifier_ids[[i]]
+      )
+      if (length(missing_modifiers)) {
+        issues <- c(issues,
+          "A `within_levels()` comparison references a variable that is not an effect modifier in this plan.")
+      }
       comparison_packages <- unique(unlist(
         comparison_registry$required_packages[comparison_rows],
         use.names = FALSE
@@ -376,12 +393,18 @@ validate_plan <- function(plan, data) {
     covariate_rows <- match(out$covariate_ids[[i]], registry$var_id)
     if (anyNA(covariate_rows)) issues <- c(issues, "A covariate is absent from the data.")
     covariate_names <- registry$name[covariate_rows[!is.na(covariate_rows)]]
+    modifier_rows <- match(out$effect_modifier_ids[[i]], registry$var_id)
+    if (anyNA(modifier_rows)) issues <- c(issues, "An effect modifier is absent from the data.")
+    modifier_names <- registry$name[modifier_rows[!is.na(modifier_rows)]]
     outcome_name <- outcome_spec$name[[1]]
     predictor_name <- predictor_spec$name[[1]]
     out$outcome[[i]] <- outcome_name
     out$predictor[[i]] <- predictor_name
     out$covariates[[i]] <- covariate_names
-    out$formula[[i]] <- new_analysis_formula(outcome_name, c(predictor_name, covariate_names))
+    out$effect_modifiers[[i]] <- modifier_names
+    out$formula[[i]] <- new_analysis_formula(
+      outcome_name, predictor_name, covariate_names, modifier_names
+    )
 
     outcome <- analysis_data[[outcome_name]]
     predictor <- analysis_data[[predictor_name]]
@@ -411,6 +434,7 @@ validate_plan <- function(plan, data) {
     }
     analyzed <- !(missing_outcome | missing_predictor)
     for (name in covariate_names) analyzed <- analyzed & !special_missing_mask(analysis_data[[name]])
+    for (name in modifier_names) analyzed <- analyzed & !special_missing_mask(analysis_data[[name]])
     if (!is.na(out$weight_id[[i]])) {
       weight_row <- match(out$weight_id[[i]], registry$var_id)
       if (is.na(weight_row)) {
@@ -471,6 +495,20 @@ validate_plan <- function(plan, data) {
 
     outcome_values <- unclass_for_validation(outcome)[analyzed]
     predictor_values <- unclass_for_validation(predictor)[analyzed]
+    for (modifier_name in modifier_names) {
+      modifier_values <- unclass_for_validation(analysis_data[[modifier_name]])[analyzed]
+      if (n_distinct_values(modifier_values) < 2L) {
+        issues <- c(issues, paste0("Effect modifier `", modifier_name, "` has no variation."))
+      }
+      if (is.factor(predictor_values) || is.character(predictor_values) ||
+          is.factor(modifier_values) || is.character(modifier_values)) {
+        cells <- table(predictor_values, modifier_values)
+        if (any(cells == 0L)) issues <- c(issues, paste0(
+          "Interaction has empty predictor-by-modifier cells for `",
+          modifier_name, "`."
+        ))
+      }
+    }
     if (length(outcome_values) == 0L) {
       issues <- c(issues, "No complete observations are available for analysis.")
     } else {
@@ -630,10 +668,23 @@ unclass_for_validation <- function(x) {
 
 n_distinct_values <- function(x) length(unique(x))
 
-new_analysis_formula <- function(outcome, predictors) {
+new_analysis_formula <- function(outcome, predictor, covariates = character(),
+                                 modifiers = character()) {
+  rhs <- if (length(modifiers)) {
+    rlang::call2("*", rlang::sym(predictor), rlang::sym(modifiers[[1]]))
+  } else {
+    rlang::sym(predictor)
+  }
+  if (length(modifiers) > 1L) {
+    for (modifier in modifiers[-1L]) {
+      rhs <- rlang::call2("+", rhs,
+        rlang::call2("*", rlang::sym(predictor), rlang::sym(modifier)))
+    }
+  }
+  for (covariate in covariates) rhs <- rlang::call2("+", rhs, rlang::sym(covariate))
   rlang::new_formula(
     lhs = rlang::sym(outcome),
-    rhs = Reduce(function(x, y) rlang::call2("+", x, y), lapply(predictors, rlang::sym)),
+    rhs = rhs,
     env = baseenv()
   )
 }

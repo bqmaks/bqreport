@@ -138,6 +138,18 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
     if (nrow(computed_contrasts) > 0L) {
       contrast_rows[[length(contrast_rows) + 1L]] <- computed_contrasts
     }
+    conditional_contrasts <- tryCatch(
+      compute_conditional_contrasts(fit, spec, data),
+      error = function(condition) condition
+    )
+    if (inherits(conditional_contrasts, "error")) {
+      issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+        analysis_id, "contrasts", "error", class(conditional_contrasts)[[1]],
+        conditionMessage(conditional_contrasts)
+      )
+    } else if (nrow(conditional_contrasts)) {
+      contrast_rows[[length(contrast_rows) + 1L]] <- conditional_contrasts
+    }
     custom_comparisons <- tryCatch(
       compute_custom_comparisons(fit, spec, frame, data),
       error = function(condition) condition
@@ -220,6 +232,8 @@ validate_comparison_output <- function(x, spec, comparison) {
   if (!inherits(x, "data.frame")) {
     stop_comparison_output("Custom comparison must return a data frame.")
   }
+  if (!"modifier" %in% names(x)) x$modifier <- rep(NA_character_, nrow(x))
+  if (!"modifier_level" %in% names(x)) x$modifier_level <- rep(NA_character_, nrow(x))
   prototype <- contrasts_prototype()
   missing <- setdiff(names(prototype), names(x))
   if (length(missing)) {
@@ -333,6 +347,12 @@ validate_custom_component <- function(x, prototype, component, spec, method, req
       x$transformation_label <- rep(NA_character_, nrow(x))
     }
   }
+  if (identical(component, "contrasts")) {
+    if (!"modifier" %in% names(x)) x$modifier <- rep(NA_character_, nrow(x))
+    if (!"modifier_level" %in% names(x)) {
+      x$modifier_level <- rep(NA_character_, nrow(x))
+    }
+  }
   missing <- setdiff(names(prototype), names(x))
   if (length(missing)) stop_method_output(paste0("`", component, "` is missing columns: ", paste(missing, collapse = ", "), "."))
   x <- tibble::as_tibble(x)[names(prototype)]
@@ -394,6 +414,18 @@ build_analysis_frame <- function(spec, data) {
       value, spec$transformation_specs[[1]][[covariate_id]],
       name, spec$analysis_id[[1]]
     )
+    frame[[name]] <- value
+  }
+  for (name in spec$effect_modifiers[[1]]) {
+    original <- data[[name]]
+    value <- analysis_vector(original)
+    value[special_missing_mask(original)] <- NA
+    modifier_spec <- variables(data)[match(name, variables(data)$name), , drop = FALSE]
+    if (modifier_spec$type[[1]] %in% c("binary", "nominal")) {
+      value <- factor(value)
+      reference <- modifier_spec$reference[[1]]
+      if (!is.null(reference)) value <- stats::relevel(value, ref = as.character(reference))
+    }
     frame[[name]] <- value
   }
   if (!is.na(spec$weight[[1]])) frame[["..bq_weight"]] <- data[[spec$weight[[1]]]]
@@ -589,7 +621,7 @@ tidy_builtin_test <- function(fit, spec, frame) {
     p_value <- comparison$`Pr(>Chi)`[[2]]
     test <- "likelihood_ratio"
   }
-  tibble::tibble(
+  overall <- tibble::tibble(
     analysis_id = spec$analysis_id[[1]],
     outcome = spec$outcome[[1]],
     predictor = spec$predictor[[1]],
@@ -599,6 +631,34 @@ tidy_builtin_test <- function(fit, spec, frame) {
     p_value = unname(p_value),
     method = spec$method[[1]]
   )
+  if (length(spec$effect_modifiers[[1]]) == 0L) return(overall)
+  interaction_tests <- lapply(spec$effect_modifiers[[1]], function(modifier) {
+    reduced_formula <- new_analysis_formula(
+      spec$outcome[[1]], spec$predictor[[1]],
+      c(spec$covariates[[1]], modifier), character()
+    )
+    if (!inherits(fit, "glm")) {
+      reduced <- stats::lm(reduced_formula, data = frame, na.action = stats::na.omit)
+      comparison <- stats::anova(reduced, fit)
+      statistic <- comparison$F[[2]]
+      p_value <- comparison$`Pr(>F)`[[2]]
+      df <- comparison$Df[[2]]
+    } else {
+      reduced <- stats::glm(reduced_formula, data = frame,
+        family = stats::binomial("logit"), na.action = stats::na.omit)
+      comparison <- stats::anova(reduced, fit, test = "Chisq")
+      statistic <- comparison$Deviance[[2]]
+      p_value <- comparison$`Pr(>Chi)`[[2]]
+      df <- comparison$Df[[2]]
+    }
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$predictor[[1]], test = "interaction",
+      statistic = unname(statistic), df = as.numeric(df),
+      p_value = unname(p_value), method = spec$method[[1]]
+    )
+  })
+  vctrs::vec_rbind(overall, !!!interaction_tests)
 }
 
 diagnose_builtin <- function(fit, spec) {
@@ -675,6 +735,7 @@ contrasts_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), outcome = character(), predictor = character(),
       contrast_id = character(), contrast = character(), numerator = character(), denominator = character(),
+    modifier = character(), modifier_level = character(),
     estimate = double(), conf_low = double(), conf_high = double(),
     p_value = double(), p_adjusted = double(), adjust_method = character(),
     effect_measure = character(), scale = character()
