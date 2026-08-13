@@ -11,6 +11,7 @@
 #' @param overall Whether to include statistics for the complete population.
 #' @param confidence_level Confidence level reserved for model-based providers.
 #' @param functions A list of explicit `descriptive_function` providers.
+#' @param comparisons Whether to estimate an effect between two groups.
 #'
 #' @return An `analysis_plan` tibble.
 #' @export
@@ -20,12 +21,17 @@ plan_descriptives <- function(
   groups = tidyselect::any_of(character()),
   overall = TRUE,
   confidence_level = 0.95,
-  functions = list()
+  functions = list(),
+  comparisons = FALSE
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
   if (!is.logical(overall) || length(overall) != 1L || is.na(overall)) {
     stop_descriptive_plan("`overall` must be TRUE or FALSE.")
+  }
+  if (!is.logical(comparisons) || length(comparisons) != 1L ||
+      is.na(comparisons)) {
+    stop_descriptive_plan("`comparisons` must be TRUE or FALSE.")
   }
   variable_selection <- tidyselect::eval_select(rlang::enquo(variables), .data)
   group_selection <- tidyselect::eval_select(rlang::enquo(groups), .data)
@@ -36,6 +42,9 @@ plan_descriptives <- function(
     stop_descriptive_plan(
       "A descriptive plan without groups must include the overall population."
     )
+  }
+  if (comparisons && length(group_selection) == 0L) {
+    stop_descriptive_plan("Comparisons require one grouping variable.")
   }
   functions <- validate_descriptive_functions(functions)
 
@@ -56,7 +65,8 @@ plan_descriptives <- function(
       match(variable_name, registry$name), , drop = FALSE
     ]
     descriptive_plan_row(
-      variable_spec, group_spec, overall, confidence_level, functions
+      variable_spec, group_spec, overall, confidence_level, functions,
+      comparisons
     )
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -67,7 +77,8 @@ descriptive_plan_row <- function(
   group_spec,
   overall,
   confidence_level,
-  functions
+  functions,
+  comparisons
 ) {
   row <- analysis_plan_row(
     outcome_spec = variable_spec,
@@ -95,6 +106,16 @@ descriptive_plan_row <- function(
   row$descriptive_templates <- list(templates)
   row$requested_statistics <- list(descriptive_placeholders(templates))
   row$descriptive_functions <- list(functions)
+  row$comparisons <- comparisons
+  row$comparison_method <- if (!comparisons) {
+    NA_character_
+  } else if (variable_spec$type[[1]] %in% c("continuous", "count")) {
+    "welch_mean_difference"
+  } else if (variable_spec$type[[1]] == "binary") {
+    "wald_risk_difference"
+  } else {
+    NA_character_
+  }
   row$outcome_id <- variable_spec$var_id[[1]]
   row$predictor_id <- NA_character_
   row$outcome <- variable_spec$name[[1]]
@@ -244,6 +265,34 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
     ))
   }
 
+  if (isTRUE(plan$comparisons[[i]]) && !is.na(variable_row) &&
+      !is.na(group_row)) {
+    group_values <- data[[registry$name[[group_row]]]]
+    observed_groups <- unique(as.character(
+      analysis_vector(group_values)[!special_missing_mask(group_values)]
+    ))
+    reference <- registry$reference[[group_row]]
+    if (length(observed_groups) != 2L) {
+      issues <- c(issues, "Group comparisons require exactly two observed groups.")
+    }
+    if (is.null(reference)) {
+      issues <- c(issues, "The grouping variable has no configured reference value.")
+    } else if (!as.character(reference) %in% observed_groups) {
+      issues <- c(issues, "The configured group reference is not observed.")
+    }
+    if (is.na(plan$comparison_method[[i]])) {
+      issues <- c(issues, paste0(
+        "Group comparisons do not support variable type `",
+        registry$type[[variable_row]], "`."
+      ))
+    }
+    if (registry$type[[variable_row]] == "binary" &&
+        is.null(registry$event_value[[variable_row]])) {
+      issues <- c(issues,
+        "Binary risk difference requires an explicit event value.")
+    }
+  }
+
   if (!is.na(variable_row)) {
     values <- data[[registry$name[[variable_row]]]]
     missing <- special_missing_mask(values)
@@ -333,6 +382,124 @@ compute_descriptive_functions <- function(spec, values, population, type) {
     normalize_descriptive_function_output(output, provider, context)
   })
   vctrs::vec_rbind(!!!rows)
+}
+
+compute_descriptive_comparison <- function(spec, data) {
+  if (!isTRUE(spec$comparisons[[1]])) {
+    return(list(contrasts = contrasts_prototype(), tests = tests_prototype()))
+  }
+  registry <- variables(data)
+  variable_row <- match(spec$variable_id[[1]], registry$var_id)
+  group_row <- match(spec$group_id[[1]], registry$var_id)
+  values <- data[[registry$name[[variable_row]]]]
+  groups <- data[[registry$name[[group_row]]]]
+  complete <- !special_missing_mask(values) & !special_missing_mask(groups)
+  values <- analysis_vector(values)[complete]
+  groups <- as.character(analysis_vector(groups)[complete])
+  reference <- as.character(registry$reference[[group_row]])
+  numerator_group <- setdiff(unique(groups), reference)
+  if (length(numerator_group) != 1L) {
+    stop_descriptive_plan(
+      "Comparison groups changed after complete-case filtering."
+    )
+  }
+  numerator_group <- numerator_group[[1]]
+  if (spec$comparison_method[[1]] == "welch_mean_difference") {
+    return(welch_mean_difference_result(
+      spec, values, groups, numerator_group, reference
+    ))
+  }
+  if (spec$comparison_method[[1]] == "wald_risk_difference") {
+    return(wald_risk_difference_result(
+      spec, values, groups, numerator_group, reference,
+      registry$event_value[[variable_row]]
+    ))
+  }
+  stop_descriptive_plan("Unknown descriptive comparison method.")
+}
+
+welch_mean_difference_result <- function(
+  spec, values, groups, numerator_group, reference
+) {
+  numerator_values <- values[groups == numerator_group]
+  reference_values <- values[groups == reference]
+  test <- stats::t.test(
+    numerator_values, reference_values,
+    conf.level = spec$confidence_level[[1]], var.equal = FALSE
+  )
+  list(
+    contrasts = descriptive_contrast_row(
+      spec, numerator_group, reference,
+      mean(numerator_values) - mean(reference_values),
+      test$conf.int[[1]], test$conf.int[[2]], test$p.value,
+      "mean_difference", "identity"
+    ),
+    tests = descriptive_test_row(
+      spec, "welch_t_test", unname(test$statistic),
+      unname(test$parameter), test$p.value
+    )
+  )
+}
+
+wald_risk_difference_result <- function(
+  spec, values, groups, numerator_group, reference, event
+) {
+  numerator_values <- values[groups == numerator_group]
+  reference_values <- values[groups == reference]
+  numerator_events <- sum(numerator_values == event)
+  reference_events <- sum(reference_values == event)
+  numerator_n <- length(numerator_values)
+  reference_n <- length(reference_values)
+  numerator_risk <- numerator_events / numerator_n
+  reference_risk <- reference_events / reference_n
+  estimate <- numerator_risk - reference_risk
+  standard_error <- sqrt(
+    numerator_risk * (1 - numerator_risk) / numerator_n +
+      reference_risk * (1 - reference_risk) / reference_n
+  )
+  critical <- stats::qnorm(1 - (1 - spec$confidence_level[[1]]) / 2)
+  group_test <- suppressWarnings(stats::prop.test(
+    c(numerator_events, reference_events),
+    c(numerator_n, reference_n), correct = FALSE
+  ))
+  list(
+    contrasts = descriptive_contrast_row(
+      spec, numerator_group, reference, estimate,
+      estimate - critical * standard_error,
+      estimate + critical * standard_error,
+      group_test$p.value, "risk_difference", "probability_difference"
+    ),
+    tests = descriptive_test_row(
+      spec, "pearson_chi_squared", unname(group_test$statistic),
+      unname(group_test$parameter), group_test$p.value
+    )
+  )
+}
+
+descriptive_contrast_row <- function(
+  spec, numerator, denominator, estimate, conf_low, conf_high, p_value,
+  effect_measure, scale
+) {
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]], outcome = spec$variable[[1]],
+    predictor = spec$group[[1]], contrast_id = NA_character_,
+    contrast = paste0(numerator, " vs ", denominator),
+    numerator = numerator, denominator = denominator,
+    modifier = NA_character_, modifier_level = NA_character_,
+    estimate = as.numeric(estimate), conf_low = as.numeric(conf_low),
+    conf_high = as.numeric(conf_high), p_value = as.numeric(p_value),
+    p_adjusted = as.numeric(p_value), adjust_method = "none",
+    effect_measure = effect_measure, scale = scale
+  )
+}
+
+descriptive_test_row <- function(spec, test, statistic, df, p_value) {
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]], outcome = spec$variable[[1]],
+    predictor = spec$group[[1]], test = test,
+    statistic = as.numeric(statistic), df = as.numeric(df),
+    p_value = as.numeric(p_value), method = spec$comparison_method[[1]]
+  )
 }
 
 continuous_descriptive_rows <- function(values, spec, population) {

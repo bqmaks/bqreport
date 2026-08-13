@@ -432,3 +432,124 @@ test_that("model-based fields are accepted only from an explicit provider", {
   out <- descriptives(run_analysis(plan, data))
   expect_true(all(out$source[out$method == "explicit_estimate"] == "model"))
 })
+
+test_that("descriptive comparisons estimate a Welch mean difference", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 3, 5, 7, 9),
+    arm = factor(c("Control", "Control", "Control", "Treatment", "Treatment", "Treatment"))
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "Control") |>
+    set_descriptive_statistics(value, "{mean} ({sd})")
+  direct <- stats::t.test(
+    data$value[data$arm == "Treatment"],
+    data$value[data$arm == "Control"],
+    conf.level = 0.95
+  )
+
+  plan <- data |>
+    plan_descriptives(
+      value,
+      groups = arm,
+      comparisons = TRUE,
+      confidence_level = 0.95
+    ) |>
+    validate_plan(data)
+  result <- run_analysis(plan, data)
+  effect <- contrasts(result)
+  test <- tests(result)
+
+  expect_identical(plan$comparison_method, "welch_mean_difference")
+  expect_equal(effect$estimate, unname(diff(rev(direct$estimate))))
+  expect_equal(effect$conf_low, direct$conf.int[[1]])
+  expect_equal(effect$conf_high, direct$conf.int[[2]])
+  expect_identical(effect$numerator, "Treatment")
+  expect_identical(effect$denominator, "Control")
+  expect_identical(effect$effect_measure, "mean_difference")
+  expect_identical(effect$scale, "identity")
+  expect_equal(test$p_value, direct$p.value)
+  expect_identical(test$test, "welch_t_test")
+  expect_identical(
+    result$provenance$comparison_method,
+    "welch_mean_difference"
+  )
+})
+
+test_that("descriptive comparisons estimate a binary risk difference", {
+  data <- as_bq_data(tibble::tibble(
+    response = c(1, 1, 0, 0, 1, 0, 0, 0),
+    arm = c("Control", "Control", "Control", "Control",
+            "Treatment", "Treatment", "Treatment", "Treatment")
+  )) |>
+    set_outcome(response, type = "binary", event = 1) |>
+    set_predictor(arm, type = "nominal", reference = "Control") |>
+    set_descriptive_statistics(response, "{n}/{N} ({p}%)")
+
+  result <- data |>
+    plan_descriptives(response, groups = arm, comparisons = TRUE) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  effect <- contrasts(result)
+  test <- tests(result)
+  expected_se <- sqrt(0.25 * 0.75 / 4 + 0.5 * 0.5 / 4)
+
+  expect_equal(effect$estimate, 0.25 - 0.5)
+  expect_equal(effect$conf_low, -0.25 - stats::qnorm(0.975) * expected_se)
+  expect_equal(effect$conf_high, -0.25 + stats::qnorm(0.975) * expected_se)
+  expect_identical(effect$effect_measure, "risk_difference")
+  expect_identical(effect$scale, "probability_difference")
+  expect_identical(test$test, "pearson_chi_squared")
+  expect_true(is.finite(test$p_value))
+})
+
+test_that("comparison preflight requires two groups and explicit references", {
+  no_reference <- as_bq_data(tibble::tibble(
+    value = 1:4, arm = c("A", "A", "B", "B")
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_role(arm, "group") |>
+    set_descriptive_statistics(value, "{mean} ({sd})")
+  plan <- no_reference |>
+    plan_descriptives(value, groups = arm, comparisons = TRUE) |>
+    validate_plan(no_reference)
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "reference", ignore.case = TRUE)
+
+  three_groups <- as_bq_data(tibble::tibble(
+    value = 1:6, arm = rep(c("A", "B", "C"), each = 2)
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A") |>
+    set_descriptive_statistics(value, "{mean} ({sd})")
+  plan <- three_groups |>
+    plan_descriptives(value, groups = arm, comparisons = TRUE) |>
+    validate_plan(three_groups)
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "exactly two", ignore.case = TRUE)
+})
+
+test_that("binary risk difference requires an explicit event", {
+  data <- as_bq_data(tibble::tibble(
+    response = c(0, 1, 0, 1), arm = c("A", "A", "B", "B")
+  )) |>
+    set_predictor(response, type = "binary", reference = 0) |>
+    set_predictor(arm, type = "nominal", reference = "A") |>
+    set_descriptive_statistics(response, "{n}/{N} ({p}%)")
+
+  plan <- data |>
+    plan_descriptives(response, groups = arm, comparisons = TRUE) |>
+    validate_plan(data)
+
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "event", ignore.case = TRUE)
+})
+
+test_that("comparisons require a grouping variable", {
+  data <- as_bq_data(tibble::tibble(value = 1:4)) |>
+    set_predictor(value, type = "continuous")
+
+  expect_error(
+    plan_descriptives(data, value, comparisons = TRUE),
+    class = "bq_error_invalid_descriptive_plan"
+  )
+})

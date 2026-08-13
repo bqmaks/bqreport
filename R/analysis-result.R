@@ -65,6 +65,23 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         )
       } else {
         descriptive_rows[[length(descriptive_rows) + 1L]] <- computed
+        comparison <- tryCatch(
+          compute_descriptive_comparison(spec, data),
+          error = function(condition) condition
+        )
+        if (inherits(comparison, "error")) {
+          issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+            analysis_id, "comparison", "error", class(comparison)[[1]],
+            conditionMessage(comparison)
+          )
+        } else {
+          if (nrow(comparison$contrasts)) {
+            contrast_rows[[length(contrast_rows) + 1L]] <- comparison$contrasts
+          }
+          if (nrow(comparison$tests)) {
+            test_rows[[length(test_rows) + 1L]] <- comparison$tests
+          }
+        }
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       }
       next
@@ -731,7 +748,10 @@ provenance_row <- function(spec) {
     )),
     descriptive_function_hashes = list(vapply(
       descriptive_functions, `[[`, character(1), "function_hash"
-    ))
+    )),
+    comparison_method = if (
+      "comparison_method" %in% names(spec)
+    ) spec$comparison_method[[1]] else NA_character_
   )
 }
 
@@ -806,7 +826,7 @@ provenance_prototype <- function() {
     required_packages = list(), package_versions = list()
     , transformation_ids = list(), transformation_hashes = list(),
     transformation_parameters = list(), descriptive_function_ids = list(),
-    descriptive_function_hashes = list()
+    descriptive_function_hashes = list(), comparison_method = character()
   )
 }
 

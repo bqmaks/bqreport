@@ -10,7 +10,8 @@ plan_descriptives(
   groups = tidyselect::any_of(character()),
   overall = TRUE,
   confidence_level = 0.95,
-  functions = list()
+  functions = list(),
+  comparisons = FALSE
 )
 }
 \arguments{
@@ -25,6 +26,8 @@ plan_descriptives(
 \item{confidence_level}{Confidence level reserved for model-based providers.}
 
 \item{functions}{A list of explicit \code{descriptive_function} providers.}
+
+\item{comparisons}{Whether to estimate an effect between two groups.}
 }
 \value{
 An \code{analysis_plan} tibble.
