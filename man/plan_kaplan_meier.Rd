@@ -39,7 +39,9 @@ survival time. RMST is not computed unless this estimand is explicit.}
 Cumulative risk is the single-event complement \code{1 - S(t)}; it is neither
 cumulative hazard nor a competing-risks cumulative incidence function.}
 
-\item{comparisons}{Optional pairwise log-rank contrast specification.}
+\item{comparisons}{Optional pairwise group-comparison specification. It is
+applied to pairwise log-rank tests and, when \code{rmst_tau} is supplied, to
+differences in restricted mean survival time.}
 
 \item{adjust}{Multiplicity adjustment accepted by \code{\link[stats:p.adjust]{stats::p.adjust()}}.}
 }

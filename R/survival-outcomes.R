@@ -68,6 +68,52 @@ add_survival_outcome <- function(
   .data
 }
 
+#' Register a composite competing-risk outcome
+#'
+#' @inheritParams add_survival_outcome
+#' @param censor_value Scalar value identifying censoring. Every other observed
+#'   event value is treated as an explicit competing event cause.
+#'
+#' @return Updated `bq_data`.
+#' @export
+add_competing_risk_outcome <- function(
+  .data, name, time, event, censor_value, time_unit
+) {
+  check_bq_data(.data)
+  outcome_name <- rlang::as_name(rlang::enquo(name))
+  time_selection <- tidyselect::eval_select(rlang::enquo(time), .data)
+  event_selection <- tidyselect::eval_select(rlang::enquo(event), .data)
+  if (!nzchar(outcome_name) || length(time_selection) != 1L ||
+      length(event_selection) != 1L || identical(names(time_selection), names(event_selection))) {
+    stop_invalid_survival_outcome(
+      "Competing-risk outcome requires a name and distinct single time and event columns."
+    )
+  }
+  if (length(censor_value) != 1L || is.na(censor_value)) {
+    stop_invalid_survival_outcome("`censor_value` must be one non-missing value.")
+  }
+  if (!is.character(time_unit) || length(time_unit) != 1L ||
+      is.na(time_unit) || !nzchar(time_unit)) {
+    stop_invalid_survival_outcome("`time_unit` must be one non-empty string.")
+  }
+  registry <- variables(.data)
+  outcome_registry <- attr(.data, "outcome_registry", exact = TRUE)
+  if (nrow(outcome_registry) && outcome_name %in% outcome_registry$name) {
+    stop_invalid_survival_outcome(paste0("Outcome `", outcome_name, "` is already registered."))
+  }
+  row <- tibble::tibble(
+    outcome_id = paste0("outcome_", uuid::UUIDgenerate()), name = outcome_name,
+    type = "competing_risk",
+    time_var_id = registry$var_id[match(names(time_selection), registry$name)],
+    event_var_id = registry$var_id[match(names(event_selection), registry$name)],
+    censor_value = list(censor_value), time_unit = time_unit,
+    status = "valid", reason = NA_character_
+  )
+  attr(.data, "outcome_registry") <- vctrs::vec_rbind(outcome_registry, row)
+  .data <- add_role_by_name(.data, names(time_selection), "outcome")
+  add_role_by_name(.data, names(event_selection), "event")
+}
+
 #' Access the composite outcome registry
 #'
 #' Component names are resolved from stable variable identifiers when accessed.
@@ -90,7 +136,7 @@ resolve_outcomes <- function(x) {
   if (nrow(registry) == 0L) return(registry)
   variables_registry <- variables(x)
   if ("time_var_id" %in% names(registry)) {
-    survival_rows <- registry$type == "survival"
+    survival_rows <- registry$type %in% c("survival", "competing_risk")
     time_rows <- match(registry$time_var_id, variables_registry$var_id)
     event_rows <- match(registry$event_var_id, variables_registry$var_id)
     registry$time <- variables_registry$name[time_rows]

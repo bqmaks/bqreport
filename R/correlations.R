@@ -819,8 +819,8 @@ compute_weighted_pearson <- function(context) {
 }
 
 compute_repeated_measures_correlation <- function(context) {
-  centered_x <- context$x - ave(context$x, context$id, FUN = mean)
-  centered_y <- context$y - ave(context$y, context$id, FUN = mean)
+  centered_x <- context$x - stats::ave(context$x, context$id, FUN = mean)
+  centered_y <- context$y - stats::ave(context$y, context$id, FUN = mean)
   estimate <- stats::cor(centered_x, centered_y)
   n_subjects <- length(unique(context$id))
   df <- length(context$x) - n_subjects - 1L

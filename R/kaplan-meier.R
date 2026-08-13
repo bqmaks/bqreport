@@ -13,7 +13,9 @@
 #' @param estimates One or both of `survival` and `cumulative_risk`.
 #'   Cumulative risk is the single-event complement `1 - S(t)`; it is neither
 #'   cumulative hazard nor a competing-risks cumulative incidence function.
-#' @param comparisons Optional pairwise log-rank contrast specification.
+#' @param comparisons Optional pairwise group-comparison specification. It is
+#'   applied to pairwise log-rank tests and, when `rmst_tau` is supplied, to
+#'   differences in restricted mean survival time.
 #' @param adjust Multiplicity adjustment accepted by [stats::p.adjust()].
 #'
 #' @return An `analysis_plan` tibble.
@@ -305,7 +307,8 @@ execute_kaplan_meier <- function(spec, data) {
     )
     tests <- vctrs::vec_rbind(tests, pairwise_tests)
   }
-  list(model = fit, estimates = estimates, tests = tests)
+  contrasts <- km_rmst_contrasts(rmst_rows, spec, grouped)
+  list(model = fit, estimates = estimates, tests = tests, contrasts = contrasts)
 }
 
 km_cumulative_risk_rows <- function(survival_rows) {
@@ -415,6 +418,51 @@ km_rmst_rows <- function(fit, spec, grouped) {
     estimate_type = "restricted_mean_survival_time", scale = "time",
     time_unit = spec$time_unit[[1]], method = "kaplan_meier"
   )
+}
+
+km_rmst_contrasts <- function(rmst_rows, spec, grouped) {
+  comparison_spec <- spec$pairwise_comparison_spec[[1]]
+  if (!grouped || is.null(comparison_spec) || nrow(rmst_rows) == 0L) {
+    return(contrasts_prototype())
+  }
+  reference <- if (comparison_spec$type == "against_reference") {
+    comparison_spec$reference
+  } else NULL
+  pairs <- contrast_level_pairs(
+    rmst_rows$group_level, comparison_spec$type, reference
+  )
+  critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+  rows <- lapply(seq_len(nrow(pairs)), function(i) {
+    numerator <- rmst_rows[rmst_rows$group_level == pairs$numerator[[i]], ]
+    denominator <- rmst_rows[rmst_rows$group_level == pairs$denominator[[i]], ]
+    estimate <- numerator$estimate[[1]] - denominator$estimate[[1]]
+    standard_error <- sqrt(
+      numerator$std_error[[1]]^2 + denominator$std_error[[1]]^2
+    )
+    statistic <- estimate / standard_error
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$group[[1]],
+      contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
+      contrast = paste0(pairs$numerator[[i]], " - ", pairs$denominator[[i]]),
+      numerator = pairs$numerator[[i]], denominator = pairs$denominator[[i]],
+      modifier = NA_character_, modifier_level = NA_character_,
+      inner_contrast = NA_character_, outer_contrast = NA_character_,
+      estimand = "rmst_difference", exponentiated = FALSE,
+      estimate = estimate, std_error = standard_error,
+      std_error_scale = "time",
+      conf_low = estimate - critical * standard_error,
+      conf_high = estimate + critical * standard_error,
+      p_value = 2 * stats::pnorm(abs(statistic), lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = spec$pairwise_adjust_method[[1]],
+      effect_measure = "rmst_difference", scale = "time"
+    )
+  })
+  out <- vctrs::vec_rbind(!!!rows)
+  out$p_adjusted <- stats::p.adjust(
+    out$p_value, method = spec$pairwise_adjust_method[[1]]
+  )
+  out
 }
 
 stop_invalid_survival_plan <- function(message) {

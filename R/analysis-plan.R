@@ -359,6 +359,10 @@ validate_plan <- function(plan, data) {
       out <- validate_kaplan_meier_task(out, i, data, registry)
       next
     }
+    if (identical(out$analysis_type[[i]], "cumulative_incidence")) {
+      out <- validate_cumulative_incidence_task(out, i, data, registry)
+      next
+    }
     if (identical(out$analysis_type[[i]], "survival_regression")) {
       out <- validate_survival_plan_task(out, i, data, registry)
       next

@@ -184,6 +184,23 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         model_list[[analysis_id]] <- output$model
         survival_rows[[length(survival_rows) + 1L]] <- output$estimates
         if (nrow(output$tests)) test_rows[[length(test_rows) + 1L]] <- output$tests
+        if (nrow(output$contrasts)) {
+          contrast_rows[[length(contrast_rows) + 1L]] <- output$contrasts
+        }
+        provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
+      }
+      next
+    }
+
+    if (identical(spec$analysis_type[[1]], "cumulative_incidence")) {
+      output <- tryCatch(execute_cumulative_incidence(spec, data), error = function(condition) condition)
+      if (inherits(output, "error")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "estimate", "error", class(output)[[1]], conditionMessage(output)
+        )
+      } else {
+        model_list[[analysis_id]] <- output$model
+        survival_rows[[length(survival_rows) + 1L]] <- output$estimates
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       }
       next
@@ -374,7 +391,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
 survival_estimates_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), outcome = character(), group = character(),
-    group_level = character(), time = double(), n_risk = integer(),
+    group_level = character(), cause = character(), time = double(), n_risk = integer(),
     n_event = integer(), n_censor = integer(), estimate = double(),
     std_error = double(), conf_low = double(), conf_high = double(),
     quantile_probability = double(), restriction_time = double(),

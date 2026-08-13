@@ -269,6 +269,36 @@ test_that("cumulative risk can be requested without duplicate survival rows", {
   expect_true("median_survival" %in% out$estimate_type)
 })
 
+test_that("grouped RMST returns model-based pairwise differences", {
+  skip_if_not_installed("survival")
+  data <- as_bq_data(tibble::tibble(
+    time = c(1, 2, 3, 5, 2, 4, 5, 6),
+    event = c(1, 1, 0, 1, 1, 0, 1, 0),
+    arm = factor(rep(c("A", "B"), each = 4))
+  )) |>
+    set_predictor(arm, type = "binary", reference = "A") |>
+    add_survival_outcome(os, time, event, 1, "months")
+  result <- data |>
+    plan_kaplan_meier(
+      os, groups = arm, rmst_tau = 5,
+      comparisons = against_reference("A"), adjust = "holm"
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  rmst <- survival_estimates(result)
+  rmst <- rmst[rmst$estimate_type == "restricted_mean_survival_time", ]
+  contrast <- contrasts(result)
+  expected <- rmst$estimate[rmst$group_level == "B"] -
+    rmst$estimate[rmst$group_level == "A"]
+  expected_se <- sqrt(sum(rmst$std_error^2))
+
+  expect_equal(contrast$estimate, expected)
+  expect_equal(contrast$std_error, expected_se)
+  expect_identical(contrast$effect_measure, "rmst_difference")
+  expect_identical(contrast$scale, "time")
+  expect_equal(contrast$p_adjusted, contrast$p_value)
+})
+
 test_that("Kaplan-Meier validates requested estimate scales", {
   data <- as_bq_data(tibble::tibble(time = 1:3, event = c(1, 0, 1))) |>
     add_survival_outcome(os, time, event, 1, "months")
