@@ -7,6 +7,7 @@
 \alias{issues}
 \alias{models}
 \alias{descriptives}
+\alias{survival_estimates}
 \title{Access analysis result components}
 \usage{
 estimates(x)
@@ -20,6 +21,8 @@ issues(x)
 models(x)
 
 descriptives(x)
+
+survival_estimates(x)
 }
 \arguments{
 \item{x}{An \code{analysis_result}.}

@@ -32,6 +32,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   provenance_rows <- list()
   contrast_rows <- list()
   descriptive_rows <- list()
+  survival_rows <- list()
 
   for (i in seq_len(nrow(plan))) {
     spec <- plan[i, , drop = FALSE]
@@ -102,6 +103,25 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         estimate_rows[[length(estimate_rows) + 1L]] <- output$estimates
         test_rows[[length(test_rows) + 1L]] <- output$tests
         diagnostic_rows[[length(diagnostic_rows) + 1L]] <- output$diagnostics
+        provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
+      }
+      next
+    }
+
+    if (identical(spec$analysis_type[[1]], "kaplan_meier")) {
+      output <- tryCatch(
+        execute_kaplan_meier(spec, data),
+        error = function(condition) condition
+      )
+      if (inherits(output, "error")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "estimate", "error", class(output)[[1]],
+          conditionMessage(output)
+        )
+      } else {
+        model_list[[analysis_id]] <- output$model
+        survival_rows[[length(survival_rows) + 1L]] <- output$estimates
+        if (nrow(output$tests)) test_rows[[length(test_rows) + 1L]] <- output$tests
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       }
       next
@@ -236,11 +256,23 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       contrasts = bind_component(contrast_rows, contrasts_prototype()),
       tests = bind_component(test_rows, tests_prototype()),
       descriptives = bind_component(descriptive_rows, descriptives_prototype()),
+      survival_estimates = bind_component(survival_rows, survival_estimates_prototype()),
       diagnostics = bind_component(diagnostic_rows, diagnostics_prototype()),
       issues = bind_component(issue_rows, issues_prototype()),
       provenance = bind_component(provenance_rows, provenance_prototype())
     ),
     class = "analysis_result"
+  )
+}
+
+survival_estimates_prototype <- function() {
+  tibble::tibble(
+    analysis_id = character(), outcome = character(), group = character(),
+    group_level = character(), time = double(), n_risk = integer(),
+    n_event = integer(), n_censor = integer(), estimate = double(),
+    std_error = double(), conf_low = double(), conf_high = double(),
+    estimate_type = character(), scale = character(), time_unit = character(),
+    method = character()
   )
 }
 
@@ -937,4 +969,11 @@ models <- function(x) {
 descriptives <- function(x) {
   check_analysis_result(x)
   x$descriptives
+}
+
+#' @rdname estimates
+#' @export
+survival_estimates <- function(x) {
+  check_analysis_result(x)
+  x$survival_estimates
 }
