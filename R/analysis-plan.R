@@ -192,6 +192,9 @@ analysis_plan_row <- function(
   method_model_scale <- if (is.null(method)) NA_character_ else method$model_scale
   method_output_scale <- if (is.null(method)) NA_character_ else method$scale
   method_spec_object <- method
+  predictor_color_spec <- if ("colors" %in% names(predictor_spec)) {
+    predictor_spec$colors[[1]]
+  } else NULL
   tibble::tibble(
     analysis_id = paste0("analysis_", uuid::UUIDgenerate()),
     analysis_type = "univariable_regression",
@@ -204,6 +207,7 @@ analysis_plan_row <- function(
     stratum_ids = list(stratum_spec$var_ids),
     outcome = outcome,
     predictor = predictor,
+    predictor_color_spec = list(predictor_color_spec),
     covariates = list(covariate_names),
     effect_modifiers = list(modifier_names),
     transformation_specs = list(transformation_specs),

@@ -75,6 +75,15 @@ test_that("dictionary accepts descriptive statistic template vectors", {
   )
 })
 
+test_that("dictionary accepts categorical color specifications", {
+  x <- tibble::tibble(arm = factor(c("A", "B")))
+  metadata <- tibble::tibble(
+    name = "arm", colors = list(c(B = "orange", A = "navy"))
+  )
+  out <- as_bq_data(x, metadata)
+  expect_identical(variable_colors(out, arm), c(A = "navy", B = "orange"))
+})
+
 test_that("dictionary validates descriptive statistic templates", {
   x <- as_bq_data(tibble::tibble(age = 1:3))
 

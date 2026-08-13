@@ -59,6 +59,7 @@ new_variable_registry <- function(x) {
     unit = rep(NA_character_, n),
     digits = rep(NA_integer_, n),
     descriptive_templates = rep(list(NULL), n),
+    colors = rep(list(NULL), n),
     role = rep(list("auxiliary"), n),
     type = analytical_type,
     storage_type = unname(vapply(x, storage_type, character(1))),
@@ -110,6 +111,22 @@ apply_dictionary <- function(.data, metadata) {
 
     for (property in properties) {
       if (!dictionary_value_is_missing(metadata[[property]], dictionary_row)) {
+        if (identical(property, "colors")) {
+          if (!registry$type[[registry_row]] %in% c("binary", "ordinal", "nominal")) {
+            stop_invalid_dictionary("Colors can only be supplied for categorical variables.")
+          }
+          registry$colors[[registry_row]] <- tryCatch(
+            new_color_spec(
+              metadata$colors[[dictionary_row]],
+              categorical_levels(.data[[metadata$name[[dictionary_row]]]])
+            ),
+            bq_error_invalid_colors = function(error) {
+              stop_invalid_dictionary(conditionMessage(error))
+            }
+          )
+          changed <- TRUE
+          next
+        }
         registry[[property]] <- tryCatch(
           vctrs::vec_assign(
             registry[[property]],
@@ -251,6 +268,9 @@ validate_dictionary <- function(metadata, data_names) {
         }
       )
     }
+  }
+  if ("colors" %in% names(metadata) && !is.list(metadata$colors)) {
+    stop_invalid_dictionary("`metadata$colors` must be a list-column.")
   }
   validate_labelled_dictionary(metadata)
   metadata

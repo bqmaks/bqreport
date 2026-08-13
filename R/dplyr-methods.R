@@ -66,6 +66,7 @@ invalidate_modified_variable <- function(out, before, name) {
 
   if (metadata_changed || storage_changed) {
     registry$reference[row] <- list(NULL)
+    registry$colors[row] <- list(NULL)
     registry$event_value[row] <- list(NULL)
     registry$label[[row]] <- variable_label(new_column)
     registry <- sync_labelled_registry(registry, row, new_column)

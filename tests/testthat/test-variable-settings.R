@@ -48,6 +48,41 @@ test_that("set_predictor can add a role and categorical reference", {
   expect_identical(registry$status, "valid")
 })
 
+test_that("categorical colors accept unnamed, named, and functional palettes", {
+  x <- as_bq_data(tibble::tibble(
+    arm = factor(c("Control", "Drug", "Control"), levels = c("Control", "Drug")),
+    response = factor(c("No", "Yes", "Yes"))
+  )) |>
+    set_predictor(arm, type = "nominal") |>
+    set_outcome(response, type = "binary", event = "Yes")
+
+  unnamed <- x |> set_colors(arm, c("#111111", "#22AA22"))
+  named <- x |> set_colors(arm, c(Drug = "red", Control = "blue"))
+  functional <- x |> set_colors(response, function(levels) {
+    stats::setNames(c("grey70", "navy"), levels)
+  })
+
+  expect_identical(variable_colors(unnamed, arm),
+    c(Control = "#111111", Drug = "#22AA22"))
+  expect_identical(variable_colors(named, arm),
+    c(Control = "blue", Drug = "red"))
+  expect_identical(variable_colors(functional, response),
+    c(No = "grey70", Yes = "navy"))
+  expect_true(is.function(variables(functional)$colors[[2]]$input))
+})
+
+test_that("categorical color contracts reject invalid mappings", {
+  x <- as_bq_data(tibble::tibble(arm = factor(c("A", "B")))) |>
+    set_predictor(arm, type = "nominal")
+  expect_error(set_colors(x, arm, "red"), class = "bq_error_invalid_colors")
+  expect_error(set_colors(x, arm, c(A = "red", C = "blue")),
+    class = "bq_error_invalid_colors")
+  expect_error(set_colors(x, arm, function(levels) 1:2),
+    class = "bq_error_invalid_colors")
+  expect_error(set_colors(x, arm, c("red", "not_a_color")),
+    class = "bq_error_invalid_colors")
+})
+
 test_that("variable settings support tidyselect expressions", {
   x <- as_bq_data(tibble::tibble(y1 = 1:3, y2 = 2:4, note = letters[1:3]))
 

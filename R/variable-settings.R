@@ -234,3 +234,87 @@ stop_variable_setting <- function(message, class) {
   )
   stop(condition)
 }
+
+categorical_levels <- function(x) {
+  value <- analysis_vector(x)
+  if (is.factor(value)) return(levels(value))
+  unique(as.character(value[!special_missing_mask(x)]))
+}
+
+#' Set colors for categorical variables
+#'
+#' `colors` may be an unnamed character vector in level order, a named vector
+#' keyed by level, or a function receiving the current character vector of
+#' levels and returning either form. Functional specifications are retained in
+#' metadata while their resolved mapping is snapshotted for reproducibility.
+#'
+#' @param .data A `bq_data` object.
+#' @param .cols Categorical columns selected with tidyselect.
+#' @param colors A character vector or palette function.
+#' @return `.data` with updated variable metadata.
+#' @export
+set_colors <- function(.data, .cols, colors) {
+  check_bq_data(.data)
+  selected <- tidyselect::eval_select(rlang::enquo(.cols), .data)
+  registry <- attr(.data, "variable_registry", exact = TRUE)
+  rows <- match(names(selected), registry$name)
+  if (any(!registry$type[rows] %in% c("binary", "ordinal", "nominal"))) {
+    stop_invalid_colors("Colors can only be set for binary, ordinal, or nominal variables.")
+  }
+  for (i in seq_along(rows)) {
+    levels <- categorical_levels(.data[[names(selected)[[i]]]])
+    registry$colors[[rows[[i]]]] <- new_color_spec(colors, levels)
+  }
+  attr(.data, "variable_registry") <- registry
+  .data
+}
+
+new_color_spec <- function(colors, levels) {
+  input <- colors
+  resolved <- if (is.function(colors)) {
+    tryCatch(colors(levels), error = function(error) {
+      stop_invalid_colors(paste0("Palette function failed: ", conditionMessage(error)))
+    })
+  } else colors
+  if (!is.character(resolved) || length(resolved) != length(levels) ||
+      anyNA(resolved) || any(!nzchar(resolved))) {
+    stop_invalid_colors("Colors must resolve to one non-missing string per level.")
+  }
+  valid_colors <- tryCatch({
+    grDevices::col2rgb(resolved)
+    TRUE
+  }, error = function(error) FALSE)
+  if (!valid_colors) {
+    stop_invalid_colors("Every supplied color must be understood by R graphics.")
+  }
+  if (!is.null(names(resolved)) && any(nzchar(names(resolved)))) {
+    if (any(!nzchar(names(resolved))) || anyDuplicated(names(resolved)) ||
+        !setequal(names(resolved), levels)) {
+      stop_invalid_colors("Named colors must contain each level exactly once.")
+    }
+    resolved <- resolved[levels]
+  } else names(resolved) <- levels
+  structure(list(
+    input = input, resolved = unname(resolved) |> stats::setNames(levels),
+    function_hash = if (is.function(input)) digest::digest(input) else NA_character_
+  ), class = "bq_color_spec")
+}
+
+#' Resolve colors registered for a categorical variable
+#' @param .data A `bq_data` object.
+#' @param .col Exactly one column selected with tidyselect.
+#' @return A named character vector or `NULL`.
+#' @export
+variable_colors <- function(.data, .col) {
+  check_bq_data(.data)
+  selected <- tidyselect::eval_select(rlang::enquo(.col), .data)
+  if (length(selected) != 1L) stop_invalid_colors("`.col` must select exactly one variable.")
+  registry <- variables(.data)
+  spec <- registry$colors[[match(names(selected), registry$name)]]
+  if (is.null(spec)) NULL else spec$resolved
+}
+
+stop_invalid_colors <- function(message) {
+  stop(structure(list(message = message, call = sys.call(-1L)),
+    class = c("bq_error_invalid_colors", "error", "condition")))
+}
