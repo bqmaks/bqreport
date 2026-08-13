@@ -10,6 +10,7 @@ plan_correlations(
   with = NULL,
   adjust_for = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
+  interaction_test = FALSE,
   method = pearson_correlation(),
   missing = c("pairwise", "complete"),
   confidence_level = 0.95,
@@ -27,6 +28,9 @@ plan_correlations(
 \item{adjust_for}{Optional numeric covariates for partial correlation.}
 
 \item{strata}{Optional variables defining independent correlation strata.}
+
+\item{interaction_test}{Whether to test equality of Pearson correlations
+across strata and compute pairwise Fisher z contrasts.}
 
 \item{method}{A correlation method specification.}
 

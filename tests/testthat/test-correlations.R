@@ -196,3 +196,72 @@ test_that("correlation strata with insufficient observations fail locally", {
     plan$reason[plan$stratum_label == "arm=B"], "complete", ignore.case = TRUE
   )
 })
+
+test_that("Pearson correlations expose an omnibus interaction test across strata", {
+  data <- as_bq_data(tibble::tibble(
+    x = rep(1:8, 3),
+    y = c(1, 3, 2, 5, 4, 7, 6, 8, 8, 6, 7, 4, 5, 2, 3, 1,
+      1, 2, 4, 3, 6, 5, 8, 7),
+    arm = rep(c("A", "B", "C"), each = 8)
+  ))
+  result <- data |>
+    plan_correlations(x, with = y, strata = arm, interaction_test = TRUE) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  observed <- correlations(result)
+  z <- atanh(observed$estimate)
+  variance <- 1 / (observed$n - 3)
+  weighted_mean <- sum(z / variance) / sum(1 / variance)
+  expected_q <- sum((z - weighted_mean)^2 / variance)
+  interaction <- tests(result)[tests(result)$test == "correlation_interaction", ]
+
+  expect_equal(nrow(interaction), 1L)
+  expect_equal(interaction$statistic, expected_q)
+  expect_equal(interaction$df, 2)
+  expect_equal(interaction$p_value, stats::pchisq(expected_q, 2, lower.tail = FALSE))
+})
+
+test_that("correlation interaction returns pairwise Fisher z contrasts", {
+  data <- as_bq_data(tibble::tibble(
+    x = rep(1:8, 2),
+    y = c(1, 3, 2, 5, 4, 7, 6, 8, 8, 6, 7, 4, 5, 2, 3, 1),
+    arm = rep(c("A", "B"), each = 8)
+  ))
+  result <- data |>
+    plan_correlations(
+      x, with = y, strata = arm, interaction_test = TRUE,
+      confidence_level = 0.9, adjust = "holm"
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  output <- correlations(result)
+  contrast <- contrasts(result)
+  expected <- diff(atanh(output$estimate))
+  expected_se <- sqrt(sum(1 / (output$n - 3)))
+
+  expect_equal(nrow(contrast), 1L)
+  expect_equal(abs(contrast$estimate), abs(expected))
+  expect_equal(contrast$std_error, expected_se)
+  expect_identical(contrast$std_error_scale, "fisher_z")
+  expect_identical(contrast$effect_measure, "difference_in_fisher_z")
+  expect_true(contrast$conf_low < contrast$estimate)
+  expect_true(contrast$conf_high > contrast$estimate)
+  expect_equal(contrast$p_adjusted, contrast$p_value)
+})
+
+test_that("correlation interaction contract requires strata and Pearson method", {
+  data <- as_bq_data(tibble::tibble(x = 1:8, y = 2:9, arm = rep(c("A", "B"), 4)))
+
+  expect_error(
+    plan_correlations(data, x, with = y, interaction_test = TRUE),
+    class = "bq_error_invalid_correlation"
+  )
+  expect_error(
+    plan_correlations(
+      data, x, with = y, strata = arm, interaction_test = TRUE,
+      method = spearman_correlation()
+    ),
+    class = "bq_error_invalid_correlation"
+  )
+})

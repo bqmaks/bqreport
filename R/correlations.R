@@ -34,6 +34,8 @@ new_correlation_method <- function(id, ci_method) {
 #' @param method A correlation method specification.
 #' @param adjust_for Optional numeric covariates for partial correlation.
 #' @param strata Optional variables defining independent correlation strata.
+#' @param interaction_test Whether to test equality of Pearson correlations
+#'   across strata and compute pairwise Fisher z contrasts.
 #' @param missing Pairwise or common complete-case analysis.
 #' @param confidence_level Confidence level.
 #' @param adjust Multiplicity adjustment accepted by [stats::p.adjust()].
@@ -43,6 +45,7 @@ plan_correlations <- function(
   .data, variables = where_continuous(), with = NULL,
   adjust_for = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
+  interaction_test = FALSE,
   method = pearson_correlation(), missing = c("pairwise", "complete"),
   confidence_level = 0.95, adjust = "none"
 ) {
@@ -66,6 +69,18 @@ plan_correlations <- function(
   strata_names <- names(tidyselect::eval_select(
     rlang::enquo(strata), .data
   ))
+  if (!is.logical(interaction_test) || length(interaction_test) != 1L ||
+      is.na(interaction_test)) {
+    stop_invalid_correlation("`interaction_test` must be `TRUE` or `FALSE`.")
+  }
+  if (interaction_test && !length(strata_names)) {
+    stop_invalid_correlation("`interaction_test = TRUE` requires `strata`.")
+  }
+  if (interaction_test && method$id != "pearson") {
+    stop_invalid_correlation(
+      "Correlation interaction tests currently require Pearson correlation."
+    )
+  }
   if (length(adjustment_names) && method$id == "kendall") {
     stop_invalid_correlation(
       "Partial Kendall correlation is not supported; choose Pearson or Spearman."
@@ -102,6 +117,9 @@ plan_correlations <- function(
   family_ids <- paste0(
     "correlation_family_", uuid::UUIDgenerate(n = length(stratum_specs))
   )
+  interaction_ids <- paste0(
+    "correlation_interaction_", uuid::UUIDgenerate(n = ncol(pairs))
+  )
   rows <- lapply(seq_len(nrow(task_index)), function(task) {
     i <- task_index$pair[[task]]
     stratum_i <- task_index$stratum[[task]]
@@ -126,6 +144,8 @@ plan_correlations <- function(
     names(transformations) <- transformation_ids
     row$transformation_specs <- list(transformations)
     row$correlation_family_id <- family_ids[[stratum_i]]
+    row$correlation_interaction_id <- interaction_ids[[i]]
+    row$interaction_test <- interaction_test
     row$correlation_variable_ids <- list(selected_ids)
     row$adjustment_ids <- list(adjustment_ids)
     row$adjustment_variables <- list(adjustment_names)
@@ -334,6 +354,9 @@ execute_correlation <- function(spec, data) {
     variable_x_id = spec$variable_x_id[[1]], variable_y_id = spec$variable_y_id[[1]],
     variable_x = spec$variable_x[[1]], variable_y = spec$variable_y[[1]],
     stratum_label = spec$stratum_label[[1]],
+    strata = list(spec$strata[[1]]),
+    correlation_interaction_id = spec$correlation_interaction_id[[1]],
+    interaction_test = spec$interaction_test[[1]],
     transformation_x = transformation_id_for(spec, spec$variable_x_id[[1]]),
     transformation_y = transformation_id_for(spec, spec$variable_y_id[[1]]),
     adjustment_variables = list(spec$adjustment_variables[[1]]),
@@ -344,8 +367,77 @@ execute_correlation <- function(spec, data) {
     df = as.numeric(df), p_value = p_value, p_adjusted = NA_real_,
     adjust_method = spec$adjust_method[[1]], effect_measure = spec$effect_measure[[1]],
     scale = spec$scale[[1]], n = as.integer(length(x)), method = method,
-    ci_method = spec$ci_method[[1]], missing_policy = spec$missing_policy[[1]]
+    ci_method = spec$ci_method[[1]], missing_policy = spec$missing_policy[[1]],
+    confidence_level = spec$confidence_level[[1]]
   )
+}
+
+compute_correlation_interactions <- function(correlation_output) {
+  requested <- correlation_output$interaction_test
+  requested[is.na(requested)] <- FALSE
+  output <- correlation_output[requested, , drop = FALSE]
+  if (!nrow(output)) {
+    return(list(tests = tests_prototype(), contrasts = contrasts_prototype()))
+  }
+  families <- split(output, output$correlation_interaction_id)
+  computed <- lapply(families, compute_correlation_interaction_family)
+  list(
+    tests = do.call(vctrs::vec_rbind, lapply(computed, `[[`, "tests")),
+    contrasts = do.call(vctrs::vec_rbind, lapply(computed, `[[`, "contrasts"))
+  )
+}
+
+compute_correlation_interaction_family <- function(rows) {
+  if (nrow(rows) < 2L) {
+    return(list(tests = tests_prototype(), contrasts = contrasts_prototype()))
+  }
+  z <- atanh(rows$estimate)
+  variance <- rows$std_error^2
+  weights <- 1 / variance
+  weighted_mean <- sum(weights * z) / sum(weights)
+  statistic <- sum(weights * (z - weighted_mean)^2)
+  df <- nrow(rows) - 1L
+  interaction_id <- rows$correlation_interaction_id[[1]]
+  test <- tibble::tibble(
+    analysis_id = interaction_id, outcome = rows$variable_x[[1]],
+    predictor = rows$variable_y[[1]], contrast = NA_character_,
+    numerator = NA_character_, denominator = NA_character_,
+    test = "correlation_interaction", statistic = statistic, df = as.numeric(df),
+    p_value = stats::pchisq(statistic, df, lower.tail = FALSE),
+    p_adjusted = NA_real_, adjust_method = "none",
+    method = "fisher_z_heterogeneity"
+  )
+  pairs <- utils::combn(seq_len(nrow(rows)), 2L)
+  critical <- stats::qnorm((1 + rows$confidence_level[[1]]) / 2)
+  contrast_rows <- lapply(seq_len(ncol(pairs)), function(i) {
+    numerator_i <- pairs[1L, i]
+    denominator_i <- pairs[2L, i]
+    estimate <- z[[numerator_i]] - z[[denominator_i]]
+    std_error <- sqrt(variance[[numerator_i]] + variance[[denominator_i]])
+    statistic <- estimate / std_error
+    tibble::tibble(
+      analysis_id = interaction_id, outcome = rows$variable_x[[1]],
+      predictor = rows$variable_y[[1]],
+      contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
+      contrast = paste0(rows$stratum_label[[numerator_i]], " - ",
+        rows$stratum_label[[denominator_i]]),
+      numerator = rows$stratum_label[[numerator_i]],
+      denominator = rows$stratum_label[[denominator_i]],
+      modifier = paste(rows$strata[[1]], collapse = " + "),
+      modifier_level = NA_character_, estimate = estimate,
+      std_error = std_error, std_error_scale = "fisher_z",
+      conf_low = estimate - critical * std_error,
+      conf_high = estimate + critical * std_error,
+      p_value = 2 * stats::pnorm(abs(statistic), lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = rows$adjust_method[[1]],
+      effect_measure = "difference_in_fisher_z", scale = "fisher_z"
+    )
+  })
+  contrast <- do.call(vctrs::vec_rbind, contrast_rows)
+  contrast$p_adjusted <- stats::p.adjust(
+    contrast$p_value, method = contrast$adjust_method[[1]]
+  )
+  list(tests = test, contrasts = contrast)
 }
 
 transformation_id_for <- function(spec, id) {
@@ -358,14 +450,16 @@ correlations_prototype <- function() {
     analysis_id = character(), correlation_family_id = character(),
     variable_x_id = character(), variable_y_id = character(),
     variable_x = character(), variable_y = character(),
-    stratum_label = character(),
+    stratum_label = character(), strata = list(),
+    correlation_interaction_id = character(), interaction_test = logical(),
     transformation_x = character(), transformation_y = character(),
     adjustment_variables = list(), n_adjustment = integer(), estimand = character(),
     estimate = double(), std_error = double(), std_error_scale = character(),
     conf_low = double(), conf_high = double(), statistic = double(), df = double(),
     p_value = double(), p_adjusted = double(), adjust_method = character(),
     effect_measure = character(), scale = character(), n = integer(),
-    method = character(), ci_method = character(), missing_policy = character()
+    method = character(), ci_method = character(), missing_policy = character(),
+    confidence_level = double()
   )
 }
 

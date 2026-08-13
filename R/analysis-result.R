@@ -283,6 +283,14 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         method = correlation_output$adjust_method[[rows[[1]]]]
       )
     }
+    correlation_interactions <- compute_correlation_interactions(correlation_output)
+    if (nrow(correlation_interactions$tests)) {
+      test_rows[[length(test_rows) + 1L]] <- correlation_interactions$tests
+    }
+    if (nrow(correlation_interactions$contrasts)) {
+      contrast_rows[[length(contrast_rows) + 1L]] <-
+        correlation_interactions$contrasts
+    }
   }
   structure(
     list(
