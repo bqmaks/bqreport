@@ -6,6 +6,10 @@
 #' @param times Optional positive evaluation times. If omitted, the full
 #'   Kaplan--Meier step curve is returned.
 #' @param confidence_level Confidence level.
+#' @param quantiles Optional event-time distribution probabilities strictly
+#'   between zero and one.
+#' @param rmst_tau Optional positive restriction time for restricted mean
+#'   survival time. RMST is not computed unless this estimand is explicit.
 #'
 #' @return An `analysis_plan` tibble.
 #' @export
@@ -14,7 +18,9 @@ plan_kaplan_meier <- function(
   outcomes = tidyselect::everything(),
   groups = tidyselect::any_of(character()),
   times = NULL,
-  confidence_level = 0.95
+  confidence_level = 0.95,
+  quantiles = NULL,
+  rmst_tau = NULL
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
@@ -27,6 +33,25 @@ plan_kaplan_meier <- function(
       )
     }
     times <- sort(as.numeric(times))
+  }
+  if (!is.null(quantiles)) {
+    valid_quantiles <- is.numeric(quantiles) && length(quantiles) > 0L &&
+      !anyNA(quantiles) && all(is.finite(quantiles)) &&
+      all(quantiles > 0 & quantiles < 1) && !anyDuplicated(quantiles)
+    if (!valid_quantiles) {
+      stop_invalid_survival_plan(
+        "`quantiles` must contain unique probabilities strictly between zero and one."
+      )
+    }
+    quantiles <- sort(as.numeric(quantiles))
+  }
+  if (!is.null(rmst_tau)) {
+    valid_tau <- is.numeric(rmst_tau) && length(rmst_tau) == 1L &&
+      !is.na(rmst_tau) && is.finite(rmst_tau) && rmst_tau > 0
+    if (!valid_tau) {
+      stop_invalid_survival_plan("`rmst_tau` must be one positive finite value.")
+    }
+    rmst_tau <- as.numeric(rmst_tau)
   }
   group_selection <- tidyselect::eval_select(rlang::enquo(groups), .data)
   if (length(group_selection) > 1L) {
@@ -79,6 +104,8 @@ plan_kaplan_meier <- function(
     row$group_id <- if (is.null(group_spec)) NA_character_ else group_spec$var_id[[1]]
     row$group <- if (is.null(group_spec)) NA_character_ else group_spec$name[[1]]
     row$evaluation_times <- list(times)
+    row$quantile_probabilities <- list(quantiles)
+    row$rmst_tau <- if (is.null(rmst_tau)) NA_real_ else rmst_tau
     row$predictor_id <- NA_character_
     row$predictor <- NA_character_
     row$formula <- list(NULL)
@@ -118,6 +145,18 @@ validate_kaplan_meier_task <- function(plan, i, data, registry) {
       issues <- c(issues, "Survival time must be numeric.")
     } else if (any(time_values <= 0)) {
       issues <- c(issues, "Survival time must contain only positive values.")
+    }
+    if (!is.na(plan$rmst_tau[[i]]) && is.numeric(time_values) && length(time_values)) {
+      maximum_supported <- if (is.na(plan$group_id[[i]])) {
+        max(time_values)
+      } else {
+        group_values <- analysis_vector(data[[plan$group[[i]]]])[complete]
+        min(vapply(split(time_values, group_values), max, numeric(1)))
+      }
+      if (plan$rmst_tau[[i]] > maximum_supported) {
+        issues <- c(issues,
+          "`rmst_tau` exceeds observed follow-up support in at least one population.")
+      }
     }
     plan$n_total[[i]] <- nrow(data)
     plan$n_eligible[[i]] <- nrow(data)
@@ -175,7 +214,9 @@ execute_kaplan_meier <- function(spec, data) {
   } else "survival_probability"
   curve <- km_summary_rows(curve_summary, spec, estimate_type, grouped)
   medians <- km_median_rows(fit, spec, grouped)
-  estimates <- vctrs::vec_rbind(curve, medians)
+  quantile_rows <- km_quantile_rows(fit, spec, grouped)
+  rmst_rows <- km_rmst_rows(fit, spec, grouped)
+  estimates <- vctrs::vec_rbind(curve, medians, quantile_rows, rmst_rows)
   tests <- if (grouped) {
     difference <- survival::survdiff(formula, data = frame, rho = 0,
       na.action = stats::na.omit)
@@ -205,6 +246,7 @@ km_summary_rows <- function(summary_fit, spec, estimate_type, grouped) {
     std_error = as.numeric(summary_fit$std.err),
     conf_low = as.numeric(summary_fit$lower),
     conf_high = as.numeric(summary_fit$upper), estimate_type = estimate_type,
+    quantile_probability = NA_real_, restriction_time = NA_real_,
     scale = "probability", time_unit = spec$time_unit[[1]],
     method = "kaplan_meier"
   )
@@ -223,7 +265,62 @@ km_median_rows <- function(fit, spec, grouped) {
     n_censor = NA_integer_, estimate = as.numeric(table[, "median"]),
     std_error = NA_real_, conf_low = as.numeric(table[, "0.95LCL"]),
     conf_high = as.numeric(table[, "0.95UCL"]),
+    quantile_probability = NA_real_, restriction_time = NA_real_,
     estimate_type = "median_survival", scale = "time",
+    time_unit = spec$time_unit[[1]], method = "kaplan_meier"
+  )
+}
+
+km_quantile_rows <- function(fit, spec, grouped) {
+  probabilities <- spec$quantile_probabilities[[1]]
+  if (is.null(probabilities)) return(survival_estimates_prototype())
+  result <- stats::quantile(fit, probs = probabilities)
+  quantiles <- as.matrix(result$quantile)
+  lower <- as.matrix(result$lower)
+  upper <- as.matrix(result$upper)
+  if (!grouped) {
+    quantiles <- matrix(quantiles, nrow = 1L)
+    lower <- matrix(lower, nrow = 1L)
+    upper <- matrix(upper, nrow = 1L)
+  }
+  group_level <- if (grouped) {
+    sub("^[^=]+=", "", rownames(quantiles))
+  } else NA_character_
+  n_groups <- nrow(quantiles)
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+    group = spec$group[[1]],
+    group_level = rep(group_level, each = length(probabilities)),
+    time = NA_real_, n_risk = NA_integer_, n_event = NA_integer_,
+    n_censor = NA_integer_, estimate = as.numeric(t(quantiles)),
+    std_error = NA_real_, conf_low = as.numeric(t(lower)),
+    conf_high = as.numeric(t(upper)),
+    quantile_probability = rep(probabilities, times = n_groups),
+    restriction_time = NA_real_, estimate_type = "survival_quantile",
+    scale = "time", time_unit = spec$time_unit[[1]], method = "kaplan_meier"
+  )
+}
+
+km_rmst_rows <- function(fit, spec, grouped) {
+  tau <- spec$rmst_tau[[1]]
+  if (is.na(tau)) return(survival_estimates_prototype())
+  table <- summary(fit, rmean = tau)$table
+  if (is.null(dim(table))) {
+    table <- matrix(table, nrow = 1L, dimnames = list(NA_character_, names(table)))
+  }
+  group_level <- if (grouped) sub("^[^=]+=", "", rownames(table)) else NA_character_
+  estimate <- as.numeric(table[, "rmean"])
+  standard_error <- as.numeric(table[, "se(rmean)"])
+  critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+    group = spec$group[[1]], group_level = group_level,
+    time = NA_real_, n_risk = NA_integer_, n_event = NA_integer_,
+    n_censor = NA_integer_, estimate = estimate, std_error = standard_error,
+    conf_low = estimate - critical * standard_error,
+    conf_high = estimate + critical * standard_error,
+    quantile_probability = NA_real_, restriction_time = tau,
+    estimate_type = "restricted_mean_survival_time", scale = "time",
     time_unit = spec$time_unit[[1]], method = "kaplan_meier"
   )
 }

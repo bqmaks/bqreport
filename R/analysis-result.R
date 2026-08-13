@@ -271,6 +271,7 @@ survival_estimates_prototype <- function() {
     group_level = character(), time = double(), n_risk = integer(),
     n_event = integer(), n_censor = integer(), estimate = double(),
     std_error = double(), conf_low = double(), conf_high = double(),
+    quantile_probability = double(), restriction_time = double(),
     estimate_type = character(), scale = character(), time_unit = character(),
     method = character()
   )

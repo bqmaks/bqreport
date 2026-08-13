@@ -9,7 +9,9 @@ plan_kaplan_meier(
   outcomes = tidyselect::everything(),
   groups = tidyselect::any_of(character()),
   times = NULL,
-  confidence_level = 0.95
+  confidence_level = 0.95,
+  quantiles = NULL,
+  rmst_tau = NULL
 )
 }
 \arguments{
@@ -23,6 +25,12 @@ plan_kaplan_meier(
 Kaplan--Meier step curve is returned.}
 
 \item{confidence_level}{Confidence level.}
+
+\item{quantiles}{Optional event-time distribution probabilities strictly
+between zero and one.}
+
+\item{rmst_tau}{Optional positive restriction time for restricted mean
+survival time. RMST is not computed unless this estimand is explicit.}
 }
 \value{
 An \code{analysis_plan} tibble.
