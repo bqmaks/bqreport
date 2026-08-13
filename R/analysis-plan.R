@@ -347,6 +347,10 @@ validate_plan <- function(plan, data) {
   out <- tibble::as_tibble(plan)
 
   for (i in seq_len(nrow(out))) {
+    if (identical(out$analysis_type[[i]], "correlation")) {
+      out <- validate_correlation_task(out, i, data, registry)
+      next
+    }
     if (identical(out$analysis_type[[i]], "kaplan_meier")) {
       out <- validate_kaplan_meier_task(out, i, data, registry)
       next

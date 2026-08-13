@@ -34,6 +34,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   descriptive_rows <- list()
   survival_rows <- list()
   omnibus_effect_rows <- list()
+  correlation_rows <- list()
 
   for (i in seq_len(nrow(plan))) {
     spec <- plan[i, , drop = FALSE]
@@ -52,6 +53,22 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
           spec$reason[[1]]
         }
       )
+      next
+    }
+
+    if (identical(spec$analysis_type[[1]], "correlation")) {
+      output <- tryCatch(
+        execute_correlation(spec, data), error = function(condition) condition
+      )
+      if (inherits(output, "error")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "estimate", "error", class(output)[[1]],
+          conditionMessage(output)
+        )
+      } else {
+        correlation_rows[[length(correlation_rows) + 1L]] <- output
+        provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
+      }
       next
     }
 
@@ -256,6 +273,17 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
     }
   }
 
+  correlation_output <- bind_component(correlation_rows, correlations_prototype())
+  if (nrow(correlation_output)) {
+    families <- split(seq_len(nrow(correlation_output)),
+      correlation_output$correlation_family_id)
+    for (rows in families) {
+      correlation_output$p_adjusted[rows] <- stats::p.adjust(
+        correlation_output$p_value[rows],
+        method = correlation_output$adjust_method[[rows[[1]]]]
+      )
+    }
+  }
   structure(
     list(
       plan = plan,
@@ -268,6 +296,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       omnibus_effects = bind_component(
         omnibus_effect_rows, omnibus_effects_prototype()
       ),
+      correlations = correlation_output,
       diagnostics = bind_component(diagnostic_rows, diagnostics_prototype()),
       issues = bind_component(issue_rows, issues_prototype()),
       provenance = bind_component(provenance_rows, provenance_prototype())
@@ -1110,4 +1139,11 @@ survival_estimates <- function(x) {
 omnibus_effects <- function(x) {
   check_analysis_result(x)
   x$omnibus_effects
+}
+
+#' @rdname estimates
+#' @export
+correlations <- function(x) {
+  check_analysis_result(x)
+  x$correlations
 }
