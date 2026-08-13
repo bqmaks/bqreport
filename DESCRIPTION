@@ -21,9 +21,14 @@ Imports:
     vctrs
 Suggests:
     detectseparation,
+    flextable,
+    ggplot2,
+    gt,
+    MASS,
     logistf,
     lme4,
     geepack,
+    nnet,
     polycor,
     sandwich,
     survival,

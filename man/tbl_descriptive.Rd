@@ -6,11 +6,12 @@
 \usage{
 tbl_descriptive(
   x,
-  overall_label = "All patients",
+  overall_label = NULL,
   missing = "NA",
   digits = 2L,
   percent_digits = 1L,
-  p_value_digits = 3L
+  p_value_digits = 3L,
+  locale = "en"
 )
 }
 \arguments{
@@ -28,6 +29,8 @@ percentage.}
 
 \item{p_value_digits}{Decimal places for placeholders ending in \code{.p.value} or
 named \code{p.value}.}
+
+\item{locale}{Output locale, \code{en} or \code{ru}.}
 }
 \value{
 A \code{tbl_descriptive} and \code{bq_table} object.

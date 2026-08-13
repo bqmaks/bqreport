@@ -6,6 +6,7 @@
 #'
 #' @param x An `analysis_result` containing descriptive tasks.
 #' @param overall_label Display label for the overall population.
+#' @param locale Output locale, `en` or `ru`.
 #' @param missing Text used for unavailable statistics.
 #' @param digits Default number of decimal places when variable metadata do not
 #'   provide `digits`.
@@ -18,13 +19,18 @@
 #' @export
 tbl_descriptive <- function(
   x,
-  overall_label = "All patients",
+  overall_label = NULL,
   missing = "NA",
   digits = 2L,
   percent_digits = 1L,
-  p_value_digits = 3L
+  p_value_digits = 3L,
+  locale = "en"
 ) {
   check_analysis_result(x)
+  locale <- check_reporting_locale(locale)
+  if (is.null(overall_label)) {
+    overall_label <- if (locale == "ru") "\u0412\u0441\u0435 \u043f\u0430\u0446\u0438\u0435\u043d\u0442\u044b" else "All patients"
+  }
   check_table_string(overall_label, "overall_label")
   check_table_string(missing, "missing")
   digits <- check_table_digits(digits, "digits")
