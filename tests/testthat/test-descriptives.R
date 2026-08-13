@@ -553,3 +553,153 @@ test_that("comparisons require a grouping variable", {
     class = "bq_error_invalid_descriptive_plan"
   )
 })
+
+test_that("explicit comparison specifications are fixed in the plan", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 3, 4), arm = c("A", "A", "B", "B")
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+
+  plan <- plan_descriptives(
+    data, value, groups = arm,
+    comparisons = standardized_mean_difference()
+  )
+
+  expect_identical(plan$comparison_method, "hedges_g")
+  expect_identical(plan$comparison_estimand, "standardized_mean_difference")
+  expect_identical(plan$comparison_scale, "standard_deviation")
+})
+
+test_that("standardized mean difference returns Hedges g with large-sample CI", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 3, 4, 5, 7, 8, 9),
+    arm = rep(c("A", "B"), each = 4)
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+  result <- data |>
+    plan_descriptives(
+      value, groups = arm,
+      comparisons = standardized_mean_difference()
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  effect <- contrasts(result)
+  x <- data$value[data$arm == "B"]
+  y <- data$value[data$arm == "A"]
+  pooled <- sqrt(((length(x) - 1) * stats::var(x) +
+    (length(y) - 1) * stats::var(y)) / (length(x) + length(y) - 2))
+  d <- (mean(x) - mean(y)) / pooled
+  correction <- 1 - 3 / (4 * (length(x) + length(y)) - 9)
+  expected <- correction * d
+
+  expect_equal(effect$estimate, expected)
+  expect_identical(effect$effect_measure, "standardized_mean_difference")
+  expect_identical(effect$scale, "standard_deviation")
+  expect_true(effect$conf_low < effect$estimate)
+  expect_true(effect$conf_high > effect$estimate)
+})
+
+test_that("binary comparison specs compute risk and odds ratios", {
+  data <- as_bq_data(tibble::tibble(
+    response = c(rep(1, 4), rep(0, 6), rep(1, 2), rep(0, 8)),
+    arm = rep(c("B", "A"), each = 10)
+  )) |>
+    set_outcome(response, type = "binary", event = 1) |>
+    set_predictor(arm, type = "nominal", reference = "A")
+
+  rr <- data |>
+    plan_descriptives(response, groups = arm, comparisons = risk_ratio()) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    contrasts()
+  or <- data |>
+    plan_descriptives(response, groups = arm, comparisons = odds_ratio()) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    contrasts()
+
+  expect_equal(rr$estimate, 2)
+  expect_identical(rr$effect_measure, "risk_ratio")
+  expect_identical(rr$scale, "ratio")
+  expect_equal(or$estimate, (4 / 6) / (2 / 8))
+  expect_identical(or$effect_measure, "odds_ratio")
+  expect_true(rr$conf_low > 0)
+  expect_true(or$conf_low > 0)
+})
+
+test_that("ratio comparisons reject zero cells without correction", {
+  data <- as_bq_data(tibble::tibble(
+    response = c(1, 1, 0, 0, 0, 0, 0, 0),
+    arm = rep(c("B", "A"), each = 4)
+  )) |>
+    set_outcome(response, type = "binary", event = 1) |>
+    set_predictor(arm, type = "nominal", reference = "A")
+
+  plan <- data |>
+    plan_descriptives(response, groups = arm, comparisons = odds_ratio()) |>
+    validate_plan(data)
+
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "zero cell", ignore.case = TRUE)
+})
+
+test_that("custom group comparison functions use a validated output", {
+  provider <- group_comparison_function(
+    id = "median_difference",
+    types = "continuous",
+    effect_measure = "median_difference",
+    scale = "identity",
+    compute = function(context) {
+      estimate <- stats::median(context$numerator_values) -
+        stats::median(context$denominator_values)
+      group_comparison_output(
+        estimate = estimate,
+        conf_low = NA_real_, conf_high = NA_real_,
+        p_value = NA_real_,
+        statistic_method = "difference_in_sample_medians"
+      )
+    }
+  )
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 10, 20), arm = c("A", "A", "B", "B")
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+  result <- data |>
+    plan_descriptives(value, groups = arm, comparisons = provider) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_equal(contrasts(result)$estimate, 15 - 1.5)
+  expect_identical(contrasts(result)$effect_measure, "median_difference")
+  expect_identical(result$provenance$comparison_method, "median_difference")
+  expect_identical(
+    result$provenance$comparison_function_hash,
+    provider$function_hash
+  )
+})
+
+test_that("custom group comparison output is rejected when malformed", {
+  provider <- group_comparison_function(
+    id = "bad",
+    types = "continuous",
+    effect_measure = "difference",
+    scale = "identity",
+    compute = function(context) tibble::tibble(value = 1)
+  )
+  data <- as_bq_data(tibble::tibble(
+    value = 1:4, arm = c("A", "A", "B", "B")
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+  result <- data |>
+    plan_descriptives(value, groups = arm, comparisons = provider) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_true(any(
+    issues(result)$condition_class == "bq_error_invalid_group_comparison_output"
+  ))
+})

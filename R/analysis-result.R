@@ -751,7 +751,19 @@ provenance_row <- function(spec) {
     )),
     comparison_method = if (
       "comparison_method" %in% names(spec)
-    ) spec$comparison_method[[1]] else NA_character_
+    ) spec$comparison_method[[1]] else NA_character_,
+    comparison_estimand = if (
+      "comparison_estimand" %in% names(spec)
+    ) spec$comparison_estimand[[1]] else NA_character_,
+    comparison_scale = if (
+      "comparison_scale" %in% names(spec)
+    ) spec$comparison_scale[[1]] else NA_character_,
+    comparison_ci_method = if (
+      "comparison_ci_method" %in% names(spec)
+    ) spec$comparison_ci_method[[1]] else NA_character_,
+    comparison_function_hash = if (
+      "comparison_function_hash" %in% names(spec)
+    ) spec$comparison_function_hash[[1]] else NA_character_
   )
 }
 
@@ -826,7 +838,9 @@ provenance_prototype <- function() {
     required_packages = list(), package_versions = list()
     , transformation_ids = list(), transformation_hashes = list(),
     transformation_parameters = list(), descriptive_function_ids = list(),
-    descriptive_function_hashes = list(), comparison_method = character()
+    descriptive_function_hashes = list(), comparison_method = character(),
+    comparison_estimand = character(), comparison_scale = character(),
+    comparison_ci_method = character(), comparison_function_hash = character()
   )
 }
 

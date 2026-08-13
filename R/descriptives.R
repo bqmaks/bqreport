@@ -29,9 +29,15 @@ plan_descriptives <- function(
   if (!is.logical(overall) || length(overall) != 1L || is.na(overall)) {
     stop_descriptive_plan("`overall` must be TRUE or FALSE.")
   }
-  if (!is.logical(comparisons) || length(comparisons) != 1L ||
-      is.na(comparisons)) {
-    stop_descriptive_plan("`comparisons` must be TRUE or FALSE.")
+  comparison_requested <- if (inherits(comparisons, "group_comparison_spec")) {
+    TRUE
+  } else if (is.logical(comparisons) && length(comparisons) == 1L &&
+      !is.na(comparisons)) {
+    comparisons
+  } else {
+    stop_descriptive_plan(
+      "`comparisons` must be TRUE, FALSE, or a group_comparison_spec."
+    )
   }
   variable_selection <- tidyselect::eval_select(rlang::enquo(variables), .data)
   group_selection <- tidyselect::eval_select(rlang::enquo(groups), .data)
@@ -43,7 +49,7 @@ plan_descriptives <- function(
       "A descriptive plan without groups must include the overall population."
     )
   }
-  if (comparisons && length(group_selection) == 0L) {
+  if (comparison_requested && length(group_selection) == 0L) {
     stop_descriptive_plan("Comparisons require one grouping variable.")
   }
   functions <- validate_descriptive_functions(functions)
@@ -106,16 +112,18 @@ descriptive_plan_row <- function(
   row$descriptive_templates <- list(templates)
   row$requested_statistics <- list(descriptive_placeholders(templates))
   row$descriptive_functions <- list(functions)
-  row$comparisons <- comparisons
-  row$comparison_method <- if (!comparisons) {
-    NA_character_
-  } else if (variable_spec$type[[1]] %in% c("continuous", "count")) {
-    "welch_mean_difference"
-  } else if (variable_spec$type[[1]] == "binary") {
-    "wald_risk_difference"
-  } else {
-    NA_character_
-  }
+  comparison_spec <- if (inherits(comparisons, "group_comparison_spec")) {
+    comparisons
+  } else if (isTRUE(comparisons)) {
+    default_group_comparison_spec(variable_spec$type[[1]])
+  } else NULL
+  row$comparisons <- !is.null(comparison_spec)
+  row$comparison_method <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$id
+  row$comparison_estimand <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$effect_measure
+  row$comparison_scale <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$scale
+  row$comparison_ci_method <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$ci_method
+  row$comparison_function_hash <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$function_hash
+  row$comparison_object <- list(comparison_spec)
   row$outcome_id <- variable_spec$var_id[[1]]
   row$predictor_id <- NA_character_
   row$outcome <- variable_spec$name[[1]]
@@ -267,6 +275,7 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
 
   if (isTRUE(plan$comparisons[[i]]) && !is.na(variable_row) &&
       !is.na(group_row)) {
+    comparison_spec <- plan$comparison_object[[i]]
     group_values <- data[[registry$name[[group_row]]]]
     observed_groups <- unique(as.character(
       analysis_vector(group_values)[!special_missing_mask(group_values)]
@@ -280,16 +289,51 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
     } else if (!as.character(reference) %in% observed_groups) {
       issues <- c(issues, "The configured group reference is not observed.")
     }
-    if (is.na(plan$comparison_method[[i]])) {
+    if (is.null(comparison_spec)) {
       issues <- c(issues, paste0(
         "Group comparisons do not support variable type `",
+        registry$type[[variable_row]], "`."
+      ))
+    } else if (!registry$type[[variable_row]] %in% comparison_spec$types) {
+      issues <- c(issues, paste0(
+        "Comparison `", comparison_spec$id, "` does not support variable type `",
         registry$type[[variable_row]], "`."
       ))
     }
     if (registry$type[[variable_row]] == "binary" &&
         is.null(registry$event_value[[variable_row]])) {
       issues <- c(issues,
-        "Binary risk difference requires an explicit event value.")
+        "Binary group comparison requires an explicit event value.")
+    }
+    if (!is.null(comparison_spec)) {
+      comparison_packages <- comparison_spec$required_packages
+      missing_comparison_packages <- comparison_packages[
+        !vapply(comparison_packages, requireNamespace, logical(1), quietly = TRUE)
+      ]
+      if (length(missing_comparison_packages)) {
+        issues <- c(issues, paste0(
+          "Missing packages required by group comparison: ",
+          paste(missing_comparison_packages, collapse = ", "), "."
+        ))
+      }
+      plan$required_packages[i] <- list(unique(c(
+        plan$required_packages[[i]], comparison_packages
+      )))
+      if (isTRUE(comparison_spec$requires_positive_cells) &&
+          length(observed_groups) == 2L && !is.null(reference)) {
+        variable_values <- data[[registry$name[[variable_row]]]]
+        complete <- !special_missing_mask(variable_values) &
+          !special_missing_mask(group_values)
+        event <- registry$event_value[[variable_row]]
+        table_values <- table(
+          as.character(analysis_vector(group_values)[complete]),
+          analysis_vector(variable_values)[complete] == event
+        )
+        if (length(table_values) < 4L || any(table_values == 0L)) {
+          issues <- c(issues,
+            "Ratio comparison has a zero cell; no continuity correction is applied.")
+        }
+      }
     }
   }
 
@@ -404,18 +448,63 @@ compute_descriptive_comparison <- function(spec, data) {
     )
   }
   numerator_group <- numerator_group[[1]]
-  if (spec$comparison_method[[1]] == "welch_mean_difference") {
+  comparison_spec <- spec$comparison_object[[1]]
+  if (comparison_spec$id == "welch_mean_difference") {
     return(welch_mean_difference_result(
       spec, values, groups, numerator_group, reference
     ))
   }
-  if (spec$comparison_method[[1]] == "wald_risk_difference") {
+  if (comparison_spec$id == "hedges_g") {
+    return(hedges_g_result(
+      spec, values, groups, numerator_group, reference
+    ))
+  }
+  if (comparison_spec$id == "wald_risk_difference") {
     return(wald_risk_difference_result(
       spec, values, groups, numerator_group, reference,
       registry$event_value[[variable_row]]
     ))
   }
+  if (comparison_spec$id %in% c(
+    "log_wald_risk_ratio", "log_wald_odds_ratio"
+  )) {
+    return(binary_ratio_result(
+      spec, values, groups, numerator_group, reference,
+      registry$event_value[[variable_row]], comparison_spec$id
+    ))
+  }
+  if (is.function(comparison_spec$compute)) {
+    return(custom_group_comparison_result(
+      spec, values, groups, numerator_group, reference, comparison_spec
+    ))
+  }
   stop_descriptive_plan("Unknown descriptive comparison method.")
+}
+
+hedges_g_result <- function(spec, values, groups, numerator_group, reference) {
+  x <- values[groups == numerator_group]
+  y <- values[groups == reference]
+  nx <- length(x)
+  ny <- length(y)
+  pooled_sd <- sqrt(
+    ((nx - 1) * stats::var(x) + (ny - 1) * stats::var(y)) /
+      (nx + ny - 2)
+  )
+  d <- (mean(x) - mean(y)) / pooled_sd
+  correction <- 1 - 3 / (4 * (nx + ny) - 9)
+  estimate <- correction * d
+  variance_d <- (nx + ny) / (nx * ny) + d^2 / (2 * (nx + ny - 2))
+  standard_error <- correction * sqrt(variance_d)
+  critical <- stats::qnorm(1 - (1 - spec$confidence_level[[1]]) / 2)
+  list(
+    contrasts = descriptive_contrast_row(
+      spec, numerator_group, reference, estimate,
+      estimate - critical * standard_error,
+      estimate + critical * standard_error,
+      NA_real_, "standardized_mean_difference", "standard_deviation"
+    ),
+    tests = tests_prototype()
+  )
 }
 
 welch_mean_difference_result <- function(
@@ -474,6 +563,73 @@ wald_risk_difference_result <- function(
       unname(group_test$parameter), group_test$p.value
     )
   )
+}
+
+binary_ratio_result <- function(
+  spec, values, groups, numerator_group, reference, event, method
+) {
+  x <- values[groups == numerator_group]
+  y <- values[groups == reference]
+  a <- sum(x == event)
+  b <- length(x) - a
+  c <- sum(y == event)
+  d <- length(y) - c
+  critical <- stats::qnorm(1 - (1 - spec$confidence_level[[1]]) / 2)
+  if (method == "log_wald_risk_ratio") {
+    estimate <- (a / (a + b)) / (c / (c + d))
+    standard_error <- sqrt(1 / a - 1 / (a + b) + 1 / c - 1 / (c + d))
+    measure <- "risk_ratio"
+  } else {
+    estimate <- (a / b) / (c / d)
+    standard_error <- sqrt(1 / a + 1 / b + 1 / c + 1 / d)
+    measure <- "odds_ratio"
+  }
+  group_test <- suppressWarnings(stats::prop.test(
+    c(a, c), c(a + b, c + d), correct = FALSE
+  ))
+  list(
+    contrasts = descriptive_contrast_row(
+      spec, numerator_group, reference, estimate,
+      exp(log(estimate) - critical * standard_error),
+      exp(log(estimate) + critical * standard_error),
+      group_test$p.value, measure, "ratio"
+    ),
+    tests = descriptive_test_row(
+      spec, "pearson_chi_squared", unname(group_test$statistic),
+      unname(group_test$parameter), group_test$p.value
+    )
+  )
+}
+
+custom_group_comparison_result <- function(
+  spec, values, groups, numerator_group, reference, comparison_spec
+) {
+  context <- structure(list(
+    analysis_id = spec$analysis_id[[1]],
+    variable_id = spec$variable_id[[1]], variable = spec$variable[[1]],
+    variable_type = spec$variable_type[[1]], group = spec$group[[1]],
+    numerator = numerator_group, denominator = reference,
+    numerator_values = values[groups == numerator_group],
+    denominator_values = values[groups == reference],
+    confidence_level = spec$confidence_level[[1]]
+  ), class = "group_comparison_context")
+  output <- comparison_spec$compute(context)
+  if (!inherits(output, "group_comparison_output")) {
+    stop_group_comparison_output(
+      "Custom group comparison must return group_comparison_output()."
+    )
+  }
+  contrast <- descriptive_contrast_row(
+    spec, numerator_group, reference, output$estimate, output$conf_low,
+    output$conf_high, output$p_value, comparison_spec$effect_measure,
+    comparison_spec$scale
+  )
+  test <- if (is.na(output$test)) tests_prototype() else {
+    descriptive_test_row(
+      spec, output$test, output$statistic, output$df, output$p_value
+    )
+  }
+  list(contrasts = contrast, tests = test)
 }
 
 descriptive_contrast_row <- function(
