@@ -385,3 +385,60 @@ test_that("correlation comparator validates compatible method and output", {
     class = "bq_error_invalid_correlation"
   )
 })
+
+test_that("resampled correlations provide reproducible bootstrap CI and permutation p", {
+  data <- as_bq_data(tibble::tibble(
+    x = 1:20, y = c(2, 1, 4, 3, 7, 5, 8, 6, 10, 9, 13, 11, 14, 12, 16, 15,
+      19, 17, 20, 18)
+  ))
+  method <- resampled_correlation(
+    pearson_correlation(), bootstrap = 199, permutations = 199, seed = 42
+  )
+  run <- function() data |>
+    plan_correlations(x, with = y, method = method) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+  first <- run()
+  second <- run()
+
+  expect_equal(first$estimate, stats::cor(data$x, data$y))
+  expect_equal(first$std_error, second$std_error)
+  expect_equal(first$conf_low, second$conf_low)
+  expect_equal(first$p_value, second$p_value)
+  expect_identical(first$ci_method, "bootstrap_percentile")
+  expect_identical(first$std_error_scale, "correlation")
+  expect_identical(first$resampling_seed, 42L)
+  expect_identical(first$bootstrap_successful, 199L)
+  expect_identical(first$permutation_successful, 199L)
+  expect_true(first$p_value >= 1 / 200)
+})
+
+test_that("resampling preserves global random state and records provenance", {
+  data <- as_bq_data(tibble::tibble(x = 1:12, y = c(2:12, 1)))
+  method <- resampled_correlation(
+    spearman_correlation(), bootstrap = 49, permutations = 49, seed = 11
+  )
+  set.seed(712)
+  before <- .Random.seed
+  result <- data |>
+    plan_correlations(x, with = y, method = method) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_identical(.Random.seed, before)
+  expect_identical(result$provenance$resampling_seed, 11L)
+  expect_identical(result$provenance$bootstrap_replicates, 49L)
+  expect_identical(result$provenance$permutation_replicates, 49L)
+})
+
+test_that("resampling parameters are validated", {
+  expect_error(
+    resampled_correlation(pearson_correlation(), bootstrap = 1, seed = 1),
+    class = "bq_error_invalid_correlation"
+  )
+  expect_error(
+    resampled_correlation(pearson_correlation(), bootstrap = 10),
+    class = "bq_error_invalid_correlation"
+  )
+})

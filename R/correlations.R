@@ -77,6 +77,121 @@ correlation_method <- function(
   )
 }
 
+#' Add bootstrap intervals and permutation inference to a correlation method
+#' @param method A correlation method specification.
+#' @param bootstrap Number of bootstrap replicates, or zero.
+#' @param permutations Number of permutation replicates, or zero.
+#' @param seed Required integer seed used without changing global RNG state.
+#' @return A resampling `correlation_method_spec`.
+#' @export
+resampled_correlation <- function(
+  method = pearson_correlation(), bootstrap = 999L,
+  permutations = 999L, seed
+) {
+  if (!inherits(method, "correlation_method_spec")) {
+    stop_invalid_correlation("`method` must be a correlation method specification.")
+  }
+  check_replicates <- function(value, name) {
+    if (!is.numeric(value) || length(value) != 1L || is.na(value) ||
+        value != as.integer(value) || (value != 0L && value < 10L)) {
+      stop_invalid_correlation(paste0("`", name, "` must be zero or an integer >= 10."))
+    }
+    as.integer(value)
+  }
+  bootstrap <- check_replicates(bootstrap, "bootstrap")
+  permutations <- check_replicates(permutations, "permutations")
+  if (bootstrap == 0L && permutations == 0L) {
+    stop_invalid_correlation("At least one resampling procedure must be requested.")
+  }
+  if (missing(seed) || !is.numeric(seed) || length(seed) != 1L || is.na(seed) ||
+      seed != as.integer(seed)) {
+    stop_invalid_correlation("`seed` must be an explicitly supplied integer.")
+  }
+  seed <- as.integer(seed)
+  base_method <- method
+  compute <- function(context) compute_resampled_correlation(
+    context, base_method, bootstrap, permutations, seed
+  )
+  output <- new_correlation_method(
+    id = paste0(method$id, "_resampled"),
+    ci_method = if (bootstrap) "bootstrap_percentile" else method$ci_method,
+    compute = compute, effect_measure = method$effect_measure,
+    scale = method$scale, supports_partial = method$supports_partial,
+    supports_strata = method$supports_strata, supports_interaction = FALSE,
+    required_packages = method$required_packages,
+    function_hash = digest::digest(list(method$function_hash, bootstrap, permutations, seed))
+  )
+  output$base_method <- method
+  output$bootstrap_replicates <- bootstrap
+  output$permutation_replicates <- permutations
+  output$resampling_seed <- seed
+  output
+}
+
+compute_resampled_correlation <- function(
+  context, method, bootstrap, permutations, seed
+) {
+  with_local_seed(seed, {
+    observed <- method$compute(context)
+    n <- length(context$x)
+    bootstrap_values <- if (bootstrap) replicate(bootstrap, {
+      index <- sample.int(n, n, replace = TRUE)
+      sampled <- context
+      sampled$x <- context$x[index]; sampled$y <- context$y[index]
+      sampled$adjustment <- context$adjustment[index, , drop = FALSE]
+      tryCatch(method$compute(sampled)$estimate, error = function(e) NA_real_)
+    }) else numeric()
+    permutation_values <- if (permutations) replicate(permutations, {
+      permuted <- context
+      permuted$y <- sample(context$y, n, replace = FALSE)
+      tryCatch(method$compute(permuted)$estimate, error = function(e) NA_real_)
+    }) else numeric()
+    bootstrap_values <- bootstrap_values[is.finite(bootstrap_values)]
+    permutation_values <- permutation_values[is.finite(permutation_values)]
+    if (bootstrap && length(bootstrap_values) < 2L) {
+      stop_invalid_correlation_output("Too few successful bootstrap replicates.")
+    }
+    if (permutations && !length(permutation_values)) {
+      stop_invalid_correlation_output("No successful permutation replicates.")
+    }
+    if (bootstrap) {
+      alpha <- (1 - context$confidence_level) / 2
+      ci <- stats::quantile(
+        bootstrap_values, c(alpha, 1 - alpha), names = FALSE, type = 6
+      )
+      std_error <- stats::sd(bootstrap_values)
+      se_scale <- "correlation"
+    } else {
+      ci <- c(observed$conf_low, observed$conf_high)
+      std_error <- observed$std_error
+      se_scale <- observed$std_error_scale
+    }
+    p_value <- if (permutations) {
+      (1 + sum(abs(permutation_values) >= abs(observed$estimate))) /
+        (length(permutation_values) + 1)
+    } else observed$p_value
+    output <- correlation_output(
+      observed$estimate, std_error, se_scale, ci[[1]], ci[[2]],
+      observed$statistic, observed$df, p_value
+    )
+    attr(output, "bootstrap_successful") <- as.integer(length(bootstrap_values))
+    attr(output, "permutation_successful") <- as.integer(length(permutation_values))
+    output
+  })
+}
+
+with_local_seed <- function(seed, code) {
+  had_seed <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  if (had_seed) old_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+  on.exit({
+    if (had_seed) assign(".Random.seed", old_seed, envir = .GlobalEnv) else if (
+      exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+    ) rm(".Random.seed", envir = .GlobalEnv)
+  }, add = TRUE)
+  set.seed(seed)
+  force(code)
+}
+
 #' Construct custom correlation output
 #' @param estimate,std_error,conf_low,conf_high,statistic,df,p_value Numeric scalars.
 #' @param std_error_scale Scale on which `std_error` is defined.
@@ -305,6 +420,12 @@ plan_correlations <- function(
     row$function_id <- method$function_id
     row$function_hash <- method$function_hash
     row$method_object <- list(method)
+    row$bootstrap_replicates <- if (is.null(method$bootstrap_replicates)) 0L else
+      method$bootstrap_replicates
+    row$permutation_replicates <- if (is.null(method$permutation_replicates)) 0L else
+      method$permutation_replicates
+    row$resampling_seed <- if (is.null(method$resampling_seed)) NA_integer_ else
+      method$resampling_seed
     row$formula <- list(NULL)
     row$validated <- FALSE
     row
@@ -485,7 +606,14 @@ execute_correlation <- function(spec, data) {
     adjust_method = spec$adjust_method[[1]], effect_measure = spec$effect_measure[[1]],
     scale = spec$scale[[1]], n = as.integer(length(x)), method = method,
     ci_method = spec$ci_method[[1]], missing_policy = spec$missing_policy[[1]],
-    confidence_level = spec$confidence_level[[1]]
+    confidence_level = spec$confidence_level[[1]],
+    bootstrap_replicates = spec$bootstrap_replicates[[1]],
+    permutation_replicates = spec$permutation_replicates[[1]],
+    resampling_seed = spec$resampling_seed[[1]],
+    bootstrap_successful = if (is.null(attr(output, "bootstrap_successful"))) 0L else
+      attr(output, "bootstrap_successful"),
+    permutation_successful = if (is.null(attr(output, "permutation_successful"))) 0L else
+      attr(output, "permutation_successful")
   )
 }
 
@@ -683,7 +811,9 @@ correlations_prototype <- function() {
     p_value = double(), p_adjusted = double(), adjust_method = character(),
     effect_measure = character(), scale = character(), n = integer(),
     method = character(), ci_method = character(), missing_policy = character(),
-    confidence_level = double()
+    confidence_level = double(), bootstrap_replicates = integer(),
+    permutation_replicates = integer(), resampling_seed = integer(),
+    bootstrap_successful = integer(), permutation_successful = integer()
   )
 }
 

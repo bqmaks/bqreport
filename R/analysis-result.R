@@ -67,6 +67,21 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         )
       } else {
         correlation_rows[[length(correlation_rows) + 1L]] <- output
+        resampling_metrics <- c(
+          bootstrap_successful = output$bootstrap_successful[[1]],
+          permutation_successful = output$permutation_successful[[1]]
+        )
+        requested_resampling <- c(
+          output$bootstrap_replicates[[1]], output$permutation_replicates[[1]]
+        ) > 0L
+        if (any(requested_resampling)) {
+          diagnostic_rows[[length(diagnostic_rows) + 1L]] <- tibble::tibble(
+            analysis_id = analysis_id,
+            metric = names(resampling_metrics)[requested_resampling],
+            value = as.numeric(resampling_metrics[requested_resampling]),
+            status = "observed", message = NA_character_
+          )
+        }
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       }
       next
@@ -1017,7 +1032,16 @@ provenance_row <- function(spec) {
     ) spec$correlation_comparator_id[[1]] else NA_character_,
     correlation_comparator_hash = if (
       "correlation_comparator_hash" %in% names(spec)
-    ) spec$correlation_comparator_hash[[1]] else NA_character_
+    ) spec$correlation_comparator_hash[[1]] else NA_character_,
+    bootstrap_replicates = if (
+      "bootstrap_replicates" %in% names(spec)
+    ) spec$bootstrap_replicates[[1]] else 0L,
+    permutation_replicates = if (
+      "permutation_replicates" %in% names(spec)
+    ) spec$permutation_replicates[[1]] else 0L,
+    resampling_seed = if (
+      "resampling_seed" %in% names(spec)
+    ) spec$resampling_seed[[1]] else NA_integer_
   )
 }
 
@@ -1114,7 +1138,8 @@ provenance_prototype <- function() {
     comparison_ci_method = character(), comparison_function_hash = character()
     , correlation_estimand = character(), correlation_adjustment_ids = list(),
     correlation_missing_policy = character(), correlation_comparator_id = character(),
-    correlation_comparator_hash = character()
+    correlation_comparator_hash = character(), bootstrap_replicates = integer(),
+    permutation_replicates = integer(), resampling_seed = integer()
   )
 }
 
