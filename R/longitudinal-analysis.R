@@ -56,15 +56,23 @@ binary_gee_model <- function(
 #' @param outcomes Registered longitudinal outcomes selected by name.
 #' @param method A longitudinal method specification.
 #' @param confidence_level Confidence level.
+#' @param comparisons Whether to compute change-from-baseline and
+#'   difference-in-changes estimands.
+#' @param adjust Multiplicity adjustment for the longitudinal contrast family.
 #' @return An `analysis_plan` with one row per outcome.
 #' @export
 plan_longitudinal <- function(
   .data, outcomes = tidyselect::everything(), method = lmm_model(),
-  confidence_level = 0.95
+  confidence_level = 0.95, comparisons = TRUE, adjust = "none"
 ) {
   check_bq_data(.data); check_confidence_level(confidence_level)
   if (!inherits(method, "longitudinal_method_spec")) {
     stop_invalid_longitudinal_design("`method` must be a longitudinal method specification.")
+  }
+  if (!is.logical(comparisons) || length(comparisons) != 1L || is.na(comparisons) ||
+      !is.character(adjust) || length(adjust) != 1L ||
+      !adjust %in% stats::p.adjust.methods) {
+    stop_invalid_longitudinal_design("Invalid longitudinal comparison settings.")
   }
   design <- designs(.data)
   registered <- resolve_outcomes(.data)
@@ -99,6 +107,8 @@ plan_longitudinal <- function(
     row$scale <- method$scale
     row$required_packages <- list(method$required_packages)
     row$method_object <- list(method); row$formula <- list(NULL)
+    row$longitudinal_comparisons <- comparisons
+    row$adjust_method <- adjust
     row
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -259,5 +269,93 @@ execute_longitudinal_analysis <- function(spec, data) {
         "The GEE backend reported a non-zero convergence code."
     ))
   }
-  list(model = fit, estimates = estimates, tests = tests, diagnostics = diagnostics)
+  contrasts <- if (isTRUE(spec$longitudinal_comparisons[[1]])) {
+    compute_longitudinal_contrasts(fit, covariance, spec, frame)
+  } else contrasts_prototype()
+  list(
+    model = fit, estimates = estimates, tests = tests,
+    contrasts = contrasts, diagnostics = diagnostics
+  )
+}
+
+compute_longitudinal_contrasts <- function(fit, covariance, spec, frame) {
+  time <- frame$..bq_time
+  time_levels <- if (is.factor(time)) levels(time) else sort(unique(time))
+  baseline <- spec$reshape_spec[[1]]$baseline
+  if (is.null(baseline)) baseline <- time_levels[[1]]
+  followup <- setdiff(time_levels, as.character(baseline))
+  if (!length(followup)) return(contrasts_prototype())
+  grouped <- "..bq_group" %in% names(frame)
+  groups <- if (grouped) levels(factor(frame$..bq_group)) else ".all"
+  terms_object <- if (inherits(fit, "merMod")) {
+    stats::delete.response(stats::terms(stats::formula(fit, fixed.only = TRUE)))
+  } else stats::delete.response(stats::terms(fit))
+  beta <- if (inherits(fit, "merMod")) lme4::fixef(fit) else stats::coef(fit)
+  cell_matrix <- function(group, time_value) {
+    row <- frame[1, , drop = FALSE]
+    row$..bq_id <- frame$..bq_id[[1]]
+    row$..bq_time <- if (is.factor(time)) {
+      factor(time_value, levels = levels(time))
+    } else as.numeric(time_value)
+    if (grouped) row$..bq_group <- factor(group, levels = groups)
+    matrix <- stats::model.matrix(terms_object, row)
+    matrix[, names(beta), drop = FALSE]
+  }
+  contrast_row <- function(vector, estimand, group, time_value, numerator, denominator) {
+    estimate <- drop(vector %*% beta)
+    std_error <- sqrt(drop(vector %*% covariance %*% t(vector)))
+    statistic <- estimate / std_error
+    critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+    conf_low <- estimate - critical * std_error
+    conf_high <- estimate + critical * std_error
+    exponentiate <- spec$scale[[1]] == "ratio"
+    effect_measure <- if (estimand == "difference_in_changes") {
+      if (exponentiate) "ratio_of_odds_ratios" else "difference_in_changes"
+    } else if (exponentiate) "odds_ratio_change" else "change_from_baseline"
+    if (exponentiate) {
+      estimate <- exp(estimate); conf_low <- exp(conf_low); conf_high <- exp(conf_high)
+    }
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$predictor[[1]],
+      contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
+      contrast = paste0(numerator, " - ", denominator),
+      numerator = numerator, denominator = denominator,
+      modifier = if (grouped) "group_by_time" else "time",
+      modifier_level = as.character(time_value),
+      inner_contrast = paste0(time_value, " - ", baseline),
+      outer_contrast = if (estimand == "difference_in_changes") {
+        paste0(group, " - ", groups[[1]])
+      } else NA_character_,
+      estimand = estimand, exponentiated = exponentiate,
+      estimate = as.numeric(estimate), std_error = as.numeric(std_error),
+      std_error_scale = spec$model_scale[[1]], conf_low = conf_low,
+      conf_high = conf_high,
+      p_value = 2 * stats::pnorm(abs(statistic), lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = spec$adjust_method[[1]],
+      effect_measure = effect_measure,
+      scale = if (exponentiate) "ratio" else spec$scale[[1]]
+    )
+  }
+  rows <- list()
+  for (group in groups) for (time_value in followup) {
+    change <- cell_matrix(group, time_value) - cell_matrix(group, baseline)
+    rows[[length(rows) + 1L]] <- contrast_row(
+      change, "change_from_baseline", group, time_value,
+      paste0(group, "@", time_value), paste0(group, "@", baseline)
+    )
+    if (grouped && group != groups[[1]]) {
+      reference_change <- cell_matrix(groups[[1]], time_value) -
+        cell_matrix(groups[[1]], baseline)
+      rows[[length(rows) + 1L]] <- contrast_row(
+        change - reference_change, "difference_in_changes", group, time_value,
+        paste0(group, " change"), paste0(groups[[1]], " change")
+      )
+    }
+  }
+  output <- vctrs::vec_rbind(!!!rows)
+  output$p_adjusted <- stats::p.adjust(
+    output$p_value, method = spec$adjust_method[[1]]
+  )
+  output
 }

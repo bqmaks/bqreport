@@ -8,7 +8,9 @@ plan_longitudinal(
   .data,
   outcomes = tidyselect::everything(),
   method = lmm_model(),
-  confidence_level = 0.95
+  confidence_level = 0.95,
+  comparisons = TRUE,
+  adjust = "none"
 )
 }
 \arguments{
@@ -19,6 +21,11 @@ plan_longitudinal(
 \item{method}{A longitudinal method specification.}
 
 \item{confidence_level}{Confidence level.}
+
+\item{comparisons}{Whether to compute change-from-baseline and
+difference-in-changes estimands.}
+
+\item{adjust}{Multiplicity adjustment for the longitudinal contrast family.}
 }
 \value{
 An \code{analysis_plan} with one row per outcome.

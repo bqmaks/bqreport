@@ -132,3 +132,37 @@ test_that("singular mixed models are exposed in diagnostics", {
   expect_equal(singular$value, 1)
   expect_identical(singular$status, "warning")
 })
+
+test_that("longitudinal models return change and difference-in-change contrasts", {
+  skip_if_not_installed("lme4")
+  set.seed(505)
+  raw <- tidyr::expand_grid(id = factor(1:24), visit = factor(c("V0", "V1", "V2"))) |>
+    dplyr::mutate(
+      arm = factor(ifelse(as.integer(id) <= 12, "A", "B")),
+      score = 5 + as.integer(visit) + 2 * (arm == "B") +
+        3 * (arm == "B") * (visit == "V2") + rep(rnorm(24), each = 3) +
+        rnorm(dplyr::n(), 0, 0.3)
+    )
+  data <- as_bq_data(raw) |>
+    set_longitudinal_design(
+      id, visit, group = arm, layout = "long", baseline = "V0"
+    ) |>
+    add_longitudinal_outcome(score_long, score)
+  result <- data |> plan_longitudinal(
+    score_long, lmm_model(), comparisons = TRUE, adjust = "holm"
+  ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  output <- contrasts(result)
+  difference <- output[output$estimand == "difference_in_changes" &
+    output$modifier_level == "V2", ]
+  fit <- models(result)[[1]]
+  interaction <- grep("armB:visitV2|..bq_groupB:..bq_timeV2",
+    names(lme4::fixef(fit)), value = TRUE)
+
+  expect_true(any(output$estimand == "change_from_baseline"))
+  expect_equal(difference$estimate, unname(lme4::fixef(fit)[interaction]))
+  expect_equal(difference$std_error,
+    sqrt(stats::vcov(fit)[interaction, interaction]))
+  expect_true(all(output$adjust_method == "holm"))
+})

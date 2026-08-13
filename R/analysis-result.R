@@ -100,6 +100,9 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         model_list[[analysis_id]] <- output$model
         estimate_rows[[length(estimate_rows) + 1L]] <- output$estimates
         test_rows[[length(test_rows) + 1L]] <- output$tests
+        if (nrow(output$contrasts)) {
+          contrast_rows[[length(contrast_rows) + 1L]] <- output$contrasts
+        }
         diagnostic_rows[[length(diagnostic_rows) + 1L]] <- output$diagnostics
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       }
