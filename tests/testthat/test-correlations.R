@@ -265,3 +265,73 @@ test_that("correlation interaction contract requires strata and Pearson method",
     class = "bq_error_invalid_correlation"
   )
 })
+
+test_that("custom correlation methods use a validated public contract", {
+  custom <- correlation_method(
+    id = "scaled_pearson", effect_measure = "scaled_pearson_correlation",
+    ci_method = "custom_normal", supports_partial = FALSE,
+    supports_interaction = FALSE,
+    compute = function(context) {
+      estimate <- stats::cor(context$x, context$y) / 2
+      correlation_output(
+        estimate = estimate, std_error = 0.1,
+        std_error_scale = "custom", conf_low = estimate - 0.2,
+        conf_high = estimate + 0.2, statistic = estimate / 0.1,
+        df = length(context$x) - 2, p_value = 0.25
+      )
+    }
+  )
+  data <- as_bq_data(tibble::tibble(x = 1:8, y = c(1, 3, 2, 5, 4, 7, 6, 8)))
+  plan <- plan_correlations(data, x, with = y, method = custom)
+  result <- plan |> validate_plan(data) |> run_analysis(data)
+
+  expect_equal(correlations(result)$estimate, stats::cor(data$x, data$y) / 2)
+  expect_identical(correlations(result)$method, "scaled_pearson")
+  expect_identical(
+    correlations(result)$effect_measure, "scaled_pearson_correlation"
+  )
+  expect_identical(result$provenance$function_id, "scaled_pearson")
+  expect_false(is.na(result$provenance$function_hash))
+})
+
+test_that("correlation capabilities are enforced before execution", {
+  method <- correlation_method(
+    id = "simple", effect_measure = "simple_correlation", ci_method = "none",
+    supports_partial = FALSE, supports_interaction = FALSE,
+    compute = function(context) correlation_output(
+      stats::cor(context$x, context$y), NA_real_, "none",
+      NA_real_, NA_real_, NA_real_, NA_real_, NA_real_
+    )
+  )
+  data <- as_bq_data(tibble::tibble(
+    x = 1:8, y = 2:9, z = 3:10, arm = rep(c("A", "B"), 4)
+  ))
+
+  expect_error(
+    plan_correlations(data, x, with = y, adjust_for = z, method = method),
+    class = "bq_error_invalid_correlation"
+  )
+  expect_error(
+    plan_correlations(
+      data, x, with = y, strata = arm, interaction_test = TRUE, method = method
+    ),
+    class = "bq_error_invalid_correlation"
+  )
+})
+
+test_that("malformed custom correlation output is collected as an issue", {
+  bad <- correlation_method(
+    id = "bad", effect_measure = "bad_correlation", ci_method = "none",
+    compute = function(context) tibble::tibble(estimate = 0)
+  )
+  data <- as_bq_data(tibble::tibble(x = 1:8, y = 2:9))
+  result <- data |>
+    plan_correlations(x, with = y, method = bad) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_equal(nrow(correlations(result)), 0L)
+  expect_true(any(
+    issues(result)$condition_class == "bq_error_invalid_correlation_output"
+  ))
+})

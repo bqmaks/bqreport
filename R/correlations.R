@@ -2,27 +2,104 @@
 #' @return A concrete `correlation_method_spec`.
 #' @export
 pearson_correlation <- function() {
-  new_correlation_method("pearson", "fisher_z")
+  new_correlation_method("pearson", "fisher_z", compute = function(context) {
+    compute_builtin_correlation(context, "pearson")
+  })
 }
 
 #' @rdname pearson_correlation
 #' @export
 spearman_correlation <- function() {
-  new_correlation_method("spearman", "fisher_z_approximation")
+  new_correlation_method(
+    "spearman", "fisher_z_approximation", supports_interaction = FALSE,
+    compute = function(context) compute_builtin_correlation(context, "spearman")
+  )
 }
 
 #' @rdname pearson_correlation
 #' @export
 kendall_correlation <- function() {
-  new_correlation_method("kendall", "normal_approximation")
+  new_correlation_method(
+    "kendall", "normal_approximation", supports_partial = FALSE,
+    supports_interaction = FALSE,
+    compute = function(context) compute_builtin_correlation(context, "kendall")
+  )
 }
 
-new_correlation_method <- function(id, ci_method) {
+new_correlation_method <- function(
+  id, ci_method, compute, effect_measure = paste0(id, "_correlation"),
+  scale = "minus_one_to_one", supports_partial = TRUE,
+  supports_strata = TRUE, supports_interaction = TRUE,
+  required_packages = "stats", function_hash = NA_character_
+) {
   structure(list(
     id = id, estimator = "correlation_coefficient", ci_method = ci_method,
-    effect_measure = paste0(id, "_correlation"), scale = "minus_one_to_one",
-    required_packages = "stats"
+    effect_measure = effect_measure, scale = scale,
+    required_packages = required_packages, compute = compute,
+    supports_partial = supports_partial, supports_strata = supports_strata,
+    supports_interaction = supports_interaction,
+    function_id = id, function_hash = function_hash
   ), class = "correlation_method_spec")
+}
+
+#' Construct a custom correlation method
+#' @param id Stable method identifier.
+#' @param compute Function accepting a read-only `correlation_context` and
+#'   returning a value constructed by `correlation_output()`.
+#' @param effect_measure Declared effect measure.
+#' @param scale Output scale.
+#' @param ci_method Confidence-interval method identifier.
+#' @param supports_partial,supports_strata,supports_interaction Declared method
+#'   capabilities checked before compilation.
+#' @param required_packages Optional packages checked during preflight.
+#' @return A validated `correlation_method_spec`.
+#' @export
+correlation_method <- function(
+  id, compute, effect_measure, scale = "minus_one_to_one", ci_method,
+  supports_partial = FALSE, supports_strata = TRUE,
+  supports_interaction = FALSE, required_packages = character()
+) {
+  for (value in list(id = id, effect_measure = effect_measure, scale = scale,
+                     ci_method = ci_method)) {
+    if (!is.character(value) || length(value) != 1L || is.na(value) || !nzchar(value)) {
+      stop_invalid_correlation("Correlation method identifiers must be non-empty strings.")
+    }
+  }
+  if (!is.function(compute)) stop_invalid_correlation("`compute` must be a function.")
+  capabilities <- c(supports_partial, supports_strata, supports_interaction)
+  if (!is.logical(capabilities) || length(capabilities) != 3L || anyNA(capabilities)) {
+    stop_invalid_correlation("Correlation method capabilities must be TRUE or FALSE.")
+  }
+  new_correlation_method(
+    id, ci_method, compute, effect_measure, scale, supports_partial,
+    supports_strata, supports_interaction, required_packages,
+    function_hash = digest::digest(compute)
+  )
+}
+
+#' Construct custom correlation output
+#' @param estimate,std_error,conf_low,conf_high,statistic,df,p_value Numeric scalars.
+#' @param std_error_scale Scale on which `std_error` is defined.
+#' @return A validated `correlation_method_output`.
+#' @export
+correlation_output <- function(
+  estimate, std_error, std_error_scale, conf_low, conf_high,
+  statistic, df, p_value
+) {
+  values <- c(estimate, std_error, conf_low, conf_high, statistic, df, p_value)
+  if (!is.numeric(values) || length(values) != 7L) {
+    stop_invalid_correlation_output("Correlation output values must be numeric scalars.")
+  }
+  if (!is.character(std_error_scale) || length(std_error_scale) != 1L ||
+      is.na(std_error_scale) || !nzchar(std_error_scale)) {
+    stop_invalid_correlation_output("`std_error_scale` must be one non-empty string.")
+  }
+  structure(list(
+    estimate = as.numeric(estimate), std_error = as.numeric(std_error),
+    std_error_scale = std_error_scale, conf_low = as.numeric(conf_low),
+    conf_high = as.numeric(conf_high), statistic = as.numeric(statistic),
+    df = as.numeric(df), p_value = as.numeric(p_value)
+  ), class = "correlation_method_output")
 }
 
 #' Compile a correlation analysis plan
@@ -76,15 +153,20 @@ plan_correlations <- function(
   if (interaction_test && !length(strata_names)) {
     stop_invalid_correlation("`interaction_test = TRUE` requires `strata`.")
   }
-  if (interaction_test && method$id != "pearson") {
-    stop_invalid_correlation(
-      "Correlation interaction tests currently require Pearson correlation."
-    )
+  if (interaction_test && !isTRUE(method$supports_interaction)) {
+    stop_invalid_correlation(paste0(
+      "Correlation method `", method$id, "` does not support interaction tests."
+    ))
   }
-  if (length(adjustment_names) && method$id == "kendall") {
-    stop_invalid_correlation(
-      "Partial Kendall correlation is not supported; choose Pearson or Spearman."
-    )
+  if (length(adjustment_names) && !isTRUE(method$supports_partial)) {
+    stop_invalid_correlation(paste0(
+      "Correlation method `", method$id, "` does not support partial correlation."
+    ))
+  }
+  if (length(strata_names) && !isTRUE(method$supports_strata)) {
+    stop_invalid_correlation(paste0(
+      "Correlation method `", method$id, "` does not support strata."
+    ))
   }
   overlap <- intersect(unique(c(left, right)), adjustment_names)
   if (length(overlap)) stop_invalid_correlation(paste0(
@@ -160,6 +242,8 @@ plan_correlations <- function(
     row$missing_policy <- missing
     row$adjust_method <- adjust
     row$required_packages <- list(method$required_packages)
+    row$function_id <- method$function_id
+    row$function_hash <- method$function_hash
     row$method_object <- list(method)
     row$formula <- list(NULL)
     row$validated <- FALSE
@@ -303,12 +387,51 @@ execute_correlation <- function(spec, data) {
   method <- spec$method[[1]]
   adjustment_ids <- spec$adjustment_ids[[1]]
   k <- length(adjustment_ids)
-  if (k) {
-    adjustment <- vapply(adjustment_ids, function(id) {
+  adjustment <- if (k) {
+    value <- vapply(adjustment_ids, function(id) {
       row <- match(id, registry$var_id)
       correlation_analysis_vector(data, spec, registry$name[[row]], id)[mask]
     }, numeric(length(x)))
-    if (is.null(dim(adjustment))) adjustment <- matrix(adjustment, ncol = 1L)
+    if (is.null(dim(value))) matrix(value, ncol = 1L) else value
+  } else matrix(numeric(), nrow = length(x), ncol = 0L)
+  context <- structure(list(
+    analysis_id = spec$analysis_id[[1]], x = x, y = y,
+    adjustment = adjustment, confidence_level = spec$confidence_level[[1]],
+    estimand = spec$estimand[[1]], method = method,
+    stratum_label = spec$stratum_label[[1]], missing_policy = spec$missing_policy[[1]]
+  ), class = "correlation_context")
+  method_object <- spec$method_object[[1]]
+  output <- method_object$compute(context)
+  output <- validate_correlation_method_output(output, method_object)
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]],
+    correlation_family_id = spec$correlation_family_id[[1]],
+    variable_x_id = spec$variable_x_id[[1]], variable_y_id = spec$variable_y_id[[1]],
+    variable_x = spec$variable_x[[1]], variable_y = spec$variable_y[[1]],
+    stratum_label = spec$stratum_label[[1]],
+    strata = list(spec$strata[[1]]),
+    correlation_interaction_id = spec$correlation_interaction_id[[1]],
+    interaction_test = spec$interaction_test[[1]],
+    transformation_x = transformation_id_for(spec, spec$variable_x_id[[1]]),
+    transformation_y = transformation_id_for(spec, spec$variable_y_id[[1]]),
+    adjustment_variables = list(spec$adjustment_variables[[1]]),
+    n_adjustment = as.integer(k), estimand = spec$estimand[[1]],
+    estimate = output$estimate, std_error = output$std_error,
+    std_error_scale = output$std_error_scale, conf_low = output$conf_low,
+    conf_high = output$conf_high, statistic = output$statistic,
+    df = output$df, p_value = output$p_value, p_adjusted = NA_real_,
+    adjust_method = spec$adjust_method[[1]], effect_measure = spec$effect_measure[[1]],
+    scale = spec$scale[[1]], n = as.integer(length(x)), method = method,
+    ci_method = spec$ci_method[[1]], missing_policy = spec$missing_policy[[1]],
+    confidence_level = spec$confidence_level[[1]]
+  )
+}
+
+compute_builtin_correlation <- function(context, method) {
+  x <- context$x; y <- context$y
+  adjustment <- context$adjustment
+  k <- ncol(adjustment)
+  if (k) {
     if (method == "spearman") {
       x <- rank(x); y <- rank(y)
       adjustment <- apply(adjustment, 2L, rank)
@@ -323,24 +446,20 @@ execute_correlation <- function(spec, data) {
   } else {
     test <- suppressWarnings(stats::cor.test(
       x, y, method = method, exact = FALSE,
-      conf.level = spec$confidence_level[[1]]
+      conf.level = context$confidence_level
     ))
     estimate <- unname(test$estimate)
     statistic <- as.numeric(test$statistic)
     df <- if (is.null(test$parameter)) NA_real_ else as.numeric(test$parameter)
     p_value <- test$p.value
   }
-  critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
-  if (method == "pearson") {
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  if (method %in% c("pearson", "spearman")) {
     std_error <- 1 / sqrt(length(x) - k - 3)
     z <- atanh(estimate)
     ci <- tanh(z + c(-1, 1) * critical * std_error)
-    se_scale <- "fisher_z"
-  } else if (method == "spearman") {
-    std_error <- 1 / sqrt(length(x) - k - 3)
-    z <- atanh(estimate)
-    ci <- tanh(z + c(-1, 1) * critical * std_error)
-    se_scale <- "fisher_z_approximation"
+    se_scale <- if (method == "pearson") "fisher_z" else
+      "fisher_z_approximation"
   } else {
     std_error <- if (is.finite(statistic) && statistic != 0) {
       abs(estimate / statistic)
@@ -348,28 +467,29 @@ execute_correlation <- function(spec, data) {
     ci <- pmax(-1, pmin(1, estimate + c(-1, 1) * critical * std_error))
     se_scale <- "kendall_tau"
   }
-  tibble::tibble(
-    analysis_id = spec$analysis_id[[1]],
-    correlation_family_id = spec$correlation_family_id[[1]],
-    variable_x_id = spec$variable_x_id[[1]], variable_y_id = spec$variable_y_id[[1]],
-    variable_x = spec$variable_x[[1]], variable_y = spec$variable_y[[1]],
-    stratum_label = spec$stratum_label[[1]],
-    strata = list(spec$strata[[1]]),
-    correlation_interaction_id = spec$correlation_interaction_id[[1]],
-    interaction_test = spec$interaction_test[[1]],
-    transformation_x = transformation_id_for(spec, spec$variable_x_id[[1]]),
-    transformation_y = transformation_id_for(spec, spec$variable_y_id[[1]]),
-    adjustment_variables = list(spec$adjustment_variables[[1]]),
-    n_adjustment = as.integer(k), estimand = spec$estimand[[1]],
-    estimate = as.numeric(estimate), std_error = as.numeric(std_error),
-    std_error_scale = se_scale, conf_low = as.numeric(ci[[1]]),
-    conf_high = as.numeric(ci[[2]]), statistic = as.numeric(statistic),
-    df = as.numeric(df), p_value = p_value, p_adjusted = NA_real_,
-    adjust_method = spec$adjust_method[[1]], effect_measure = spec$effect_measure[[1]],
-    scale = spec$scale[[1]], n = as.integer(length(x)), method = method,
-    ci_method = spec$ci_method[[1]], missing_policy = spec$missing_policy[[1]],
-    confidence_level = spec$confidence_level[[1]]
+  correlation_output(
+    estimate, std_error, se_scale, ci[[1]], ci[[2]], statistic, df, p_value
   )
+}
+
+validate_correlation_method_output <- function(output, method) {
+  if (!inherits(output, "correlation_method_output")) {
+    stop_invalid_correlation_output(
+      "A correlation method must return `correlation_output()`."
+    )
+  }
+  finite_or_na <- function(value) is.na(value) || is.finite(value)
+  if (!finite_or_na(output$estimate) || !finite_or_na(output$std_error) ||
+      !finite_or_na(output$conf_low) || !finite_or_na(output$conf_high) ||
+      !finite_or_na(output$p_value)) {
+    stop_invalid_correlation_output(
+      paste0("Correlation method `", method$id, "` returned non-finite output.")
+    )
+  }
+  if (!is.na(output$p_value) && (output$p_value < 0 || output$p_value > 1)) {
+    stop_invalid_correlation_output("Correlation p-value must lie in [0, 1].")
+  }
+  output
 }
 
 compute_correlation_interactions <- function(correlation_output) {
@@ -466,4 +586,10 @@ correlations_prototype <- function() {
 stop_invalid_correlation <- function(message) {
   stop(structure(list(message = message, call = sys.call(-1L)),
     class = c("bq_error_invalid_correlation", "error", "condition")))
+}
+
+stop_invalid_correlation_output <- function(message) {
+  stop(structure(list(message = message, call = sys.call(-1L)), class = c(
+    "bq_error_invalid_correlation_output", "error", "condition"
+  )))
 }
