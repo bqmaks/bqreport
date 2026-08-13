@@ -9,7 +9,8 @@ plan_descriptives(
   variables = tidyselect::everything(),
   groups = tidyselect::any_of(character()),
   overall = TRUE,
-  confidence_level = 0.95
+  confidence_level = 0.95,
+  functions = list()
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ plan_descriptives(
 \item{overall}{Whether to include statistics for the complete population.}
 
 \item{confidence_level}{Confidence level reserved for model-based providers.}
+
+\item{functions}{A list of explicit \code{descriptive_function} providers.}
 }
 \value{
 An \code{analysis_plan} tibble.

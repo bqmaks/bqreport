@@ -242,3 +242,193 @@ test_that("shape statistics are undefined for small or constant samples", {
     constant_out$value[constant_out$statistic %in% c("skewness", "kurtosis")]
   )))
 })
+
+test_that("descriptive_function validates its public contract", {
+  provider <- descriptive_function(
+    id = "trimmed_mean",
+    fields = "trimmed.mean",
+    types = c("continuous", "count"),
+    compute = function(context) {
+      tibble::tibble(
+        statistic = "trimmed.mean",
+        value = mean(context$values, trim = 0.1),
+        statistic_method = "mean_trim_0.1"
+      )
+    }
+  )
+
+  expect_s3_class(provider, "descriptive_function")
+  expect_identical(provider$id, "trimmed_mean")
+  expect_identical(provider$fields, "trimmed.mean")
+  expect_match(provider$function_hash, "^[[:xdigit:]]+$")
+
+  expect_error(
+    descriptive_function("bad", character(), function(context) NULL),
+    class = "bq_error_invalid_descriptive_function"
+  )
+  expect_error(
+    descriptive_function("bad", c("x", "x"), function(context) NULL),
+    class = "bq_error_invalid_descriptive_function"
+  )
+})
+
+test_that("custom descriptive functions run once per requested population", {
+  provider <- descriptive_function(
+    id = "trimmed_mean",
+    fields = "trimmed.mean",
+    types = "continuous",
+    compute = function(context) {
+      tibble::tibble(
+        statistic = "trimmed.mean",
+        value = mean(context$values, trim = 0.1),
+        statistic_method = "mean_trim_0.1"
+      )
+    }
+  )
+  data <- as_bq_data(tibble::tibble(
+    x = c(1, 2, 100, 4), arm = c("A", "A", "B", "B")
+  )) |>
+    set_predictor(x, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A") |>
+    set_descriptive_statistics(x, "{trimmed.mean}")
+
+  plan <- data |>
+    plan_descriptives(
+      x,
+      groups = arm,
+      overall = TRUE,
+      functions = list(provider)
+    ) |>
+    validate_plan(data)
+  result <- run_analysis(plan, data)
+  out <- descriptives(result)
+  custom <- out[out$statistic == "trimmed.mean", ]
+
+  expect_identical(plan$status, "ready")
+  expect_equal(nrow(custom), 3L)
+  expect_setequal(custom$group_level[!custom$overall], c("A", "B"))
+  expect_true(all(custom$source == "custom"))
+  expect_true(all(custom$method == "trimmed_mean"))
+  expect_true(all(custom$status == "observed"))
+  expect_true("trimmed_mean" %in% result$provenance$descriptive_function_ids[[1]])
+})
+
+test_that("custom descriptive output is validated strictly", {
+  malformed <- descriptive_function(
+    id = "malformed",
+    fields = "custom.value",
+    types = "continuous",
+    compute = function(context) {
+      tibble::tibble(statistic = "another.value", value = 1)
+    }
+  )
+  data <- as_bq_data(tibble::tibble(x = 1:5)) |>
+    set_predictor(x, type = "continuous") |>
+    set_descriptive_statistics(x, "{custom.value}")
+  result <- data |>
+    plan_descriptives(x, functions = list(malformed)) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_equal(nrow(descriptives(result)), 0L)
+  expect_true(any(
+    issues(result)$condition_class == "bq_error_invalid_descriptive_output"
+  ))
+})
+
+test_that("descriptive providers must uniquely own their fields", {
+  first <- descriptive_function(
+    "first", "custom.value",
+    function(context) tibble::tibble(
+      statistic = "custom.value", value = 1,
+      statistic_method = "first"
+    )
+  )
+  second <- descriptive_function(
+    "second", "custom.value",
+    function(context) tibble::tibble(
+      statistic = "custom.value", value = 2,
+      statistic_method = "second"
+    )
+  )
+  data <- as_bq_data(tibble::tibble(x = 1:5)) |>
+    set_predictor(x, type = "continuous") |>
+    set_descriptive_statistics(x, "{custom.value}")
+
+  expect_error(
+    plan_descriptives(data, x, functions = list(first, second)),
+    class = "bq_error_duplicate_descriptive_field"
+  )
+})
+
+test_that("Shapiro-Wilk provides diagnostic fields without changing metadata", {
+  data <- as_bq_data(tibble::tibble(x = c(-1.2, -0.4, 0, 0.2, 0.9, 1.4))) |>
+    set_predictor(x, type = "continuous") |>
+    set_descriptive_statistics(
+      x,
+      "W={shapiro.statistic}, p={shapiro.p.value}"
+    )
+  direct <- stats::shapiro.test(data$x)
+
+  result <- data |>
+    plan_descriptives(x, functions = list(shapiro_wilk())) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  out <- descriptives(result)
+
+  expect_equal(
+    out$value[out$statistic == "shapiro.statistic"], unname(direct$statistic)
+  )
+  expect_equal(
+    out$value[out$statistic == "shapiro.p.value"], direct$p.value
+  )
+  expect_true(all(out$source[out$method == "shapiro_wilk"] == "diagnostic"))
+  expect_identical(variables(data)$distribution, NA_character_)
+})
+
+test_that("Shapiro-Wilk records non-computable populations without fallback", {
+  data <- as_bq_data(tibble::tibble(x = c(1, 1, 1))) |>
+    set_predictor(x, type = "continuous") |>
+    set_descriptive_statistics(x, "{shapiro.p.value}")
+
+  out <- data |>
+    plan_descriptives(x, functions = list(shapiro_wilk())) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    descriptives()
+  shapiro <- out[out$method == "shapiro_wilk", ]
+
+  expect_true(all(is.na(shapiro$value)))
+  expect_true(all(shapiro$status == "not_computed"))
+  expect_true(all(grepl("constant", shapiro$message, ignore.case = TRUE)))
+})
+
+test_that("model-based fields are accepted only from an explicit provider", {
+  provider <- descriptive_function(
+    id = "explicit_estimate",
+    fields = c("estimate", "conf.low", "conf.high"),
+    types = "binary",
+    source = "model",
+    compute = function(context) {
+      estimate <- mean(context$values)
+      tibble::tibble(
+        statistic = c("estimate", "conf.low", "conf.high"),
+        value = c(estimate, estimate - 0.1, estimate + 0.1),
+        statistic_method = "declared_demo_estimator"
+      )
+    }
+  )
+  data <- as_bq_data(tibble::tibble(response = c(0, 1, 1))) |>
+    set_predictor(response, type = "binary", reference = 0) |>
+    set_descriptive_statistics(
+      response,
+      "{estimate} ({conf.low}; {conf.high})"
+    )
+
+  plan <- validate_plan(
+    plan_descriptives(data, response, functions = list(provider)), data
+  )
+  expect_identical(plan$status, "ready")
+  out <- descriptives(run_analysis(plan, data))
+  expect_true(all(out$source[out$method == "explicit_estimate"] == "model"))
+})

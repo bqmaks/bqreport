@@ -706,6 +706,9 @@ diagnose_builtin <- function(fit, spec) {
 provenance_row <- function(spec) {
   transformations <- spec$transformation_specs[[1]]
   transformations <- transformations[!vapply(transformations, is.null, logical(1))]
+  descriptive_functions <- if (
+    "descriptive_functions" %in% names(spec)
+  ) spec$descriptive_functions[[1]] else list()
   tibble::tibble(
     analysis_id = spec$analysis_id[[1]],
     method = spec$method[[1]],
@@ -722,7 +725,13 @@ provenance_row <- function(spec) {
     package_versions = list(c(stats = as.character(utils::packageVersion("stats")))),
     transformation_ids = list(vapply(transformations, `[[`, character(1), "id")),
     transformation_hashes = list(vapply(transformations, `[[`, character(1), "function_hash")),
-    transformation_parameters = list(lapply(transformations, `[[`, "parameters"))
+    transformation_parameters = list(lapply(transformations, `[[`, "parameters")),
+    descriptive_function_ids = list(vapply(
+      descriptive_functions, `[[`, character(1), "id"
+    )),
+    descriptive_function_hashes = list(vapply(
+      descriptive_functions, `[[`, character(1), "function_hash"
+    ))
   )
 }
 
@@ -796,7 +805,8 @@ provenance_prototype <- function() {
     function_id = character(), function_hash = character(), r_version = character(),
     required_packages = list(), package_versions = list()
     , transformation_ids = list(), transformation_hashes = list(),
-    transformation_parameters = list()
+    transformation_parameters = list(), descriptive_function_ids = list(),
+    descriptive_function_hashes = list()
   )
 }
 

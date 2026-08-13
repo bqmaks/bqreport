@@ -10,6 +10,7 @@
 #' @param groups Optional single grouping variable selected with tidyselect.
 #' @param overall Whether to include statistics for the complete population.
 #' @param confidence_level Confidence level reserved for model-based providers.
+#' @param functions A list of explicit `descriptive_function` providers.
 #'
 #' @return An `analysis_plan` tibble.
 #' @export
@@ -18,7 +19,8 @@ plan_descriptives <- function(
   variables = tidyselect::everything(),
   groups = tidyselect::any_of(character()),
   overall = TRUE,
-  confidence_level = 0.95
+  confidence_level = 0.95,
+  functions = list()
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
@@ -35,6 +37,7 @@ plan_descriptives <- function(
       "A descriptive plan without groups must include the overall population."
     )
   }
+  functions <- validate_descriptive_functions(functions)
 
   registry <- tibble::as_tibble(
     attr(.data, "variable_registry", exact = TRUE)
@@ -53,7 +56,7 @@ plan_descriptives <- function(
       match(variable_name, registry$name), , drop = FALSE
     ]
     descriptive_plan_row(
-      variable_spec, group_spec, overall, confidence_level
+      variable_spec, group_spec, overall, confidence_level, functions
     )
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -63,7 +66,8 @@ descriptive_plan_row <- function(
   variable_spec,
   group_spec,
   overall,
-  confidence_level
+  confidence_level,
+  functions
 ) {
   row <- analysis_plan_row(
     outcome_spec = variable_spec,
@@ -90,6 +94,7 @@ descriptive_plan_row <- function(
   row$overall <- overall
   row$descriptive_templates <- list(templates)
   row$requested_statistics <- list(descriptive_placeholders(templates))
+  row$descriptive_functions <- list(functions)
   row$outcome_id <- variable_spec$var_id[[1]]
   row$predictor_id <- NA_character_
   row$outcome <- variable_spec$name[[1]]
@@ -110,6 +115,24 @@ descriptive_plan_row <- function(
   row$method_object <- list(NULL)
   row$validated <- FALSE
   row
+}
+
+validate_descriptive_functions <- function(functions) {
+  if (!is.list(functions) ||
+      any(!vapply(functions, inherits, logical(1), "descriptive_function"))) {
+    stop_descriptive_function(
+      "`functions` must be a list of descriptive_function objects."
+    )
+  }
+  if (length(functions) == 0L) return(functions)
+  ids <- vapply(functions, `[[`, character(1), "id")
+  if (anyDuplicated(ids)) {
+    stop_descriptive_function("Descriptive function ids must be unique.")
+  }
+  fields <- unlist(lapply(functions, `[[`, "fields"), use.names = FALSE)
+  duplicates <- unique(fields[duplicated(fields)])
+  if (length(duplicates)) stop_duplicate_descriptive_field(duplicates)
+  functions
 }
 
 default_descriptive_templates <- function(type) {
@@ -167,22 +190,57 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
     "n", "n_missing", "mean", "sd", "median", "q1", "q3", "iqr",
     "min", "max", "mad", "skewness", "kurtosis", "N", "p"
   )
-  model_fields <- c(
-    "estimate", "std.error", "conf.low", "conf.high", "statistic",
-    "df", "p.value"
-  )
   requested <- plan$requested_statistics[[i]]
-  unknown <- setdiff(requested, c(observed_fields, model_fields))
+  providers <- plan$descriptive_functions[[i]]
+  provided_fields <- unlist(lapply(providers, `[[`, "fields"), use.names = FALSE)
+  unknown <- setdiff(requested, c(observed_fields, provided_fields))
   if (length(unknown)) {
-    issues <- c(issues, paste0(
-      "Unknown descriptive statistics: ", paste(unknown, collapse = ", "), "."
-    ))
+    model_fields <- c(
+      "estimate", "std.error", "conf.low", "conf.high", "statistic",
+      "df", "p.value"
+    )
+    missing_model <- intersect(unknown, model_fields)
+    other_unknown <- setdiff(unknown, model_fields)
+    if (length(missing_model)) {
+      issues <- c(issues, paste0(
+        "The descriptive plan has no explicit model-based provider for: ",
+        paste(missing_model, collapse = ", "), "."
+      ))
+    }
+    if (length(other_unknown)) {
+      issues <- c(issues, paste0(
+        "Unknown descriptive statistics: ",
+        paste(other_unknown, collapse = ", "), "."
+      ))
+    }
   }
-  requested_model_fields <- intersect(requested, model_fields)
-  if (length(requested_model_fields)) {
+  relevant_providers <- providers[vapply(providers, function(provider) {
+    length(intersect(provider$fields, requested)) > 0L
+  }, logical(1))]
+  if (!is.na(variable_row)) {
+    incompatible <- vapply(relevant_providers, function(provider) {
+      !registry$type[[variable_row]] %in% provider$types
+    }, logical(1))
+    if (any(incompatible)) {
+      issues <- c(issues, paste0(
+        "Descriptive providers do not support variable type `",
+        registry$type[[variable_row]], "`: ",
+        paste(vapply(relevant_providers[incompatible], `[[`, character(1), "id"), collapse = ", "),
+        "."
+      ))
+    }
+  }
+  required_packages <- unique(unlist(
+    lapply(relevant_providers, `[[`, "required_packages"), use.names = FALSE
+  ))
+  plan$required_packages[i] <- list(required_packages)
+  missing_packages <- required_packages[
+    !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+  ]
+  if (length(missing_packages)) {
     issues <- c(issues, paste0(
-      "The current descriptive plan has no model-based provider for: ",
-      paste(requested_model_fields, collapse = ", "), "."
+      "Missing packages required by descriptive providers: ",
+      paste(missing_packages, collapse = ", "), "."
     ))
   }
 
@@ -232,11 +290,47 @@ compute_observed_descriptives <- function(spec, data) {
   }
   rows <- lapply(populations, function(population) {
     values <- data[[variable_name]][population$mask]
-    if (type %in% c("continuous", "count")) {
+    observed <- if (type %in% c("continuous", "count")) {
       continuous_descriptive_rows(values, spec, population)
     } else {
       categorical_descriptive_rows(values, spec, population)
     }
+    custom <- compute_descriptive_functions(
+      spec, values, population, type
+    )
+    vctrs::vec_rbind(observed, custom)
+  })
+  vctrs::vec_rbind(!!!rows)
+}
+
+compute_descriptive_functions <- function(spec, values, population, type) {
+  requested <- spec$requested_statistics[[1]]
+  providers <- spec$descriptive_functions[[1]]
+  providers <- providers[vapply(providers, function(provider) {
+    length(intersect(provider$fields, requested)) > 0L
+  }, logical(1))]
+  if (length(providers) == 0L) return(descriptives_prototype())
+  missing <- special_missing_mask(values)
+  prepared <- analysis_vector(values)[!missing]
+  rows <- lapply(providers, function(provider) {
+    context <- structure(list(
+      analysis_id = spec$analysis_id[[1]],
+      variable_id = spec$variable_id[[1]],
+      variable = spec$variable[[1]],
+      variable_type = type,
+      values = prepared,
+      n_total = length(values),
+      n_analyzed = length(prepared),
+      n_missing = sum(missing),
+      group = spec$group[[1]],
+      group_level = population$group_level,
+      overall = population$overall,
+      confidence_level = spec$confidence_level[[1]],
+      spec = spec,
+      population = population
+    ), class = "descriptive_context")
+    output <- provider$compute(context)
+    normalize_descriptive_function_output(output, provider, context)
   })
   vctrs::vec_rbind(!!!rows)
 }
@@ -342,7 +436,12 @@ descriptive_rows <- function(
   statistic,
   value,
   numerator,
-  denominator
+  denominator,
+  statistic_method = descriptive_statistic_methods(statistic),
+  source = "observed",
+  method = "observed_descriptives",
+  status = "observed",
+  message = NA_character_
 ) {
   n <- length(statistic)
   tibble::tibble(
@@ -359,9 +458,11 @@ descriptive_rows <- function(
     value = as.numeric(value),
     numerator = as.integer(numerator),
     denominator = as.integer(denominator),
-    statistic_method = descriptive_statistic_methods(statistic),
-    source = rep("observed", n),
-    method = rep("observed_descriptives", n)
+    statistic_method = rep(statistic_method, length.out = n),
+    source = rep(source, length.out = n),
+    method = rep(method, length.out = n),
+    status = rep(status, length.out = n),
+    message = rep(message, length.out = n)
   )
 }
 
@@ -383,7 +484,8 @@ descriptives_prototype <- function() {
     group_id = character(), group = character(), group_level = character(),
     overall = logical(), level = character(), statistic = character(),
     value = double(), numerator = integer(), denominator = integer(),
-    statistic_method = character(), source = character(), method = character()
+    statistic_method = character(), source = character(), method = character(),
+    status = character(), message = character()
   )
 }
 
