@@ -537,7 +537,7 @@ compute_contrasts_of_contrasts <- function(fit, spec, data) {
         estimate <- sum(vector * beta)
         standard_error <- sqrt(drop(t(vector) %*% covariance %*% vector))
         statistic <- estimate / standard_error
-        if (inherits(fit, "glm")) {
+        if (inherits(fit, "glm") || inherits(fit, "coxph")) {
           critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
           p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
         } else {

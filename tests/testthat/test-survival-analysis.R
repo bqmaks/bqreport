@@ -151,3 +151,63 @@ test_that("Cox models honor multi-group comparison strategies", {
   )
   expect_true(all(contrasts(result)$effect_measure == "hazard_ratio"))
 })
+
+test_that("Cox interactions return ratios of hazard-ratio contrasts", {
+  skip_if_not_installed("survival")
+  set.seed(412)
+  raw <- tibble::tibble(
+    time = rexp(160, rate = rep(c(0.08, 0.12, 0.1, 0.2), each = 40)) + 0.1,
+    event = rbinom(160, 1, 0.8),
+    treatment = factor(rep(rep(c("P", "D"), each = 40), 2), levels = c("P", "D")),
+    sex = factor(rep(c("F", "M"), each = 80), levels = c("F", "M"))
+  )
+  data <- as_bq_data(raw) |>
+    set_predictor(treatment, type = "binary", reference = "P") |>
+    set_predictor(sex, type = "binary", reference = "F") |>
+    set_comparisons(
+      treatment,
+      contrast_of_contrasts(
+        sex, inner = against_reference("P"),
+        outer = against_reference("F"), exponentiate = TRUE
+      )
+    ) |>
+    add_survival_outcome(os, time, event, 1, "months")
+  plan <- data |>
+    plan_survival(os, treatment, effect_modifiers = sex) |>
+    validate_plan(data)
+  result <- run_analysis(plan, data)
+  output <- contrasts(result)
+  fit <- models(result)[[plan$analysis_id]]
+  interaction_name <- grep(":", names(stats::coef(fit)), value = TRUE)
+
+  expect_identical(plan$status, "ready")
+  expect_equal(output$estimate, exp(unname(stats::coef(fit)[interaction_name])))
+  expect_equal(output$std_error,
+    sqrt(stats::vcov(fit)[interaction_name, interaction_name]))
+  expect_identical(output$effect_measure, "ratio_of_hazard_ratios")
+  expect_identical(output$scale, "ratio")
+  expect_true("interaction" %in% tests(result)$test)
+})
+
+test_that("Cox interactions expose conditional hazard ratios", {
+  skip_if_not_installed("survival")
+  set.seed(413)
+  data <- as_bq_data(tibble::tibble(
+    time = rexp(120, 0.1) + 0.1, event = rbinom(120, 1, 0.75),
+    treatment = factor(rep(c("P", "D"), 60), levels = c("P", "D")),
+    sex = factor(rep(c("F", "M"), each = 60), levels = c("F", "M"))
+  )) |>
+    set_predictor(treatment, type = "binary", reference = "P") |>
+    set_predictor(sex, type = "binary", reference = "F") |>
+    set_comparisons(treatment, within_levels(sex)) |>
+    add_survival_outcome(os, time, event, 1, "months")
+  result <- data |>
+    plan_survival(os, treatment, effect_modifiers = sex) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  output <- contrasts(result)
+  expect_identical(output$modifier_level, c("F", "M"))
+  expect_true(all(output$effect_measure == "hazard_ratio"))
+  expect_true(all(output$scale == "ratio"))
+})

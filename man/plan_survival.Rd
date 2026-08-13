@@ -9,6 +9,7 @@ plan_survival(
   outcomes = tidyselect::everything(),
   predictors = all_predictors(),
   covariates = tidyselect::any_of(character()),
+  effect_modifiers = tidyselect::any_of(character()),
   confidence_level = 0.95,
   method = cox_model()
 )
@@ -21,6 +22,8 @@ plan_survival(
 \item{predictors}{Predictor columns selected with tidyselect syntax.}
 
 \item{covariates}{Optional adjustment covariates selected with tidyselect.}
+
+\item{effect_modifiers}{Optional variables interacting with the predictor.}
 
 \item{confidence_level}{Confidence level.}
 

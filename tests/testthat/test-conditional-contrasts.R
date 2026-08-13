@@ -147,3 +147,27 @@ test_that("contrast_of_contrasts validates its explicit contract", {
     class = "bq_error_invalid_comparison"
   )
 })
+
+test_that("preflight validates nested interaction contrast references", {
+  x <- as_bq_data(tibble::tibble(
+    y = 1:8, treatment = rep(c("P", "D"), 4),
+    sex = rep(c("F", "M"), each = 4)
+  )) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(treatment, type = "binary", reference = "P") |>
+    set_predictor(sex, type = "binary", reference = "F") |>
+    set_comparisons(
+      treatment,
+      contrast_of_contrasts(
+        sex, inner = against_reference("missing treatment"),
+        outer = against_reference("missing sex"), exponentiate = FALSE
+      )
+    )
+  plan <- validate_plan(plan_analysis(
+    x, predictors = treatment, effect_modifiers = sex
+  ), x)
+
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "missing treatment")
+  expect_match(plan$reason, "missing sex")
+})

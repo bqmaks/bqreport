@@ -21,6 +21,7 @@ cox_model <- function(ties = c("efron", "breslow", "exact")) {
 #' @param outcomes Composite survival outcomes selected with tidyselect syntax.
 #' @param predictors Predictor columns selected with tidyselect syntax.
 #' @param covariates Optional adjustment covariates selected with tidyselect.
+#' @param effect_modifiers Optional variables interacting with the predictor.
 #' @param confidence_level Confidence level.
 #' @param method A concrete Cox method specification.
 #'
@@ -31,6 +32,7 @@ plan_survival <- function(
   outcomes = tidyselect::everything(),
   predictors = all_predictors(),
   covariates = tidyselect::any_of(character()),
+  effect_modifiers = tidyselect::any_of(character()),
   confidence_level = 0.95,
   method = cox_model()
 ) {
@@ -54,6 +56,9 @@ plan_survival <- function(
   )
   covariate_selection <- tidyselect::eval_select(
     rlang::enquo(covariates), .data
+  )
+  modifier_selection <- tidyselect::eval_select(
+    rlang::enquo(effect_modifiers), .data
   )
   if (length(outcome_selection) == 0L || length(predictor_selection) == 0L) {
     return(empty_analysis_plan())
@@ -84,6 +89,9 @@ plan_survival <- function(
       contrast_ids = contrast_ids_for(.data, predictor_spec$var_id[[1]]),
       covariate_specs = variable_registry[
         match(names(covariate_selection), variable_registry$name), , drop = FALSE
+      ],
+      modifier_specs = variable_registry[
+        match(names(modifier_selection), variable_registry$name), , drop = FALSE
       ]
     )
     row$analysis_type <- "survival_regression"
@@ -108,6 +116,7 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
   )
   predictor_row <- match(plan$predictor_id[[i]], registry$var_id)
   covariate_rows <- match(plan$covariate_ids[[i]], registry$var_id)
+  modifier_rows <- match(plan$effect_modifier_ids[[i]], registry$var_id)
   if (is.na(outcome_row) || outcome_registry$status[[outcome_row]] != "valid") {
     issues <- c(issues, "The survival outcome or one of its components is absent.")
   }
@@ -116,6 +125,9 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
   }
   if (anyNA(covariate_rows)) {
     issues <- c(issues, "A covariate referenced by stable id is absent.")
+  }
+  if (anyNA(modifier_rows)) {
+    issues <- c(issues, "An effect modifier referenced by stable id is absent.")
   }
   if (!is.na(outcome_row) && !is.na(predictor_row)) {
     outcome <- outcome_registry[outcome_row, , drop = FALSE]
@@ -126,7 +138,9 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
     plan$time_unit[[i]] <- outcome$time_unit[[1]]
     plan$predictor[[i]] <- registry$name[[predictor_row]]
     covariate_names <- registry$name[covariate_rows[!is.na(covariate_rows)]]
+    modifier_names <- registry$name[modifier_rows[!is.na(modifier_rows)]]
     plan$covariates[[i]] <- covariate_names
+    plan$effect_modifiers[[i]] <- modifier_names
     time <- data[[outcome$time[[1]]]]
     event <- data[[outcome$event[[1]]]]
     predictor <- data[[registry$name[[predictor_row]]]]
@@ -134,6 +148,12 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
       !special_missing_mask(predictor)
     for (name in covariate_names) {
       complete <- complete & !special_missing_mask(data[[name]])
+    }
+    for (name in modifier_names) {
+      complete <- complete & !special_missing_mask(data[[name]])
+      if (n_distinct_values(analysis_vector(data[[name]])[complete]) < 2L) {
+        issues <- c(issues, paste0("Effect modifier `", name, "` has no variation."))
+      }
     }
     time_values <- analysis_vector(time)[complete]
     event_values <- analysis_vector(event)[complete]
@@ -203,10 +223,39 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
     formula_covariates <- model_formula_covariates(
       plan$covariate_ids[[i]], covariate_names, current_model_terms
     )
+    interaction_terms <- if (length(modifier_names)) {
+      paste0(plan$predictor[[i]], " * ", modifier_names)
+    } else character()
     plan$formula[[i]] <- stats::reformulate(
-      c(plan$predictor[[i]], formula_covariates),
+      c(if (length(interaction_terms)) interaction_terms else plan$predictor[[i]],
+        formula_covariates),
       response = "survival::Surv(..bq_time, ..bq_event)"
     )
+    comparison_registry <- contrasts(data)
+    conditional <- if (nrow(comparison_registry)) comparison_registry[
+        comparison_registry$contrast_id %in% plan$contrast_ids[[i]] &
+          comparison_registry$comparison_type %in%
+            c("within_levels", "contrast_of_contrasts"),
+        , drop = FALSE
+      ] else tibble::tibble()
+    for (comparison_i in seq_len(nrow(conditional))) {
+      comparison <- conditional$comparison_object[[comparison_i]]
+      modifier_name <- conditional$modifier[[comparison_i]]
+      if (!modifier_name %in% modifier_names) {
+        issues <- c(issues, "A contrast of contrasts references a non-fitted modifier.")
+        next
+      }
+      if (conditional$comparison_type[[comparison_i]] == "within_levels") next
+      if (comparison$inner$type == "against_reference" &&
+          !as.character(comparison$inner$reference) %in% as.character(predictor_values)) {
+        issues <- c(issues, "Inner comparison reference is absent from the predictor.")
+      }
+      modifier_values <- analysis_vector(data[[modifier_name]])[complete]
+      if (comparison$outer$type == "against_reference" &&
+          !as.character(comparison$outer$reference) %in% as.character(modifier_values)) {
+        issues <- c(issues, "Outer comparison reference is absent from the modifier.")
+      }
+    }
   }
   missing_packages <- plan$required_packages[[i]][
     !vapply(plan$required_packages[[i]], requireNamespace, logical(1), quietly = TRUE)
@@ -271,6 +320,20 @@ execute_cox_analysis <- function(spec, data) {
         frame[[term$output_names[[column]]]] <- basis[, column]
       }
     }
+  }
+  for (i in seq_along(spec$effect_modifiers[[1]])) {
+    name <- spec$effect_modifiers[[1]][[i]]
+    modifier_id <- spec$effect_modifier_ids[[1]][[i]]
+    original <- data[[name]]
+    value <- analysis_vector(original)
+    value[special_missing_mask(original)] <- NA
+    modifier_spec <- registry[match(modifier_id, registry$var_id), , drop = FALSE]
+    if (modifier_spec$type[[1]] %in% c("binary", "nominal", "ordinal")) {
+      value <- stats::relevel(
+        factor(value), ref = as.character(modifier_spec$reference[[1]])
+      )
+    }
+    frame[[name]] <- value
   }
   formula <- spec$formula[[1]]
   fit <- survival::coxph(
@@ -351,7 +414,31 @@ execute_cox_analysis <- function(spec, data) {
       method = "cox_proportional_hazards"
     )
   })
-  tests <- vctrs::vec_rbind(tests, !!!term_tests)
+  interaction_tests <- lapply(spec$effect_modifiers[[1]], function(modifier) {
+    retained_modifiers <- setdiff(spec$effect_modifiers[[1]], modifier)
+    retained_interactions <- if (length(retained_modifiers)) {
+      paste0(predictor_name, " * ", retained_modifiers)
+    } else character()
+    reduced_formula <- stats::reformulate(
+      c(predictor_name, formula_covariates, spec$effect_modifiers[[1]],
+        retained_interactions),
+      response = "survival::Surv(..bq_time, ..bq_event)"
+    )
+    reduced <- survival::coxph(
+      reduced_formula, data = frame, ties = spec$ties[[1]],
+      na.action = stats::na.omit
+    )
+    comparison <- stats::anova(reduced, fit, test = "Chisq")
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$predictor[[1]], test = "interaction",
+      statistic = unname(comparison$Chisq[[2]]),
+      df = unname(as.numeric(comparison$Df[[2]])),
+      p_value = unname(comparison$`Pr(>|Chi|)`[[2]]),
+      method = "cox_proportional_hazards"
+    )
+  })
+  tests <- vctrs::vec_rbind(tests, !!!term_tests, !!!interaction_tests)
   ph <- survival::cox.zph(fit)
   ph_table <- as.data.frame(ph$table)
   diagnostics <- tibble::tibble(
@@ -360,8 +447,13 @@ execute_cox_analysis <- function(spec, data) {
     message = NA_character_
   )
   model_contrasts <- compute_builtin_contrasts(fit, spec, data)
+  conditional_contrasts <- compute_conditional_contrasts(fit, spec, data)
+  interaction_contrasts <- compute_contrasts_of_contrasts(fit, spec, data)
   list(
     model = fit, estimates = estimates, tests = tests,
-    contrasts = model_contrasts, diagnostics = diagnostics
+    contrasts = vctrs::vec_rbind(
+      model_contrasts, conditional_contrasts, interaction_contrasts
+    ),
+    diagnostics = diagnostics
   )
 }

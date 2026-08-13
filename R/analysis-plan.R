@@ -656,6 +656,35 @@ validate_plan <- function(plan, data) {
           paste(unique(missing_comparison_references), collapse = ", "), "."
         ))
       }
+      nested <- contrasts(data)
+      nested <- if (nrow(nested)) nested[
+          nested$contrast_id %in% out$contrast_ids[[i]] &
+            nested$comparison_type == "contrast_of_contrasts", , drop = FALSE
+        ] else tibble::tibble()
+      for (comparison_i in seq_len(nrow(nested))) {
+        comparison <- nested$comparison_object[[comparison_i]]
+        inner_reference <- comparison$inner$reference
+        if (comparison$inner$type == "against_reference" &&
+            !as.character(inner_reference) %in% as.character(predictor_values)) {
+          issues <- c(issues, paste0(
+            "Inner comparison reference is absent from the analyzed predictor: ",
+            inner_reference, "."
+          ))
+        }
+        modifier_name <- nested$modifier[[comparison_i]]
+        modifier_original <- analysis_data[[modifier_name]]
+        modifier_values <- analysis_vector(modifier_original)[
+          !special_missing_mask(modifier_original)
+        ]
+        outer_reference <- comparison$outer$reference
+        if (comparison$outer$type == "against_reference" &&
+            !as.character(outer_reference) %in% as.character(modifier_values)) {
+          issues <- c(issues, paste0(
+            "Outer comparison reference is absent from the analyzed modifier: ",
+            outer_reference, "."
+          ))
+        }
+      }
     }
 
     selector <- out$selector_object[[i]]
