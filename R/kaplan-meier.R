@@ -10,6 +10,9 @@
 #'   between zero and one.
 #' @param rmst_tau Optional positive restriction time for restricted mean
 #'   survival time. RMST is not computed unless this estimand is explicit.
+#' @param estimates One or both of `survival` and `cumulative_risk`.
+#'   Cumulative risk is the single-event complement `1 - S(t)`; it is neither
+#'   cumulative hazard nor a competing-risks cumulative incidence function.
 #'
 #' @return An `analysis_plan` tibble.
 #' @export
@@ -20,7 +23,8 @@ plan_kaplan_meier <- function(
   times = NULL,
   confidence_level = 0.95,
   quantiles = NULL,
-  rmst_tau = NULL
+  rmst_tau = NULL,
+  estimates = "survival"
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
@@ -52,6 +56,14 @@ plan_kaplan_meier <- function(
       stop_invalid_survival_plan("`rmst_tau` must be one positive finite value.")
     }
     rmst_tau <- as.numeric(rmst_tau)
+  }
+  valid_estimates <- is.character(estimates) && length(estimates) > 0L &&
+    !anyNA(estimates) && !anyDuplicated(estimates) &&
+    all(estimates %in% c("survival", "cumulative_risk"))
+  if (!valid_estimates) {
+    stop_invalid_survival_plan(
+      "`estimates` must contain survival, cumulative_risk, or both."
+    )
   }
   group_selection <- tidyselect::eval_select(rlang::enquo(groups), .data)
   if (length(group_selection) > 1L) {
@@ -106,6 +118,7 @@ plan_kaplan_meier <- function(
     row$evaluation_times <- list(times)
     row$quantile_probabilities <- list(quantiles)
     row$rmst_tau <- if (is.null(rmst_tau)) NA_real_ else rmst_tau
+    row$survival_estimands <- list(estimates)
     row$predictor_id <- NA_character_
     row$predictor <- NA_character_
     row$formula <- list(NULL)
@@ -212,7 +225,15 @@ execute_kaplan_meier <- function(spec, data) {
   estimate_type <- if (is.null(requested_times)) {
     "survival_curve"
   } else "survival_probability"
-  curve <- km_summary_rows(curve_summary, spec, estimate_type, grouped)
+  survival_curve <- km_summary_rows(curve_summary, spec, estimate_type, grouped)
+  curve <- list()
+  if ("survival" %in% spec$survival_estimands[[1]]) {
+    curve[[length(curve) + 1L]] <- survival_curve
+  }
+  if ("cumulative_risk" %in% spec$survival_estimands[[1]]) {
+    curve[[length(curve) + 1L]] <- km_cumulative_risk_rows(survival_curve)
+  }
+  curve <- vctrs::vec_rbind(!!!curve)
   medians <- km_median_rows(fit, spec, grouped)
   quantile_rows <- km_quantile_rows(fit, spec, grouped)
   rmst_rows <- km_rmst_rows(fit, spec, grouped)
@@ -230,6 +251,22 @@ execute_kaplan_meier <- function(spec, data) {
     )
   } else tests_prototype()
   list(model = fit, estimates = estimates, tests = tests)
+}
+
+km_cumulative_risk_rows <- function(survival_rows) {
+  out <- survival_rows
+  lower <- 1 - survival_rows$conf_high
+  upper <- 1 - survival_rows$conf_low
+  out$estimate <- 1 - survival_rows$estimate
+  out$conf_low <- lower
+  out$conf_high <- upper
+  out$estimate_type <- ifelse(
+    survival_rows$estimate_type == "survival_curve",
+    "cumulative_risk_curve",
+    "cumulative_risk"
+  )
+  out$method <- "kaplan_meier_complement"
+  out
 }
 
 km_summary_rows <- function(summary_fit, spec, estimate_type, grouped) {

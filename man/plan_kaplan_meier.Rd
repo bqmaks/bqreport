@@ -11,7 +11,8 @@ plan_kaplan_meier(
   times = NULL,
   confidence_level = 0.95,
   quantiles = NULL,
-  rmst_tau = NULL
+  rmst_tau = NULL,
+  estimates = "survival"
 )
 }
 \arguments{
@@ -31,6 +32,10 @@ between zero and one.}
 
 \item{rmst_tau}{Optional positive restriction time for restricted mean
 survival time. RMST is not computed unless this estimand is explicit.}
+
+\item{estimates}{One or both of \code{survival} and \code{cumulative_risk}.
+Cumulative risk is the single-event complement \code{1 - S(t)}; it is neither
+cumulative hazard nor a competing-risks cumulative incidence function.}
 }
 \value{
 An \code{analysis_plan} tibble.

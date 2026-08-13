@@ -201,3 +201,55 @@ test_that("quantile and RMST estimands validate their domains", {
     class = "bq_error_invalid_survival_plan"
   )
 })
+
+test_that("Kaplan-Meier returns cumulative risk as one minus survival", {
+  skip_if_not_installed("survival")
+  data <- as_bq_data(tibble::tibble(
+    time = c(1, 2, 3, 4, 5), event = c(1, 0, 1, 0, 1)
+  )) |>
+    add_survival_outcome(os, time, event, 1, "months")
+  result <- data |>
+    plan_kaplan_meier(
+      os,
+      times = c(1, 3, 5),
+      estimates = c("survival", "cumulative_risk")
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  out <- survival_estimates(result)
+  survival <- out[out$estimate_type == "survival_probability", ]
+  risk <- out[out$estimate_type == "cumulative_risk", ]
+
+  expect_equal(risk$estimate, 1 - survival$estimate)
+  expect_equal(risk$std_error, survival$std_error)
+  expect_equal(risk$conf_low, 1 - survival$conf_high)
+  expect_equal(risk$conf_high, 1 - survival$conf_low)
+  expect_identical(risk$scale, rep("probability", nrow(risk)))
+  expect_identical(risk$method, rep("kaplan_meier_complement", nrow(risk)))
+})
+
+test_that("cumulative risk can be requested without duplicate survival rows", {
+  data <- as_bq_data(tibble::tibble(
+    time = c(1, 2, 3), event = c(1, 0, 1)
+  )) |>
+    add_survival_outcome(os, time, event, 1, "months")
+  result <- data |>
+    plan_kaplan_meier(os, estimates = "cumulative_risk") |>
+    validate_plan(data) |>
+    run_analysis(data)
+  out <- survival_estimates(result)
+
+  expect_false("survival_curve" %in% out$estimate_type)
+  expect_true("cumulative_risk_curve" %in% out$estimate_type)
+  expect_true("median_survival" %in% out$estimate_type)
+})
+
+test_that("Kaplan-Meier validates requested estimate scales", {
+  data <- as_bq_data(tibble::tibble(time = 1:3, event = c(1, 0, 1))) |>
+    add_survival_outcome(os, time, event, 1, "months")
+
+  expect_error(
+    plan_kaplan_meier(data, os, estimates = "cumulative_hazard"),
+    class = "bq_error_invalid_survival_plan"
+  )
+})
