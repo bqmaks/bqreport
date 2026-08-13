@@ -1,0 +1,251 @@
+# Package index
+
+## Data and metadata
+
+Create bq_data and configure variable semantics.
+
+- [`as_bq_data()`](https://bqmaks.github.io/bqreport/reference/as_bq_data.md)
+  : Convert data to a bq data object
+- [`apply_dictionary()`](https://bqmaks.github.io/bqreport/reference/apply_dictionary.md)
+  : Apply a variable metadata dictionary
+- [`variables()`](https://bqmaks.github.io/bqreport/reference/variables.md)
+  : Access the variable registry
+- [`outcomes()`](https://bqmaks.github.io/bqreport/reference/outcomes.md)
+  : Access the composite outcome registry
+- [`designs()`](https://bqmaks.github.io/bqreport/reference/designs.md)
+  : Access registered study designs
+- [`contrasts()`](https://bqmaks.github.io/bqreport/reference/contrasts.md)
+  : Access registered or computed contrasts
+- [`set_role()`](https://bqmaks.github.io/bqreport/reference/set_role.md)
+  : Add an analytical role to variables
+- [`remove_role()`](https://bqmaks.github.io/bqreport/reference/remove_role.md)
+  : Remove an analytical role from variables
+- [`set_outcome()`](https://bqmaks.github.io/bqreport/reference/set_outcome.md)
+  : Define outcome variables
+- [`set_predictor()`](https://bqmaks.github.io/bqreport/reference/set_predictor.md)
+  : Define predictor variables
+- [`set_coding()`](https://bqmaks.github.io/bqreport/reference/set_coding.md)
+  : Configure model coding
+- [`set_descriptive_statistics()`](https://bqmaks.github.io/bqreport/reference/set_descriptive_statistics.md)
+  : Configure descriptive statistic display templates
+- [`set_colors()`](https://bqmaks.github.io/bqreport/reference/set_colors.md)
+  : Set colors for categorical variables
+- [`variable_colors()`](https://bqmaks.github.io/bqreport/reference/variable_colors.md)
+  : Resolve colors registered for a categorical variable
+- [`set_transformation()`](https://bqmaks.github.io/bqreport/reference/set_transformation.md)
+  : Assign scalar transformations
+- [`transformation_function()`](https://bqmaks.github.io/bqreport/reference/transformation_function.md)
+  : Construct a custom scalar transformation
+- [`set_model_term()`](https://bqmaks.github.io/bqreport/reference/set_model_term.md)
+  : Configure a nonlinear model term
+- [`natural_spline()`](https://bqmaks.github.io/bqreport/reference/natural_spline.md)
+  : Construct a natural spline covariate term
+- [`polynomial_term()`](https://bqmaks.github.io/bqreport/reference/polynomial_term.md)
+  : Construct a polynomial covariate term
+- [`per()`](https://bqmaks.github.io/bqreport/reference/per.md)
+  [`log2_transform()`](https://bqmaks.github.io/bqreport/reference/per.md)
+  [`log10_transform()`](https://bqmaks.github.io/bqreport/reference/per.md)
+  : Scalar transformation specifications
+- [`set_weight()`](https://bqmaks.github.io/bqreport/reference/set_weight.md)
+  : Configure a regression weight
+- [`set_cluster()`](https://bqmaks.github.io/bqreport/reference/set_cluster.md)
+  : Configure an observation cluster
+
+## Selectors and planning
+
+Select metadata-aware variables and compile inspectable plans.
+
+- [`all_pairwise()`](https://bqmaks.github.io/bqreport/reference/all_pairwise.md)
+  : Compare all pairs of levels
+- [`where_role()`](https://bqmaks.github.io/bqreport/reference/where_role.md)
+  [`all_outcomes()`](https://bqmaks.github.io/bqreport/reference/where_role.md)
+  [`all_predictors()`](https://bqmaks.github.io/bqreport/reference/where_role.md)
+  [`all_groups()`](https://bqmaks.github.io/bqreport/reference/where_role.md)
+  : Select variables by analytical role
+- [`where_distribution()`](https://bqmaks.github.io/bqreport/reference/where_distribution.md)
+  [`where_gaussian()`](https://bqmaks.github.io/bqreport/reference/where_distribution.md)
+  [`where_skewed()`](https://bqmaks.github.io/bqreport/reference/where_distribution.md)
+  : Select variables by distribution profile
+- [`where_inferred()`](https://bqmaks.github.io/bqreport/reference/where_inferred.md)
+  : Select variables whose type was inferred
+- [`where_status()`](https://bqmaks.github.io/bqreport/reference/where_status.md)
+  : Select variables by registry status
+- [`where_type()`](https://bqmaks.github.io/bqreport/reference/where_type.md)
+  [`where_binary()`](https://bqmaks.github.io/bqreport/reference/where_type.md)
+  [`where_continuous()`](https://bqmaks.github.io/bqreport/reference/where_type.md)
+  [`where_ordinal()`](https://bqmaks.github.io/bqreport/reference/where_type.md)
+  [`where_nominal()`](https://bqmaks.github.io/bqreport/reference/where_type.md)
+  [`where_count()`](https://bqmaks.github.io/bqreport/reference/where_type.md)
+  : Select variables by analytical type
+- [`analysis_rules()`](https://bqmaks.github.io/bqreport/reference/analysis_rules.md)
+  : Define analysis method rules
+- [`plan_analysis()`](https://bqmaks.github.io/bqreport/reference/plan_analysis.md)
+  : Compile a univariable analysis plan
+- [`validate_plan()`](https://bqmaks.github.io/bqreport/reference/validate_plan.md)
+  : Validate an analysis plan against data
+- [`approve_plan()`](https://bqmaks.github.io/bqreport/reference/approve_plan.md)
+  : Approve reviewed analysis tasks
+- [`run_analysis()`](https://bqmaks.github.io/bqreport/reference/run_analysis.md)
+  : Run a validated analysis plan
+
+## Descriptive analysis
+
+- [`plan_descriptives()`](https://bqmaks.github.io/bqreport/reference/plan_descriptives.md)
+  : Compile a descriptive analysis plan
+- [`descriptive_function()`](https://bqmaks.github.io/bqreport/reference/descriptive_function.md)
+  : Construct a custom descriptive statistic provider
+- [`shapiro_wilk()`](https://bqmaks.github.io/bqreport/reference/shapiro_wilk.md)
+  : Configure the Shapiro–Wilk normality diagnostic
+- [`group_comparison_function()`](https://bqmaks.github.io/bqreport/reference/group_comparison_function.md)
+  : Construct a custom descriptive group comparison
+- [`group_comparison_output()`](https://bqmaks.github.io/bqreport/reference/group_comparison_output.md)
+  : Construct custom group comparison output
+- [`mean_difference()`](https://bqmaks.github.io/bqreport/reference/mean_difference.md)
+  [`standardized_mean_difference()`](https://bqmaks.github.io/bqreport/reference/mean_difference.md)
+  [`risk_difference()`](https://bqmaks.github.io/bqreport/reference/mean_difference.md)
+  [`risk_ratio()`](https://bqmaks.github.io/bqreport/reference/mean_difference.md)
+  [`odds_ratio()`](https://bqmaks.github.io/bqreport/reference/mean_difference.md)
+  : Construct built-in descriptive group comparisons
+
+## Models and contrasts
+
+- [`linear_model()`](https://bqmaks.github.io/bqreport/reference/linear_model.md)
+  [`logistic_model()`](https://bqmaks.github.io/bqreport/reference/linear_model.md)
+  : Construct built-in method specifications
+- [`poisson_model()`](https://bqmaks.github.io/bqreport/reference/poisson_model.md)
+  : Construct a Poisson count-regression specification
+- [`negative_binomial_model()`](https://bqmaks.github.io/bqreport/reference/negative_binomial_model.md)
+  : Construct a negative-binomial count-regression specification
+- [`ordinal_logistic_model()`](https://bqmaks.github.io/bqreport/reference/ordinal_logistic_model.md)
+  : Construct a proportional-odds ordinal logistic specification
+- [`multinomial_logistic_model()`](https://bqmaks.github.io/bqreport/reference/multinomial_logistic_model.md)
+  : Construct a baseline-category multinomial logistic specification
+- [`firth_logistic()`](https://bqmaks.github.io/bqreport/reference/firth_logistic.md)
+  : Construct Firth penalized logistic regression
+- [`separation_logistic()`](https://bqmaks.github.io/bqreport/reference/separation_logistic.md)
+  : Select ordinary or Firth logistic regression before fitting
+- [`set_comparisons()`](https://bqmaks.github.io/bqreport/reference/set_comparisons.md)
+  : Register target comparisons
+- [`against_reference()`](https://bqmaks.github.io/bqreport/reference/against_reference.md)
+  : Compare levels against a reference
+- [`all_pairwise()`](https://bqmaks.github.io/bqreport/reference/all_pairwise.md)
+  : Compare all pairs of levels
+- [`consecutive_comparisons()`](https://bqmaks.github.io/bqreport/reference/consecutive_comparisons.md)
+  : Compare consecutive ordered levels
+- [`against_global_mean()`](https://bqmaks.github.io/bqreport/reference/against_global_mean.md)
+  : Compare each level with the global mean
+- [`within_levels()`](https://bqmaks.github.io/bqreport/reference/within_levels.md)
+  : Estimate predictor effects within modifier levels
+- [`contrast_of_contrasts()`](https://bqmaks.github.io/bqreport/reference/contrast_of_contrasts.md)
+  : Compare conditional effects across modifier levels
+- [`comparison_function()`](https://bqmaks.github.io/bqreport/reference/comparison_function.md)
+  : Construct a custom comparison function
+
+## Correlations
+
+- [`plan_correlations()`](https://bqmaks.github.io/bqreport/reference/plan_correlations.md)
+  : Compile a correlation analysis plan
+- [`pearson_correlation()`](https://bqmaks.github.io/bqreport/reference/pearson_correlation.md)
+  [`spearman_correlation()`](https://bqmaks.github.io/bqreport/reference/pearson_correlation.md)
+  [`kendall_correlation()`](https://bqmaks.github.io/bqreport/reference/pearson_correlation.md)
+  : Construct correlation methods
+- [`weighted_pearson_correlation()`](https://bqmaks.github.io/bqreport/reference/weighted_pearson_correlation.md)
+  [`repeated_measures_correlation()`](https://bqmaks.github.io/bqreport/reference/weighted_pearson_correlation.md)
+  : Construct weighted and repeated-measures correlation methods
+- [`biweight_correlation()`](https://bqmaks.github.io/bqreport/reference/biweight_correlation.md)
+  [`polychoric_correlation()`](https://bqmaks.github.io/bqreport/reference/biweight_correlation.md)
+  [`tetrachoric_correlation()`](https://bqmaks.github.io/bqreport/reference/biweight_correlation.md)
+  : Construct robust and latent-correlation methods
+- [`resampled_correlation()`](https://bqmaks.github.io/bqreport/reference/resampled_correlation.md)
+  : Add bootstrap intervals and permutation inference to a correlation
+  method
+- [`correlation_method()`](https://bqmaks.github.io/bqreport/reference/correlation_method.md)
+  : Construct a custom correlation method
+- [`correlation_output()`](https://bqmaks.github.io/bqreport/reference/correlation_output.md)
+  : Construct custom correlation output
+- [`correlation_comparator()`](https://bqmaks.github.io/bqreport/reference/correlation_comparator.md)
+  : Construct a correlation comparator
+- [`correlation_comparison_output()`](https://bqmaks.github.io/bqreport/reference/correlation_comparison_output.md)
+  : Construct correlation comparison output
+
+## Longitudinal analysis
+
+- [`set_longitudinal_design()`](https://bqmaks.github.io/bqreport/reference/set_longitudinal_design.md)
+  : Register a longitudinal study design
+- [`add_longitudinal_outcome()`](https://bqmaks.github.io/bqreport/reference/add_longitudinal_outcome.md)
+  : Register a repeated longitudinal outcome
+- [`plan_longitudinal()`](https://bqmaks.github.io/bqreport/reference/plan_longitudinal.md)
+  : Compile a longitudinal analysis plan
+- [`lmm_model()`](https://bqmaks.github.io/bqreport/reference/lmm_model.md)
+  [`gee_model()`](https://bqmaks.github.io/bqreport/reference/lmm_model.md)
+  [`glmm_model()`](https://bqmaks.github.io/bqreport/reference/lmm_model.md)
+  [`binary_gee_model()`](https://bqmaks.github.io/bqreport/reference/lmm_model.md)
+  : Construct longitudinal model specifications
+
+## Survival and competing risks
+
+- [`add_survival_outcome()`](https://bqmaks.github.io/bqreport/reference/add_survival_outcome.md)
+  : Register a composite survival outcome
+- [`add_competing_risk_outcome()`](https://bqmaks.github.io/bqreport/reference/add_competing_risk_outcome.md)
+  : Register a composite competing-risk outcome
+- [`plan_kaplan_meier()`](https://bqmaks.github.io/bqreport/reference/plan_kaplan_meier.md)
+  : Compile a Kaplan–Meier analysis plan
+- [`plan_survival()`](https://bqmaks.github.io/bqreport/reference/plan_survival.md)
+  : Compile a Cox survival analysis plan
+- [`plan_cumulative_incidence()`](https://bqmaks.github.io/bqreport/reference/plan_cumulative_incidence.md)
+  : Compile an Aalen–Johansen cumulative-incidence plan
+- [`cox_model()`](https://bqmaks.github.io/bqreport/reference/cox_model.md)
+  : Construct a Cox proportional hazards method
+
+## Custom engines and selection
+
+- [`analysis_function()`](https://bqmaks.github.io/bqreport/reference/analysis_function.md)
+  : Construct an atomic custom analysis function
+- [`analysis_method()`](https://bqmaks.github.io/bqreport/reference/analysis_method.md)
+  : Construct a structured custom analysis method
+- [`analysis_output()`](https://bqmaks.github.io/bqreport/reference/analysis_output.md)
+  : Construct normalized output from a custom engine
+- [`method_selector()`](https://bqmaks.github.io/bqreport/reference/method_selector.md)
+  : Construct a data-dependent method selector
+- [`method_choice()`](https://bqmaks.github.io/bqreport/reference/method_choice.md)
+  : Record a method selector decision
+
+## Results and reporting
+
+- [`estimates()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`tests()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`diagnostics()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`issues()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`models()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`descriptives()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`survival_estimates()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`omnibus_effects()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`correlations()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  : Access analysis result components
+- [`tbl_descriptive()`](https://bqmaks.github.io/bqreport/reference/tbl_descriptive.md)
+  : Build a backend-independent descriptive table
+- [`tbl_regression()`](https://bqmaks.github.io/bqreport/reference/tbl_regression.md)
+  : Build a regression results table
+- [`tbl_comparison()`](https://bqmaks.github.io/bqreport/reference/tbl_comparison.md)
+  : Build a contrasts/comparisons table
+- [`tbl_correlation()`](https://bqmaks.github.io/bqreport/reference/tbl_correlation.md)
+  : Build a correlation results table
+- [`tbl_survival()`](https://bqmaks.github.io/bqreport/reference/tbl_survival.md)
+  : Build a survival estimands table
+- [`tbl_longitudinal()`](https://bqmaks.github.io/bqreport/reference/tbl_longitudinal.md)
+  : Build a longitudinal fixed-effects table
+- [`table_body()`](https://bqmaks.github.io/bqreport/reference/table_body.md)
+  [`table_header()`](https://bqmaks.github.io/bqreport/reference/table_body.md)
+  : Access a backend-independent table component
+- [`as_gt()`](https://bqmaks.github.io/bqreport/reference/as_gt.md) :
+  Render a bq table with gt
+- [`as_flextable()`](https://bqmaks.github.io/bqreport/reference/as_flextable.md)
+  : Render a bq table with flextable
+- [`plot_forest()`](https://bqmaks.github.io/bqreport/reference/plot_forest.md)
+  : Plot model estimates and confidence intervals
+- [`plot_survival()`](https://bqmaks.github.io/bqreport/reference/plot_survival.md)
+  : Plot survival or cumulative-incidence curves
+- [`plot_longitudinal()`](https://bqmaks.github.io/bqreport/reference/plot_longitudinal.md)
+  : Plot longitudinal change contrasts
+- [`plot_correlation()`](https://bqmaks.github.io/bqreport/reference/plot_correlation.md)
+  : Plot a correlation heatmap
