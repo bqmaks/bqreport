@@ -22,6 +22,7 @@ Imports:
 Suggests:
     detectseparation,
     logistf,
+    polycor,
     sandwich,
     survival,
     testthat (>= 3.0.0)

@@ -55,6 +55,39 @@ repeated_measures_correlation <- function() {
   method
 }
 
+#' Construct robust and latent-correlation methods
+#' @return A concrete `correlation_method_spec`.
+#' @export
+biweight_correlation <- function() {
+  new_correlation_method(
+    "biweight", "resampling_recommended", compute = compute_biweight_correlation,
+    effect_measure = "biweight_midcorrelation", supports_partial = FALSE,
+    supports_interaction = FALSE
+  )
+}
+
+#' @rdname biweight_correlation
+#' @export
+polychoric_correlation <- function() {
+  method <- new_correlation_method(
+    "polychoric", "backend_standard_error", compute = compute_polychoric_correlation,
+    effect_measure = "polychoric_correlation", supports_partial = FALSE,
+    supports_interaction = FALSE, required_packages = "polycor"
+  )
+  method$input_type <- "ordered_categorical"
+  method
+}
+
+#' @rdname biweight_correlation
+#' @export
+tetrachoric_correlation <- function() {
+  method <- polychoric_correlation()
+  method$id <- method$function_id <- "tetrachoric"
+  method$effect_measure <- "tetrachoric_correlation"
+  method$input_type <- "binary_categorical"
+  method
+}
+
 new_correlation_method <- function(
   id, ci_method, compute, effect_measure = paste0(id, "_correlation"),
   scale = "minus_one_to_one", supports_partial = TRUE,
@@ -69,6 +102,7 @@ new_correlation_method <- function(
     supports_interaction = supports_interaction,
     supports_weights = FALSE, supports_id = FALSE,
     requires_weights = FALSE, requires_id = FALSE,
+    input_type = "numeric",
     function_id = id, function_hash = function_hash
   ), class = "correlation_method_spec")
 }
@@ -510,6 +544,13 @@ validate_correlation_task <- function(plan, i, data, registry) {
   x_row <- match(plan$variable_x_id[[i]], registry$var_id)
   y_row <- match(plan$variable_y_id[[i]], registry$var_id)
   issues <- character()
+  missing_packages <- plan$required_packages[[i]][
+    !vapply(plan$required_packages[[i]], requireNamespace, logical(1), quietly = TRUE)
+  ]
+  if (length(missing_packages)) issues <- c(issues, paste0(
+    "Missing packages required by correlation method: ",
+    paste(missing_packages, collapse = ", "), "."
+  ))
   stratum_rows <- match(plan$stratum_ids[[i]], registry$var_id)
   if (anyNA(stratum_rows)) {
     issues <- c(issues, "A correlation stratification variable is absent.")
@@ -623,6 +664,24 @@ correlation_analysis_vector <- function(data, spec, name, id) {
     original <- data[[name]]
     value <- analysis_vector(original)
     value[special_missing_mask(original)] <- NA
+    input_type <- spec$method_object[[1]]$input_type
+    if (input_type %in% c("ordered_categorical", "binary_categorical")) {
+      if (!is.factor(original) && !is.numeric(value) && !is.character(value)) {
+        stop_invalid_correlation(paste0(
+          "Correlation variable `", name, "` must be ordered categorical."
+        ))
+      }
+      value <- ordered(value)
+      if (input_type == "binary_categorical" && nlevels(value) != 2L) {
+        stop_invalid_correlation(paste0(
+          "Tetrachoric variable `", name, "` must have two levels."
+        ))
+      }
+      if (!is.null(spec$transformation_specs[[1]][[id]])) {
+        stop_invalid_correlation("Categorical correlation inputs cannot be transformed.")
+      }
+      return(value)
+    }
     if (!is.numeric(value)) stop_invalid_correlation(paste0(
       "Correlation variable `", name, "` must be numeric."
     ))
@@ -778,6 +837,40 @@ compute_repeated_measures_correlation <- function(context) {
   )
   attr(output, "n_subjects") <- as.integer(n_subjects)
   output
+}
+
+compute_biweight_correlation <- function(context) {
+  biweight_values <- function(value) {
+    center <- stats::median(value)
+    scale <- stats::mad(value, center = center, constant = 1)
+    if (!is.finite(scale) || scale == 0) {
+      stop_invalid_correlation_output("Biweight correlation requires positive MAD.")
+    }
+    u <- (value - center) / (9 * scale)
+    weight <- (1 - u^2)^2
+    weight[abs(u) >= 1] <- 0
+    (value - center) * weight
+  }
+  x <- biweight_values(context$x); y <- biweight_values(context$y)
+  estimate <- sum(x * y) / sqrt(sum(x^2) * sum(y^2))
+  correlation_output(
+    estimate, NA_real_, "biweight", NA_real_, NA_real_, NA_real_, NA_real_,
+    NA_real_
+  )
+}
+
+compute_polychoric_correlation <- function(context) {
+  fit <- polycor::polychor(context$x, context$y, ML = TRUE, std.err = TRUE)
+  estimate <- as.numeric(fit$rho)
+  std_error <- sqrt(as.numeric(fit$var))
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  statistic <- estimate / std_error
+  correlation_output(
+    estimate, std_error, "latent_correlation",
+    max(-1, estimate - critical * std_error),
+    min(1, estimate + critical * std_error), statistic, NA_real_,
+    2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
+  )
 }
 
 compute_builtin_correlation <- function(context, method) {

@@ -511,3 +511,39 @@ test_that("weighted and repeated correlation requirements fail in preflight", {
     class = "bq_error_invalid_correlation"
   )
 })
+
+test_that("biweight correlation is robust to a bivariate outlier", {
+  data <- as_bq_data(tibble::tibble(
+    x = c(1:20, 100), y = c(1:20, -100)
+  ))
+  output <- data |>
+    plan_correlations(x, with = y, method = biweight_correlation()) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+
+  expect_true(output$estimate > 0.95)
+  expect_true(output$estimate > stats::cor(data$x, data$y))
+  expect_identical(output$effect_measure, "biweight_midcorrelation")
+  expect_true(is.na(output$p_value))
+})
+
+test_that("polychoric methods declare categorical input and optional backend", {
+  polychoric <- polychoric_correlation()
+  tetrachoric <- tetrachoric_correlation()
+  expect_identical(polychoric$input_type, "ordered_categorical")
+  expect_identical(tetrachoric$input_type, "binary_categorical")
+  expect_identical(polychoric$required_packages, "polycor")
+
+  data <- as_bq_data(tibble::tibble(
+    x = ordered(rep(1:3, 6)), y = ordered(rep(c(1, 2, 3, 2, 1, 3), 3))
+  )) |>
+    set_predictor(x, type = "ordinal") |>
+    set_outcome(y, type = "ordinal")
+  plan <- plan_correlations(data, x, with = y, method = polychoric) |>
+    validate_plan(data)
+  if (!requireNamespace("polycor", quietly = TRUE)) {
+    expect_identical(plan$status, "invalid")
+    expect_match(plan$reason, "polycor")
+  }
+})
