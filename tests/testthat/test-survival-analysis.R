@@ -238,3 +238,68 @@ test_that("Cox interactions expose conditional hazard ratios", {
   expect_true(all(output$effect_measure == "hazard_ratio"))
   expect_true(all(output$scale == "ratio"))
 })
+
+test_that("Cox baseline and subgroup strategies are explicit", {
+  method <- cox_model(
+    ties = "efron", baseline = common_baseline(),
+    subgroup = no_subgroup_analysis()
+  )
+  expect_identical(method$baseline$type, "common")
+  expect_identical(method$subgroup$type, "none")
+})
+
+test_that("joint and separate Cox subgroup strategies are distinct", {
+  skip_if_not_installed("survival")
+  set.seed(932)
+  raw <- tibble::tibble(
+    time = rexp(240, rep(c(0.05, 0.2, 0.1, 0.13), each = 60)) + 0.1,
+    event = rbinom(240, 1, 0.8),
+    treatment = factor(rep(rep(c("P", "D"), each = 60), 2), levels = c("P", "D")),
+    sex = factor(rep(c("F", "M"), each = 120), levels = c("F", "M")),
+    center = factor(rep(c("C1", "C2"), 120))
+  )
+  data <- as_bq_data(raw) |>
+    set_predictor(treatment, type = "binary", reference = "P") |>
+    set_predictor(sex, type = "binary", reference = "F") |>
+    set_role(center, "stratum") |>
+    add_survival_outcome(os, time, event, 1, "months")
+
+  joint <- data |>
+    plan_survival(
+      os, treatment,
+      method = cox_model(
+        ties = "efron", baseline = stratified_baseline(by = center),
+        subgroup = joint_interaction(modifier = sex)
+      )
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  separate <- data |>
+    plan_survival(
+      os, treatment,
+      method = cox_model(
+        ties = "efron", baseline = stratified_baseline(by = center),
+        subgroup = separate_subgroup_models(by = sex)
+      )
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  joint_model <- models(joint)[[joint$plan$analysis_id]]
+  separate_models <- models(separate)[[separate$plan$analysis_id]]
+  expect_s3_class(joint_model, "coxph")
+  expect_s3_class(separate_models, "cox_subgroup_fits")
+  expect_length(separate_models$fits, 2L)
+  expect_true(all(contrasts(joint)$fit_strategy == "joint_interaction"))
+  expect_true(all(contrasts(separate)$fit_strategy == "separate_subgroup_models"))
+  expect_true("interaction" %in% tests(joint)$test)
+  expect_false("interaction" %in% tests(separate)$test)
+  expect_false(isTRUE(all.equal(
+    contrasts(joint)$estimate, contrasts(separate)$estimate
+  )))
+  expect_identical(joint$provenance$baseline_strategy, "stratified")
+  expect_identical(joint$provenance$subgroup_strategy, "joint_interaction")
+  expect_identical(
+    separate$provenance$subgroup_strategy, "separate_subgroup_models"
+  )
+})

@@ -1,10 +1,23 @@
 #' Construct a Cox proportional hazards method
 #'
 #' @param ties Ties method passed to `survival::coxph()`.
+#' @param baseline Baseline-hazard strategy.
+#' @param subgroup Subgroup-fitting strategy.
 #' @return A concrete method specification.
 #' @export
-cox_model <- function(ties = c("efron", "breslow", "exact")) {
+cox_model <- function(
+  ties = c("efron", "breslow", "exact"),
+  baseline = common_baseline(), subgroup = no_subgroup_analysis()
+) {
   ties <- match.arg(ties)
+  if (!inherits(baseline, "cox_baseline_strategy")) {
+    stop_plan("`baseline` must be a Cox baseline strategy.",
+      "bq_error_invalid_method_contract")
+  }
+  if (!inherits(subgroup, "cox_subgroup_strategy")) {
+    stop_plan("`subgroup` must be a Cox subgroup strategy.",
+      "bq_error_invalid_method_contract")
+  }
   method <- new_method_spec(
     "cox_proportional_hazards", "coxph", "partial_likelihood", "wald",
     NA_character_, NA_character_, "hazard_ratio",
@@ -12,7 +25,47 @@ cox_model <- function(ties = c("efron", "breslow", "exact")) {
     required_packages = "survival", exponentiate = TRUE
   )
   method$ties <- ties
+  method$baseline <- baseline
+  method$subgroup <- subgroup
   method
+}
+
+#' Construct Cox baseline-hazard strategies
+#' @return A `cox_baseline_strategy`.
+#' @export
+common_baseline <- function() {
+  structure(list(type = "common"), class = "cox_baseline_strategy")
+}
+
+#' @rdname common_baseline
+#' @param by One or more columns defining separate baseline hazards.
+#' @export
+stratified_baseline <- function(by) {
+  structure(list(type = "stratified", by_quo = rlang::enquo(by)),
+    class = "cox_baseline_strategy")
+}
+
+#' Construct Cox subgroup-fitting strategies
+#' @return A `cox_subgroup_strategy`.
+#' @export
+no_subgroup_analysis <- function() {
+  structure(list(type = "none"), class = "cox_subgroup_strategy")
+}
+
+#' @rdname no_subgroup_analysis
+#' @param modifier A single effect-modifier column.
+#' @export
+joint_interaction <- function(modifier) {
+  structure(list(type = "joint_interaction", by_quo = rlang::enquo(modifier)),
+    class = "cox_subgroup_strategy")
+}
+
+#' @rdname no_subgroup_analysis
+#' @param by A single column defining independently fitted subsets.
+#' @export
+separate_subgroup_models <- function(by) {
+  structure(list(type = "separate_subgroup_models", by_quo = rlang::enquo(by)),
+    class = "cox_subgroup_strategy")
 }
 
 #' Compile a Cox survival analysis plan
@@ -60,6 +113,19 @@ plan_survival <- function(
   modifier_selection <- tidyselect::eval_select(
     rlang::enquo(effect_modifiers), .data
   )
+  baseline_selection <- if (method$baseline$type == "stratified") {
+    tidyselect::eval_select(method$baseline$by_quo, .data)
+  } else integer()
+  subgroup_selection <- if (method$subgroup$type != "none") {
+    tidyselect::eval_select(method$subgroup$by_quo, .data)
+  } else integer()
+  if (length(subgroup_selection) > 1L) {
+    stop_plan("A Cox subgroup strategy requires exactly one column.",
+      "bq_error_invalid_method_contract")
+  }
+  if (method$subgroup$type == "joint_interaction") {
+    modifier_selection <- subgroup_selection
+  }
   if (length(outcome_selection) == 0L || length(predictor_selection) == 0L) {
     return(empty_analysis_plan())
   }
@@ -101,8 +167,23 @@ plan_survival <- function(
     row$event_value <- outcome_spec$event_value
     row$time_unit <- outcome_spec$time_unit
     row$ties <- method$ties
+    row$baseline_strategy <- method$baseline$type
+    row$baseline_ids <- list(variable_registry$var_id[
+      match(names(baseline_selection), variable_registry$name)
+    ])
+    row$baseline_variables <- list(names(baseline_selection))
+    row$subgroup_strategy <- method$subgroup$type
+    row$subgroup_id <- if (length(subgroup_selection)) variable_registry$var_id[
+      match(names(subgroup_selection), variable_registry$name)
+    ] else NA_character_
+    row$subgroup_variable <- if (length(subgroup_selection)) {
+      names(subgroup_selection)[[1]]
+    } else NA_character_
     row$formula <- list(NULL)
-    row <- refine_analysis_id(row, row$survival_outcome_id[[1]])
+    row <- refine_analysis_id(
+      row, row$survival_outcome_id[[1]], row$baseline_strategy[[1]],
+      row$baseline_ids[[1]], row$subgroup_strategy[[1]], row$subgroup_id[[1]]
+    )
     row
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -140,6 +221,12 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
     plan$predictor[[i]] <- registry$name[[predictor_row]]
     covariate_names <- registry$name[covariate_rows[!is.na(covariate_rows)]]
     modifier_names <- registry$name[modifier_rows[!is.na(modifier_rows)]]
+    baseline_rows <- match(plan$baseline_ids[[i]], registry$var_id)
+    if (anyNA(baseline_rows)) {
+      issues <- c(issues, "A baseline-stratification variable is absent.")
+    }
+    baseline_names <- registry$name[baseline_rows[!is.na(baseline_rows)]]
+    plan$baseline_variables[[i]] <- baseline_names
     plan$covariates[[i]] <- covariate_names
     plan$effect_modifiers[[i]] <- modifier_names
     time <- data[[outcome$time[[1]]]]
@@ -155,6 +242,9 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
       if (n_distinct_values(analysis_vector(data[[name]])[complete]) < 2L) {
         issues <- c(issues, paste0("Effect modifier `", name, "` has no variation."))
       }
+    }
+    for (name in baseline_names) {
+      complete <- complete & !special_missing_mask(data[[name]])
     }
     time_values <- analysis_vector(time)[complete]
     event_values <- analysis_vector(event)[complete]
@@ -227,9 +317,12 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
     interaction_terms <- if (length(modifier_names)) {
       paste0(plan$predictor[[i]], " * ", modifier_names)
     } else character()
+    baseline_terms <- if (length(baseline_names)) {
+      paste0("strata(", baseline_names, ")")
+    } else character()
     plan$formula[[i]] <- stats::reformulate(
       c(if (length(interaction_terms)) interaction_terms else plan$predictor[[i]],
-        formula_covariates),
+        formula_covariates, baseline_terms),
       response = "survival::Surv(..bq_time, ..bq_event)"
     )
     comparison_registry <- contrasts(data)
@@ -336,6 +429,20 @@ execute_cox_analysis <- function(spec, data) {
     }
     frame[[name]] <- value
   }
+  for (name in spec$baseline_variables[[1]]) {
+    original <- data[[name]]
+    value <- analysis_vector(original)
+    value[special_missing_mask(original)] <- NA
+    frame[[name]] <- factor(value)
+  }
+  if (identical(spec$subgroup_strategy[[1]], "separate_subgroup_models")) {
+    subgroup_name <- spec$subgroup_variable[[1]]
+    original <- data[[subgroup_name]]
+    subgroup <- analysis_vector(original)
+    subgroup[special_missing_mask(original)] <- NA
+    frame[[subgroup_name]] <- factor(subgroup)
+    return(execute_separate_cox_subgroups(spec, frame, predictor_name))
+  }
   formula <- spec$formula[[1]]
   fit <- survival::coxph(
     formula, data = frame, ties = spec$ties[[1]], na.action = stats::na.omit,
@@ -370,10 +477,23 @@ execute_cox_analysis <- function(spec, data) {
   formula_covariates <- model_formula_covariates(
     spec$covariate_ids[[1]], spec$covariates[[1]], spec$model_term_specs[[1]]
   )
+  baseline_terms <- if (length(spec$baseline_variables[[1]])) {
+    paste0("strata(", spec$baseline_variables[[1]], ")")
+  } else character()
   if (is.factor(frame[[predictor_name]])) {
-    reduced_formula <- if (length(formula_covariates)) {
+    if (length(baseline_terms)) {
+      indices <- grep(paste0("^", predictor_name), names(beta))
+      coefficients <- beta[indices]
+      covariance <- stats::vcov(fit)[indices, indices, drop = FALSE]
+      omnibus_statistic <- drop(t(coefficients) %*% solve(covariance, coefficients))
+      omnibus_df <- length(indices)
+      omnibus_p <- stats::pchisq(
+        omnibus_statistic, omnibus_df, lower.tail = FALSE
+      )
+    } else {
+      reduced_formula <- if (length(formula_covariates)) {
       stats::reformulate(
-        formula_covariates,
+        c(formula_covariates, baseline_terms),
         response = "survival::Surv(..bq_time, ..bq_event)"
       )
     } else {
@@ -384,12 +504,14 @@ execute_cox_analysis <- function(spec, data) {
       na.action = stats::na.omit
     )
     comparison <- stats::anova(reduced, fit, test = "Chisq")
+      omnibus_statistic <- unname(comparison$Chisq[[2]])
+      omnibus_df <- unname(as.numeric(comparison$Df[[2]]))
+      omnibus_p <- unname(comparison$`Pr(>|Chi|)`[[2]])
+    }
     tests <- vctrs::vec_rbind(tests, tibble::tibble(
       analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
       predictor = spec$predictor[[1]], test = "predictor_omnibus",
-      statistic = unname(comparison$Chisq[[2]]),
-      df = unname(as.numeric(comparison$Df[[2]])),
-      p_value = unname(comparison$`Pr(>|Chi|)`[[2]]),
+      statistic = omnibus_statistic, df = omnibus_df, p_value = omnibus_p,
       method = "cox_proportional_hazards"
     ))
   }
@@ -398,7 +520,7 @@ execute_cox_analysis <- function(spec, data) {
     term <- spec$model_term_specs[[1]][[covariate_id]]
     if (is.null(term)) return(NULL)
     reduced_formula <- stats::reformulate(
-      c(predictor_name, setdiff(formula_covariates, term$output_names)),
+      c(predictor_name, setdiff(formula_covariates, term$output_names), baseline_terms),
       response = "survival::Surv(..bq_time, ..bq_event)"
     )
     reduced <- survival::coxph(
@@ -416,26 +538,19 @@ execute_cox_analysis <- function(spec, data) {
     )
   })
   interaction_tests <- lapply(spec$effect_modifiers[[1]], function(modifier) {
-    retained_modifiers <- setdiff(spec$effect_modifiers[[1]], modifier)
-    retained_interactions <- if (length(retained_modifiers)) {
-      paste0(predictor_name, " * ", retained_modifiers)
-    } else character()
-    reduced_formula <- stats::reformulate(
-      c(predictor_name, formula_covariates, spec$effect_modifiers[[1]],
-        retained_interactions),
-      response = "survival::Surv(..bq_time, ..bq_event)"
+    indices <- grep(
+      paste0("(^", predictor_name, ".*:", modifier, ")|(^", modifier,
+        ".*:", predictor_name, ")"), names(stats::coef(fit))
     )
-    reduced <- survival::coxph(
-      reduced_formula, data = frame, ties = spec$ties[[1]],
-      na.action = stats::na.omit
-    )
-    comparison <- stats::anova(reduced, fit, test = "Chisq")
+    coefficients <- stats::coef(fit)[indices]
+    covariance <- stats::vcov(fit)[indices, indices, drop = FALSE]
+    statistic <- drop(t(coefficients) %*% solve(covariance, coefficients))
+    degrees <- length(indices)
     tibble::tibble(
       analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
       predictor = spec$predictor[[1]], test = "interaction",
-      statistic = unname(comparison$Chisq[[2]]),
-      df = unname(as.numeric(comparison$Df[[2]])),
-      p_value = unname(comparison$`Pr(>|Chi|)`[[2]]),
+      statistic = unname(statistic), df = as.numeric(degrees),
+      p_value = stats::pchisq(statistic, df = degrees, lower.tail = FALSE),
       method = "cox_proportional_hazards"
     )
   })
@@ -450,11 +565,116 @@ execute_cox_analysis <- function(spec, data) {
   model_contrasts <- compute_builtin_contrasts(fit, spec, data)
   conditional_contrasts <- compute_conditional_contrasts(fit, spec, data)
   interaction_contrasts <- compute_contrasts_of_contrasts(fit, spec, data)
+  if (identical(spec$subgroup_strategy[[1]], "joint_interaction")) {
+    if (nrow(conditional_contrasts) == 0L) {
+      conditional_contrasts <- conditional_cox_effects_from_fit(
+        fit, spec, predictor_name, spec$subgroup_variable[[1]]
+      )
+    }
+    conditional_contrasts$fit_strategy <- "joint_interaction"
+  }
   list(
     model = fit, estimates = estimates, tests = tests,
     contrasts = vctrs::vec_rbind(
       model_contrasts, conditional_contrasts, interaction_contrasts
     ),
+    diagnostics = diagnostics
+  )
+}
+
+conditional_cox_effects_from_fit <- function(fit, spec, predictor_name, modifier_name) {
+  model_frame <- stats::model.frame(fit)
+  predictor <- model_frame[[predictor_name]]
+  modifier <- model_frame[[modifier_name]]
+  if (!is.factor(predictor) || length(levels(predictor)) != 2L ||
+      !is.factor(modifier)) return(contrasts_prototype())
+  beta <- stats::coef(fit)
+  covariance <- stats::vcov(fit)
+  critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+  rows <- lapply(levels(modifier), function(level) {
+    base <- model_frame[1, , drop = FALSE]
+    for (name in names(base)) {
+      column <- model_frame[[name]]
+      if (is.factor(column)) base[[name]] <- factor(levels(column)[[1]], levels = levels(column))
+      else if (is.numeric(column)) base[[name]] <- mean(column, na.rm = TRUE)
+    }
+    base[[modifier_name]] <- factor(level, levels = levels(modifier))
+    numerator <- denominator <- base
+    numerator[[predictor_name]] <- factor(levels(predictor)[[2]], levels = levels(predictor))
+    denominator[[predictor_name]] <- factor(levels(predictor)[[1]], levels = levels(predictor))
+    terms <- stats::delete.response(stats::terms(fit))
+    x1 <- stats::model.matrix(terms, numerator, contrasts.arg = fit$contrasts)
+    x0 <- stats::model.matrix(terms, denominator, contrasts.arg = fit$contrasts)
+    vector <- as.numeric(x1 - x0); names(vector) <- colnames(x1)
+    vector <- vector[names(beta)]
+    log_hr <- sum(vector * beta)
+    se <- sqrt(drop(t(vector) %*% covariance %*% vector))
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = predictor_name, contrast_id = NA_character_,
+      contrast = paste0(levels(predictor)[[2]], " - ", levels(predictor)[[1]],
+        " | ", modifier_name, "=", level),
+      numerator = levels(predictor)[[2]], denominator = levels(predictor)[[1]],
+      modifier = modifier_name, modifier_level = level,
+      estimate = exp(log_hr), std_error = se, std_error_scale = "log_hazard",
+      conf_low = exp(log_hr - critical * se), conf_high = exp(log_hr + critical * se),
+      p_value = 2 * stats::pnorm(abs(log_hr / se), lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = "none",
+      effect_measure = "hazard_ratio", scale = "ratio"
+    )
+  })
+  vctrs::vec_rbind(!!!rows)
+}
+
+execute_separate_cox_subgroups <- function(spec, frame, predictor_name) {
+  subgroup_name <- spec$subgroup_variable[[1]]
+  levels_subgroup <- levels(droplevels(frame[[subgroup_name]]))
+  fits <- stats::setNames(lapply(levels_subgroup, function(level) {
+    subset <- frame[!is.na(frame[[subgroup_name]]) & frame[[subgroup_name]] == level, , drop = FALSE]
+    formula <- stats::update(spec$formula[[1]], paste(". ~ . -", subgroup_name,
+      "-", paste0(predictor_name, ":", subgroup_name)))
+    survival::coxph(formula, data = subset, ties = spec$ties[[1]],
+      na.action = stats::na.omit, x = TRUE, model = TRUE)
+  }), levels_subgroup)
+  critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+  rows <- lapply(names(fits), function(level) {
+    fit <- fits[[level]]; beta <- stats::coef(fit); se <- sqrt(diag(stats::vcov(fit)))
+    index <- grep(paste0("^", predictor_name), names(beta))[[1]]
+    log_hr <- unname(beta[[index]]); standard_error <- unname(se[[index]])
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = predictor_name, contrast_id = NA_character_,
+      contrast = paste0("subgroup fit | ", subgroup_name, "=", level),
+      numerator = levels(frame[[predictor_name]])[[2]],
+      denominator = levels(frame[[predictor_name]])[[1]],
+      modifier = subgroup_name, modifier_level = level,
+      estimate = exp(log_hr), std_error = standard_error,
+      std_error_scale = "log_hazard",
+      conf_low = exp(log_hr - critical * standard_error),
+      conf_high = exp(log_hr + critical * standard_error),
+      p_value = 2 * stats::pnorm(abs(log_hr / standard_error), lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = "none",
+      effect_measure = "hazard_ratio", scale = "ratio",
+      fit_strategy = "separate_subgroup_models"
+    )
+  })
+  diagnostics <- vctrs::vec_rbind(!!!lapply(names(fits), function(level) {
+    ph <- survival::cox.zph(fits[[level]])
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]],
+      metric = paste(level, rownames(ph$table), sep = ":"),
+      value = as.numeric(ph$table[, "p"]), status = "observed",
+      message = NA_character_
+    )
+  }))
+  structure_fits <- structure(list(
+    fits = fits, subgroup = subgroup_name,
+    fit_strategy = "separate_subgroup_models",
+    baseline_strategy = spec$baseline_strategy[[1]]
+  ), class = "cox_subgroup_fits")
+  list(
+    model = structure_fits, estimates = estimates_prototype(),
+    tests = tests_prototype(), contrasts = vctrs::vec_rbind(!!!rows),
     diagnostics = diagnostics
   )
 }

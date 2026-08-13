@@ -1,7 +1,8 @@
 # Контекст для следующей сессии
 
-Обновлено: 2026-08-13, вечер (Europe/Moscow). Рабочее дерево чистое,
-`main` синхронизирован с `origin/main`, CI зелёный.
+Обновлено: 2026-08-13 (Europe/Moscow). Рабочее дерево должно быть чистым
+после коммита этой сессии. Ветка `main` локально опережает `origin/main`;
+push в этой сессии не запрашивался.
 
 ## Быстрый старт
 
@@ -12,23 +13,22 @@
 5. Перед публикацией запускать `devtools::test()` и
    `R CMD check --no-manual`.
 
-Последние опубликованные коммиты:
+Последние локальные коммиты перед handoff-коммитом:
 
 ```text
-339ff4c Fix correlation resampling and make identifiers deterministic
-d7061c3 Update session handoff
-88ee3c4 Document package installation
-8af8e98 Add explicit custom method fallback chains
-9b3ea21 Add vignettes and pkgdown site
+61c6acd Combine compatible plans and add survival builders
+e1f79d3 Add cumulative analysis plans and boot intervals
+fc07399 Update session handoff
 ```
 
-## Состояние верификации (commit 339ff4c)
+## Состояние верификации
 
 ```text
-devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
-devtools::run_examples(): OK
-R CMD check --no-manual: Status: OK (локально)
-GitHub Actions: R-CMD-check (release + oldrel-1) success, pkgdown success
+devtools::test(): полный набор проходит; lawstat-тест пропускается, если
+{lawstat} не установлен.
+Последний R CMD check --no-manual перед текущим срезом: Status OK при
+_R_CHECK_FORCE_SUGGESTS_=false. Обычный check ранее блокировался только
+отсутствующим optional {lawstat} при недоступной сети.
 ```
 
 ## Архитектура
@@ -75,7 +75,32 @@ bq_data + metadata + design
 - `R/correlation-interactions.R` — interaction tests, Fisher z comparator.
 - `R/ids.R` — bq_id, refine_analysis_id, uniquify_fresh_ids.
 
-## Ключевые решения прошлой сессии (2026-08-13, вечер)
+## Ключевые решения последней сессии
+
+- Статистическое планирование стало композиционным: method, estimand,
+  hypothesis, contrast orientation, multiplicity, omnibus, effect size и
+  postprocessing — независимые спецификации без неявных defaults методов.
+- `two_group_comparison()` исполняет Student/Welch и Brunner-Munzel.
+  Brunner-Munzel имеет явные adapters `brunnermunzel_backend(permutation=)`
+  и `lawstat_backend()`, estimands probability of superiority и `2p-1`,
+  а также two-sided/superiority/NI/equivalence для допустимых backends.
+- Omnibus и post hoc независимы: omnibus-only, pairwise-only либо оба.
+  `model_postprocessing()` аккумулятивен; пользовательские шаги проходят
+  через `postprocessing_function()`.
+- `group_analysis_artifact` устраняет повторные вычисления. ANOVA test,
+  eta-squared и Tukey используют один aov; Kruskal-Wallis и epsilon-squared
+  используют один test/rank artifact; Fisher и Cramer's V используют одну
+  contingency table, хотя статистические процедуры разные.
+- Cox разделяет `baseline = common_baseline()/stratified_baseline()` и
+  `subgroup = no_subgroup_analysis()/joint_interaction()/
+  separate_subgroup_models()`. Joint fit возвращает interaction test и
+  conditional HR; separate fit возвращает контейнер `cox_subgroup_fits` и
+  не создаёт фиктивный interaction p-value.
+- Добавлены optional engines: robust/quantile/beta regression,
+  zero-inflated/hurdle counts, Fine-Gray, penalized Cox, NB GLMM.
+- Все новые решения включаются в plan/provenance и digest analysis_id.
+
+Старые решения по корреляциям остаются действующими:
 
 - `resampled_correlation()`: bootstrap ресемплирует веса вместе с
   наблюдениями; для методов с subject id — cluster bootstrap целыми
@@ -143,7 +168,19 @@ Pkgdown site: <https://bqmaks.github.io/bqreport/>
 `correlation-analysis`, `longitudinal-survival`, `custom-functions`
 (включает исполняемый three-group custom HC3 workflow), `examples-gallery`.
 
-## Важный незакрытый пробел
+## Важные незакрытые пробелы
+
+1. Общий postprocessing pipeline пока полностью исполняется только в
+   групповых сравнениях. Нужно подключить те же specs к regression/survival/
+   longitudinal fits через единый read-only context и analysis artifacts.
+2. Cox subgroup API реализован вертикальным срезом для одного modifier.
+   Нужны preflight edge cases: пустая подгруппа, 0 событий, отсутствующий
+   reference, singular/infinite coefficient, разные complete-case masks;
+   также tidy estimates/tests по каждому separate fit, а не только contrasts.
+3. `cox_model()` сохраняет совместимость с defaults. Пользователь просил
+   в итоге убрать default statistical methods из planners; это ещё не
+   проведено системно по `plan_analysis`, correlations, longitudinal и
+   survival, чтобы не ломать весь API одним непроверенным изменением.
 
 В workflow сравнения трёх групп все четыре outcome-типа уже моделируются:
 
@@ -162,6 +199,22 @@ contrasts прежде всего для continuous/binary paths. Для ordinal
 адаптировать к стабильной схеме `contrasts()` и multiplicity adjustment.
 
 ## Рекомендуемый следующий шаг
+
+Сначала стабилизировать композиционный inference/postprocessing contract:
+
+1. Ввести общий `analysis_artifact` contract (`fit`, derived caches,
+   provenance, consumer compatibility) вместо локального только для groups.
+2. Добавить независимые postprocessing consumers: effect sizes, marginal
+   means, predictions, contrasts, diagnostics и custom functions.
+3. Для Cox довести subgroup vertical slice: normalized estimates/tests,
+   per-subgroup counts/events/issues, conditional-vs-marginal labels и
+   contract tests с прямыми `coxph()` вызовами.
+4. Затем распространить baseline/subgroup strategies на Fine-Gray и
+   longitudinal models только там, где estimand математически определён.
+5. После стабилизации удалить неявный выбор методов из planners и обновить
+   все examples/vignettes миграционным разделом.
+
+После этого вернуться к ранее запланированному model-based contrasts slice:
 
 Сделать вертикальный срез model-based contrasts для ordinal и multinomial
 outcomes:

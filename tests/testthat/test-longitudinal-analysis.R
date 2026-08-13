@@ -166,3 +166,32 @@ test_that("longitudinal models return change and difference-in-change contrasts"
     sqrt(stats::vcov(fit)[interaction, interaction]))
   expect_true(all(output$adjust_method == "holm"))
 })
+test_that("count longitudinal outcomes support negative-binomial GLMM", {
+  skip_if_not_installed("glmmTMB")
+  data <- as_bq_data(tibble::tibble(
+    id = rep(1:12, each = 3L),
+    visit = factor(rep(c("v0", "v1", "v2"), 12), levels = c("v0", "v1", "v2")),
+    arm = factor(rep(rep(c("A", "B"), each = 6L), each = 3L)),
+    events = c(
+      0,1,1, 1,1,2, 0,0,1, 2,2,3, 1,2,2, 0,1,2,
+      1,2,4, 0,1,3, 2,3,5, 1,2,4, 0,2,3, 2,4,6
+    )
+  )) |>
+    set_longitudinal_design(
+      id = id, time = visit, group = arm, layout = "long",
+      baseline = "v0", time_scale = "categorical"
+    ) |>
+    add_longitudinal_outcome(events_long, values = events, type = "count")
+
+  result <- data |>
+    plan_longitudinal(
+      events_long, method = negative_binomial_glmm_model(), comparisons = FALSE
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_gt(nrow(estimates(result)), 0L)
+  expect_true(all(estimates(result)$estimate > 0))
+  expect_identical(result$plan$engine, "glmmTMB_nbinom2")
+  expect_true("converged" %in% diagnostics(result)$metric)
+})

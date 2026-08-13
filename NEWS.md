@@ -1,5 +1,23 @@
 # bqreport (development version)
 
+## Explicit inference and extended engines
+
+* Group inference now separates methods, estimands, hypotheses, target
+  contrasts, multiplicity, omnibus tests, effect sizes, and post-hoc steps.
+  Student/Welch and Brunner-Munzel comparisons support explicit two-sided,
+  superiority, non-inferiority, and equivalence specifications.
+* Omnibus tests and effect sizes may use different statistical procedures
+  while sharing a reusable analysis artifact. ANOVA/Tukey reuse one fitted
+  model; Fisher's exact test and Cramer's V reuse one contingency table.
+* Cox models now distinguish common versus stratified baseline hazards and
+  joint-interaction versus independently fitted subgroup analyses. Their
+  estimates retain the fitting strategy in the plan and provenance.
+* Added robust, quantile, beta, zero-inflated, hurdle, Fine-Gray, penalized
+  Cox, and negative-binomial mixed-model specifications with optional
+  backends declared in `Suggests`.
+* Analysis plans can be accumulated and compatible plans can be combined;
+  bootstrap intervals use the `boot` backend and expose interval type.
+
 ## Reproducibility
 
 * All identifiers (`var_id`, `outcome_id`, `design_id`, `analysis_id`,

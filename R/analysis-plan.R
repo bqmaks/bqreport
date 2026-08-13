@@ -430,7 +430,15 @@ validate_plan <- function(plan, data = NULL) {
       out <- validate_cumulative_incidence_task(out, i, data, registry)
       next
     }
+    if (identical(out$analysis_type[[i]], "fine_gray_regression")) {
+      out <- validate_fine_gray_task(out, i, data, registry)
+      next
+    }
     if (identical(out$analysis_type[[i]], "survival_regression")) {
+      out <- validate_survival_plan_task(out, i, data, registry)
+      next
+    }
+    if (identical(out$analysis_type[[i]], "penalized_survival_regression")) {
       out <- validate_survival_plan_task(out, i, data, registry)
       next
     }
@@ -531,6 +539,12 @@ validate_plan <- function(plan, data = NULL) {
     if (identical(outcome_spec$type[[1]], "nominal") &&
         (!is.factor(outcome) || is.ordered(outcome) || nlevels(outcome) < 3L)) {
       issues <- c(issues, "Nominal outcome must be an unordered factor with at least three levels.")
+    }
+    if (identical(out$method[[i]], "beta_regression")) {
+      beta_values <- analysis_vector(outcome)[!missing_outcome]
+      if (any(!is.finite(beta_values) | beta_values <= 0 | beta_values >= 1)) {
+        issues <- c(issues, "Beta-regression outcome must be strictly between 0 and 1.")
+      }
     }
     transformed_names <- c(predictor_name, covariate_names)
     transformed_ids <- c(out$predictor_id[[i]], out$covariate_ids[[i]])

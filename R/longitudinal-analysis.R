@@ -38,6 +38,21 @@ glmm_model <- function() {
 }
 
 #' @rdname lmm_model
+#' @param family Negative-binomial variance parameterization.
+#' @export
+negative_binomial_glmm_model <- function(
+  family = c("nbinom2", "nbinom1")
+) {
+  family <- match.arg(family)
+  structure(list(
+    id = paste0("negative_binomial_mixed_model_", family),
+    engine = paste0("glmmTMB_", family), estimand = "subject_specific",
+    effect_measure = "rate_ratio", scale = "ratio", model_scale = "log_rate",
+    required_packages = "glmmTMB", family = family
+  ), class = "longitudinal_method_spec")
+}
+
+#' @rdname lmm_model
 #' @export
 binary_gee_model <- function(
   correlation = c("exchangeable", "independence", "ar1")
@@ -140,10 +155,14 @@ validate_longitudinal_task <- function(plan, i, data) {
     variable_type <- outcome_registry$variable_type[[outcome_row]]
     binary_engine <- plan$engine[[i]] == "lme4_glmer" ||
       identical(plan$method_object[[i]]$family, "binomial")
+    count_engine <- startsWith(plan$engine[[i]], "glmmTMB_")
     if (binary_engine && variable_type != "binary") issues <- c(
       issues, "Binary longitudinal engines require a binary repeated outcome."
     )
-    if (!binary_engine && variable_type != "continuous") issues <- c(
+    if (count_engine && variable_type != "count") issues <- c(
+      issues, "Negative-binomial longitudinal engines require a count repeated outcome."
+    )
+    if (!binary_engine && !count_engine && variable_type != "continuous") issues <- c(
       issues, "Gaussian longitudinal engines require a continuous repeated outcome."
     )
     complete <- stats::complete.cases(frame)
@@ -165,7 +184,8 @@ validate_longitudinal_task <- function(plan, i, data) {
     fixed <- if ("..bq_group" %in% names(frame)) {
       "..bq_group * ..bq_time"
     } else "..bq_time"
-    plan$formula[[i]] <- if (plan$engine[[i]] %in% c("lme4_lmer", "lme4_glmer")) {
+    plan$formula[[i]] <- if (plan$engine[[i]] %in% c("lme4_lmer", "lme4_glmer") ||
+        startsWith(plan$engine[[i]], "glmmTMB_")) {
       stats::as.formula(paste0("..bq_outcome ~ ", fixed, " + (1 | ..bq_id)"))
     } else stats::as.formula(paste0("..bq_outcome ~ ", fixed))
   }
@@ -193,6 +213,14 @@ execute_longitudinal_analysis <- function(spec, data) {
     )
     singular_fit <- lme4::isSingular(fit)
     beta <- lme4::fixef(fit); covariance <- as.matrix(stats::vcov(fit))
+    std_error <- sqrt(diag(covariance)); statistic <- beta / std_error
+    p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
+    variance <- "model_based"; df <- rep(NA_real_, length(beta))
+  } else if (startsWith(method$engine, "glmmTMB_")) {
+    family <- if (method$family == "nbinom1") glmmTMB::nbinom1() else glmmTMB::nbinom2()
+    fit <- glmmTMB::glmmTMB(spec$formula[[1]], data = frame, family = family)
+    beta <- glmmTMB::fixef(fit)$cond
+    covariance <- as.matrix(stats::vcov(fit)$cond)
     std_error <- sqrt(diag(covariance)); statistic <- beta / std_error
     p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
     variance <- "model_based"; df <- rep(NA_real_, length(beta))
@@ -224,7 +252,9 @@ execute_longitudinal_analysis <- function(spec, data) {
     transformation_id = NA_character_, transformation_label = NA_character_,
     term = names(beta), level = NA_character_, estimate = unname(estimate_output),
     std_error = unname(std_error),
-    std_error_scale = if (exponentiate) "log_odds" else "outcome_units",
+    std_error_scale = if (startsWith(method$engine, "glmmTMB_")) {
+      "log_rate"
+    } else if (exponentiate) "log_odds" else "outcome_units",
     conf_low = unname(conf_low), conf_high = unname(conf_high),
     statistic = unname(statistic), df = df, p_value = unname(p_value),
     effect_measure = method$effect_measure, scale = method$scale,
@@ -255,7 +285,14 @@ execute_longitudinal_analysis <- function(spec, data) {
     value = c(length(unique(frame$..bq_id)), nrow(frame)), status = "observed",
     message = NA_character_
   )
-  if (inherits(fit, "merMod")) {
+  if (inherits(fit, "glmmTMB")) {
+    converged <- isTRUE(fit$sdr$pdHess) && isTRUE(fit$fit$convergence == 0L)
+    diagnostics <- vctrs::vec_rbind(diagnostics, tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], metric = "converged",
+      value = as.numeric(converged), status = if (converged) "ok" else "warning",
+      message = if (converged) NA_character_ else "The glmmTMB fit did not converge."
+    ))
+  } else if (inherits(fit, "merMod")) {
     singular <- singular_fit
     diagnostics <- vctrs::vec_rbind(diagnostics, tibble::tibble(
       analysis_id = spec$analysis_id[[1]], metric = "singular",
@@ -291,10 +328,14 @@ compute_longitudinal_contrasts <- function(fit, covariance, spec, frame) {
   if (!length(followup)) return(contrasts_prototype())
   grouped <- "..bq_group" %in% names(frame)
   groups <- if (grouped) levels(factor(frame$..bq_group)) else ".all"
-  terms_object <- if (inherits(fit, "merMod")) {
+  terms_object <- if (inherits(fit, "glmmTMB")) {
+    stats::delete.response(stats::terms(lme4::nobars(stats::formula(fit))))
+  } else if (inherits(fit, "merMod")) {
     stats::delete.response(stats::terms(stats::formula(fit, fixed.only = TRUE)))
   } else stats::delete.response(stats::terms(fit))
-  beta <- if (inherits(fit, "merMod")) lme4::fixef(fit) else stats::coef(fit)
+  beta <- if (inherits(fit, "glmmTMB")) {
+    glmmTMB::fixef(fit)$cond
+  } else if (inherits(fit, "merMod")) lme4::fixef(fit) else stats::coef(fit)
   cell_matrix <- function(group, time_value) {
     row <- frame[1, , drop = FALSE]
     row$..bq_id <- frame$..bq_id[[1]]

@@ -149,12 +149,40 @@ descriptive_plan_row <- function(
   } else if (isTRUE(comparisons)) {
     default_group_comparison_spec(variable_spec$type[[1]])
   } else NULL
+  if (!is.null(comparison_spec) && !is.null(comparison_spec$post_hoc) &&
+      comparison_spec$post_hoc$type == "pairwise") {
+    contrasts <- comparison_spec$post_hoc$comparisons
+    multiplicity <- comparison_spec$post_hoc$multiplicity
+    adjust <- if (multiplicity$type == "built_in") {
+      comparison_spec$post_hoc$method$id
+    } else {
+      multiplicity$method
+    }
+  }
+  if (!is.null(comparison_spec) && comparison_spec$id %in%
+      c("two_group_t_test", "two_group_brunner_munzel")) {
+    contrasts <- comparison_spec$contrast
+    adjust <- comparison_spec$multiplicity$method
+  }
   row$comparisons <- !is.null(comparison_spec)
   row$comparison_method <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$id
   row$comparison_estimand <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$effect_measure
   row$comparison_scale <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$scale
   row$comparison_ci_method <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$ci_method
   row$comparison_function_hash <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$function_hash
+  row$comparison_hypothesis <- list(if (is.null(comparison_spec)) NULL else comparison_spec$hypothesis)
+  row$comparison_contrast <- list(if (is.null(comparison_spec)) NULL else {
+    comparison_spec$contrast %||% comparison_spec$post_hoc$comparisons %||% contrasts
+  })
+  row$comparison_multiplicity <- list(if (is.null(comparison_spec)) NULL else {
+    comparison_spec$multiplicity %||% comparison_spec$post_hoc$multiplicity %||% NULL
+  })
+  row$comparison_omnibus <- list(if (is.null(comparison_spec)) NULL else {
+    comparison_spec$omnibus %||% NULL
+  })
+  row$comparison_effect_size <- list(if (is.null(comparison_spec)) NULL else {
+    comparison_spec$effect_size %||% NULL
+  })
   row$comparison_object <- list(comparison_spec)
   row$descriptive_contrast_spec <- list(contrasts)
   row$comparison_adjust_method <- adjust
@@ -180,7 +208,9 @@ descriptive_plan_row <- function(
   row <- refine_analysis_id(
     row, row$variable_id[[1]], row$group_id[[1]], row$overall[[1]],
     templates, row$comparison_method[[1]], row$comparison_function_hash[[1]],
-    row$comparison_adjust_method[[1]]
+    row$comparison_adjust_method[[1]], row$comparison_hypothesis[[1]],
+    row$comparison_contrast[[1]], row$comparison_multiplicity[[1]],
+    row$comparison_omnibus[[1]], row$comparison_effect_size[[1]]
   )
   row
 }
@@ -510,6 +540,11 @@ compute_descriptive_comparison <- function(spec, data) {
   } else registry$reference[[group_row]]
   pairs <- contrast_level_pairs(group_levels, target_type, reference)
   comparison_spec <- spec$comparison_object[[1]]
+  if (!is.null(comparison_spec$omnibus_method)) {
+    return(compute_explicit_group_comparison(
+      spec, values, groups, group_levels, pairs, comparison_spec
+    ))
+  }
   if (target_type == "against_global_mean") {
     if (!comparison_spec$id %in% c("welch_mean_difference", "hedges_g")) {
       stop_descriptive_plan(
@@ -609,19 +644,425 @@ compute_descriptive_comparison <- function(spec, data) {
   )
 }
 
-compute_omnibus_group_effect <- function(spec, values, groups) {
+compute_explicit_group_comparison <- function(
+  spec, values, groups, group_levels, pairs, method
+) {
+  group_factor <- factor(groups, levels = group_levels)
+  artifact <- fit_group_analysis_artifact(values, group_factor, method,
+    adjust_method = spec$comparison_adjust_method[[1]])
+  omnibus <- switch(
+    method$omnibus_method,
+    none = tests_prototype(),
+    one_way_anova = {
+      table <- artifact$model_summary
+      descriptive_test_row(
+        spec, "one_way_anova", table$`F value`[[1]], table$Df[[1]],
+        table$`Pr(>F)`[[1]]
+      )
+    },
+    welch_anova = {
+      test <- artifact$welch_test
+      descriptive_test_row(
+        spec, "welch_anova", unname(test$statistic),
+        unname(test$parameter[[1]]), test$p.value
+      )
+    },
+    kruskal_wallis = {
+      test <- artifact$kruskal_test
+      descriptive_test_row(
+        spec, "kruskal_wallis", unname(test$statistic),
+        unname(test$parameter), test$p.value
+      )
+    },
+    fisher_exact = {
+      test <- artifact$fisher_test
+      descriptive_test_row(
+        spec, "fisher_exact", NA_real_, NA_real_, test$p.value
+      )
+    },
+    brunner_munzel = tests_prototype()
+  )
+  if (method$posthoc_method == "none") {
+    return(list(
+      contrasts = contrasts_prototype(), tests = omnibus,
+      omnibus_effects = compute_explicit_omnibus_effect(
+        spec, values, groups, method$omnibus_method, artifact
+      ), artifact = artifact
+    ))
+  }
+  if (method$posthoc_method == "brunner_munzel" && nrow(pairs) != 1L) {
+    stop_descriptive_plan("Brunner-Munzel requires exactly two groups.")
+  }
+  if (method$posthoc_method == "two_group_t" &&
+      (length(group_levels) != 2L || nrow(pairs) != 1L)) {
+    stop_descriptive_plan("A two-group comparison requires exactly two observed groups.")
+  }
+  if (method$posthoc_method == "two_group_brunner_munzel" &&
+      (length(group_levels) != 2L || nrow(pairs) != 1L)) {
+    stop_descriptive_plan("A two-group comparison requires exactly two observed groups.")
+  }
+  backend <- switch(
+    method$posthoc_method,
+    tukey = artifact$post_hoc,
+    games_howell = artifact$post_hoc,
+    dunn = artifact$post_hoc,
+    brunner_munzel = NULL,
+    two_group_t = NULL,
+    two_group_brunner_munzel = NULL
+  )
+  ranks <- artifact$ranks
+  pairwise_test <- NULL
+  rows <- lapply(seq_len(nrow(pairs)), function(i) {
+    numerator <- pairs$numerator[[i]]
+    denominator <- pairs$denominator[[i]]
+    x <- values[groups == numerator]
+    y <- values[groups == denominator]
+    if (method$posthoc_method == "tukey") {
+      key <- paste(numerator, denominator, sep = "-")
+      reverse_key <- paste(denominator, numerator, sep = "-")
+      if (key %in% rownames(backend)) {
+        result <- backend[key, ]; direction <- 1
+      } else {
+        result <- backend[reverse_key, ]; direction <- -1
+      }
+      estimate <- direction * unname(result[["diff"]])
+      conf <- direction * c(result[["lwr"]], result[["upr"]])
+      conf <- sort(conf)
+      p_adjusted <- unname(result[["p adj"]])
+      p_value <- stats::t.test(x, y, var.equal = TRUE)$p.value
+      statistic <- NA_real_; df <- length(values) - length(group_levels)
+      effect <- "mean_difference"; scale <- "identity"
+      adjust_method <- "tukey"
+    } else if (method$posthoc_method == "games_howell") {
+      p_adjusted <- pmcmr_matrix_value(backend$p.value, numerator, denominator)
+      statistic <- pmcmr_matrix_value(backend$statistic, numerator, denominator)
+      estimate <- mean(x) - mean(y)
+      se <- sqrt(stats::var(x) / length(x) + stats::var(y) / length(y))
+      df <- se^4 / (
+        (stats::var(x) / length(x))^2 / (length(x) - 1) +
+          (stats::var(y) / length(y))^2 / (length(y) - 1)
+      )
+      critical <- stats::qtukey(spec$confidence_level[[1]], length(group_levels), df) /
+        sqrt(2)
+      conf <- estimate + c(-1, 1) * critical * se
+      p_value <- stats::t.test(x, y, var.equal = FALSE)$p.value
+      effect <- "mean_difference"; scale <- "identity"
+      adjust_method <- "games_howell"
+    } else if (method$posthoc_method == "dunn") {
+      p_adjusted <- pmcmr_matrix_value(backend$p.value, numerator, denominator)
+      statistic <- pmcmr_matrix_value(backend$statistic, numerator, denominator)
+      estimate <- mean(ranks[groups == numerator]) - mean(ranks[groups == denominator])
+      conf <- c(NA_real_, NA_real_)
+      p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
+      df <- NA_real_; effect <- "mean_rank_difference"; scale <- "rank"
+      adjust_method <- spec$comparison_adjust_method[[1]]
+    } else if (method$posthoc_method == "brunner_munzel") {
+      result <- lawstat::brunner.munzel.test(
+        x, y, alpha = 1 - spec$confidence_level[[1]]
+      )
+      estimate <- unname(result$estimate)
+      conf <- result$conf.int
+      p_value <- result$p.value; p_adjusted <- result$p.value
+      statistic <- unname(result$statistic); df <- unname(result$parameter)
+      effect <- "probability_of_superiority"; scale <- "probability"
+      adjust_method <- "none"
+      pairwise_test <<- descriptive_test_row(
+        spec, "brunner_munzel", statistic, df, p_value
+      )
+    } else if (method$posthoc_method == "two_group_t") {
+      result <- stats::t.test(
+        x, y, var.equal = method$method$var_equal,
+        conf.level = spec$confidence_level[[1]]
+      )
+      estimate <- mean(x) - mean(y)
+      conf <- unname(result$conf.int)
+      statistic <- unname(result$statistic)
+      df <- unname(result$parameter)
+      p_value <- two_group_hypothesis_p_value(
+        estimate, unname(result$stderr), df, method$hypothesis
+      )
+      p_adjusted <- stats::p.adjust(
+        p_value, method = method$multiplicity$method
+      )
+      effect <- method$estimand$effect_measure
+      scale <- method$estimand$scale
+      adjust_method <- method$multiplicity$method
+      pairwise_test <<- descriptive_test_row(
+        spec,
+        if (method$method$var_equal) "student_t_test" else "welch_t_test",
+        statistic, df, p_value
+      )
+    } else {
+      bm <- compute_brunner_munzel_result(
+        numerator = x, denominator = y, method = method,
+        confidence_level = spec$confidence_level[[1]]
+      )
+      estimate <- bm$estimate
+      conf <- bm$conf
+      statistic <- bm$statistic
+      df <- bm$df
+      p_value <- bm$p_value
+      p_adjusted <- stats::p.adjust(
+        p_value, method = method$multiplicity$method
+      )
+      effect <- method$estimand$effect_measure
+      scale <- method$estimand$scale
+      adjust_method <- method$multiplicity$method
+      pairwise_test <<- descriptive_test_row(
+        spec, "brunner_munzel", statistic, df, p_value
+      )
+    }
+    row <- descriptive_contrast_row(
+      spec, numerator, denominator, estimate, conf[[1]], conf[[2]], p_value,
+      effect, scale
+    )
+    row$p_adjusted <- p_adjusted
+    row$adjust_method <- adjust_method
+    row
+  })
+  if (!is.null(pairwise_test)) omnibus <- pairwise_test
+  list(
+    contrasts = vctrs::vec_rbind(!!!rows), tests = omnibus,
+    omnibus_effects = if (method$omnibus_method %in% c("none", "brunner_munzel")) {
+      omnibus_effects_prototype()
+    } else compute_explicit_omnibus_effect(
+      spec, values, groups, method$omnibus_method, artifact
+    ), artifact = artifact
+  )
+}
+
+fit_group_analysis_artifact <- function(
+  values, group_factor, method, adjust_method = "none"
+) {
+  needs_aov <- method$omnibus_method == "one_way_anova" ||
+    method$posthoc_method == "tukey"
+  model <- if (needs_aov) stats::aov(values ~ group_factor) else NULL
+  model_summary <- if (is.null(model)) NULL else summary(model)[[1]]
+  welch_test <- if (method$omnibus_method == "welch_anova") {
+    stats::oneway.test(values ~ group_factor, var.equal = FALSE)
+  } else NULL
+  kruskal_test <- if (method$omnibus_method == "kruskal_wallis") {
+    stats::kruskal.test(values ~ group_factor)
+  } else NULL
+  contingency_table <- if (method$omnibus_method == "fisher_exact" ||
+      !is.null(method$effect_size) && method$effect_size$id == "cramers_v") {
+    out <- table(group_factor, values)
+    names(dimnames(out)) <- c("group", "outcome")
+    out
+  } else NULL
+  fisher_test <- if (method$omnibus_method == "fisher_exact") {
+    stats::fisher.test(
+      contingency_table,
+      simulate.p.value = method$omnibus$simulate_p_value,
+      B = if (method$omnibus$simulate_p_value) method$omnibus$replicates else 2000L
+    )
+  } else NULL
+  pearson_test <- if (!is.null(method$effect_size) &&
+      method$effect_size$id == "cramers_v") {
+    suppressWarnings(stats::chisq.test(contingency_table, correct = FALSE))
+  } else NULL
+  ranks <- if (method$omnibus_method == "kruskal_wallis" ||
+      method$posthoc_method == "dunn") {
+    rank(values, ties.method = "average")
+  } else NULL
+  post_hoc <- switch(
+    method$posthoc_method,
+    tukey = stats::TukeyHSD(model)$group_factor,
+    games_howell = PMCMRplus::gamesHowellTest(values, group_factor),
+    dunn = suppressWarnings(PMCMRplus::kwAllPairsDunnTest(
+      values, group_factor, p.adjust.method = adjust_method
+    )),
+    NULL
+  )
+  omnibus_test <- switch(
+    method$omnibus_method,
+    one_way_anova = model_summary,
+    welch_anova = welch_test,
+    kruskal_wallis = kruskal_test,
+    fisher_exact = fisher_test,
+    NULL
+  )
+  structure(list(
+    model = model, model_summary = model_summary,
+    welch_test = welch_test, kruskal_test = kruskal_test,
+    contingency_table = contingency_table, fisher_test = fisher_test,
+    pearson_test = pearson_test,
+    ranks = ranks, post_hoc = post_hoc, omnibus_test = omnibus_test,
+    fit_count = as.integer(
+      as.integer(!is.null(model)) + as.integer(!is.null(welch_test)) +
+        as.integer(!is.null(kruskal_test)) +
+        as.integer(!is.null(fisher_test)) +
+        as.integer(method$posthoc_method %in% c("games_howell", "dunn"))
+    ), table_build_count = as.integer(!is.null(contingency_table))
+  ), class = "group_analysis_artifact")
+}
+
+compute_brunner_munzel_result <- function(
+  numerator, denominator, method, confidence_level
+) {
+  backend <- method$method$backend
+  centered <- method$estimand$effect_measure == "relative_effect"
+  est <- if (centered) "difference" else "original"
+  center <- if (centered) 0 else 0.5
+  hypothesis <- method$hypothesis
+  permutation <- isTRUE(backend$permutation)
+  if (permutation && hypothesis$type %in% c("non_inferiority", "equivalence")) {
+    stop_descriptive_plan(
+      "Permutation Brunner-Munzel does not support non-inferiority or equivalence margins."
+    )
+  }
+  boundary <- hypothesis$null %||% hypothesis$margin %||% NA_real_
+  if (permutation && is.finite(boundary) && boundary != center) {
+    stop_descriptive_plan(
+      "Permutation Brunner-Munzel currently requires the stochastic-equality null."
+    )
+  }
+  alternative <- switch(
+    hypothesis$type,
+    two_sided = "two.sided",
+    superiority = hypothesis$direction,
+    non_inferiority = "two.sided",
+    equivalence = "two.sided"
+  )
+  # Backends define p as P(X < Y) + .5 P(X = Y). Reversing the arguments
+  # makes the public estimand P(numerator > denominator) + .5 P(tie).
+  result <- if (backend$id == "brunnermunzel") {
+    brunnermunzel::brunnermunzel.test(
+      denominator, numerator, alternative = alternative,
+      alpha = 1 - confidence_level, perm = permutation, est = est
+    )
+  } else {
+    if (permutation) {
+      stop_descriptive_plan("The lawstat backend does not provide permutation inference.")
+    }
+    if (centered) {
+      raw <- lawstat::brunner.munzel.test(
+        denominator, numerator, alternative = alternative,
+        alpha = 1 - confidence_level
+      )
+      raw$estimate <- 2 * raw$estimate - 1
+      raw$conf.int <- 2 * raw$conf.int - 1
+      raw
+    } else {
+      lawstat::brunner.munzel.test(
+        denominator, numerator, alternative = alternative,
+        alpha = 1 - confidence_level
+      )
+    }
+  }
+  estimate <- unname(result$estimate)
+  statistic <- unname(result$statistic %||% NA_real_)
+  df <- unname(result$parameter %||% NA_real_)
+  conf <- unname(result$conf.int %||% c(NA_real_, NA_real_))
+  p_value <- result$p.value
+  if (!permutation && hypothesis$type %in% c("non_inferiority", "equivalence") ||
+      (!permutation && is.finite(boundary) && boundary != center)) {
+    critical <- stats::qt((1 + confidence_level) / 2, df = df)
+    std_error <- (conf[[2]] - conf[[1]]) / (2 * critical)
+    p_value <- two_group_hypothesis_p_value(
+      estimate, std_error, df, hypothesis
+    )
+  }
+  list(
+    estimate = estimate, conf = conf, statistic = statistic, df = df,
+    p_value = unname(p_value)
+  )
+}
+
+two_group_hypothesis_p_value <- function(estimate, std_error, df, hypothesis) {
+  one_sided <- function(boundary, direction) {
+    statistic <- (estimate - boundary) / std_error
+    if (direction == "greater") {
+      stats::pt(statistic, df = df, lower.tail = FALSE)
+    } else {
+      stats::pt(statistic, df = df, lower.tail = TRUE)
+    }
+  }
+  switch(
+    hypothesis$type,
+    two_sided = 2 * stats::pt(
+      abs((estimate - hypothesis$null) / std_error),
+      df = df, lower.tail = FALSE
+    ),
+    superiority = one_sided(hypothesis$null, hypothesis$direction),
+    non_inferiority = one_sided(hypothesis$margin, hypothesis$direction),
+    equivalence = max(
+      one_sided(hypothesis$bounds[[1]], "greater"),
+      one_sided(hypothesis$bounds[[2]], "less")
+    ),
+    stop_descriptive_plan("Unsupported two-group hypothesis.")
+  )
+}
+
+pmcmr_matrix_value <- function(matrix, numerator, denominator) {
+  if (numerator %in% rownames(matrix) && denominator %in% colnames(matrix)) {
+    return(unname(matrix[numerator, denominator]))
+  }
+  unname(matrix[denominator, numerator])
+}
+
+compute_explicit_omnibus_effect <- function(
+  spec, values, groups, method, artifact = NULL
+) {
+  if (method == "kruskal_wallis") {
+    test <- artifact$kruskal_test %||% stats::kruskal.test(values ~ factor(groups))
+    estimate <- max(0, (unname(test$statistic) - length(unique(groups)) + 1) /
+      (length(values) - length(unique(groups))))
+    return(tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$variable[[1]],
+      predictor = spec$group[[1]], estimate = estimate,
+      std_error = NA_real_, std_error_scale = NA_character_,
+      conf_low = NA_real_, conf_high = NA_real_,
+      confidence_level = spec$confidence_level[[1]],
+      effect_measure = "epsilon_squared", scale = "zero_to_one",
+      n = as.integer(length(values)), n_groups = as.integer(length(unique(groups))),
+      method = "kruskal_wallis", ci_method = NA_character_
+    ))
+  }
+  if (method == "fisher_exact" && !is.null(artifact$pearson_test)) {
+    return(compute_cramers_v_effect(spec, values, groups, artifact))
+  }
+  compute_omnibus_group_effect(spec, values, groups, artifact)
+}
+
+compute_cramers_v_effect <- function(spec, values, groups, artifact) {
+  contingency <- artifact$contingency_table
+  test <- artifact$pearson_test
+  n <- sum(contingency)
+  dimension <- min(nrow(contingency) - 1L, ncol(contingency) - 1L)
+  estimate <- if (dimension > 0L) {
+    sqrt(unname(test$statistic) / (n * dimension))
+  } else NA_real_
+  bounds <- noncentral_parameter_interval(
+    unname(test$statistic), unname(test$parameter), NA_real_,
+    spec$confidence_level[[1]], distribution = "chisq"
+  )
+  ci <- if (dimension > 0L) sqrt(bounds / (n * dimension)) else {
+    c(NA_real_, NA_real_)
+  }
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]], outcome = spec$variable[[1]],
+    predictor = spec$group[[1]], estimate = as.numeric(estimate),
+    std_error = NA_real_, std_error_scale = NA_character_,
+    conf_low = as.numeric(pmin(ci[[1]], 1)),
+    conf_high = as.numeric(pmin(ci[[2]], 1)),
+    confidence_level = spec$confidence_level[[1]],
+    effect_measure = "cramers_v", scale = "zero_to_one",
+    n = as.integer(n), n_groups = as.integer(nrow(contingency)),
+    method = "pearson_chi_squared", ci_method = "noncentral_chi_squared"
+  )
+}
+
+compute_omnibus_group_effect <- function(spec, values, groups, artifact = NULL) {
   n <- length(values)
   n_groups <- length(unique(groups))
   if (spec$variable_type[[1]] %in% c("continuous", "count")) {
     group_factor <- factor(groups)
-    means <- tapply(values, group_factor, mean)
-    counts <- table(group_factor)
-    grand_mean <- mean(values)
-    ss_between <- sum(counts * (means - grand_mean)^2)
-    ss_total <- sum((values - grand_mean)^2)
+    fit <- artifact$model %||% stats::lm(values ~ group_factor)
+    table <- artifact$model_summary %||% stats::anova(fit)
+    ss_between <- table$`Sum Sq`[[1]]
+    ss_total <- sum(table$`Sum Sq`, na.rm = TRUE)
     estimate <- if (ss_total > 0) ss_between / ss_total else NA_real_
-    fit <- stats::lm(values ~ group_factor)
-    table <- stats::anova(fit)
     statistic <- table$`F value`[[1]]
     bounds <- noncentral_parameter_interval(
       statistic, table$Df[[1]], table$Df[[2]],

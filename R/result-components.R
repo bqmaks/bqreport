@@ -74,6 +74,33 @@ provenance_row <- function(spec, declared_spec = spec, fallback_used = FALSE) {
     comparison_function_hash = if (
       "comparison_function_hash" %in% names(spec)
     ) spec$comparison_function_hash[[1]] else NA_character_,
+    comparison_hypothesis = if (
+      "comparison_hypothesis" %in% names(spec)
+    ) spec$comparison_hypothesis else list(NULL),
+    comparison_contrast = if (
+      "comparison_contrast" %in% names(spec)
+    ) spec$comparison_contrast else list(NULL),
+    comparison_multiplicity = if (
+      "comparison_multiplicity" %in% names(spec)
+    ) spec$comparison_multiplicity else list(NULL),
+    comparison_omnibus = if (
+      "comparison_omnibus" %in% names(spec)
+    ) spec$comparison_omnibus else list(NULL),
+    comparison_effect_size = if (
+      "comparison_effect_size" %in% names(spec)
+    ) spec$comparison_effect_size else list(NULL),
+    baseline_strategy = if (
+      "baseline_strategy" %in% names(spec)
+    ) spec$baseline_strategy[[1]] else NA_character_,
+    baseline_variables = if (
+      "baseline_variables" %in% names(spec)
+    ) spec$baseline_variables else list(character()),
+    subgroup_strategy = if (
+      "subgroup_strategy" %in% names(spec)
+    ) spec$subgroup_strategy[[1]] else NA_character_,
+    subgroup_variable = if (
+      "subgroup_variable" %in% names(spec)
+    ) spec$subgroup_variable[[1]] else NA_character_,
     correlation_estimand = if (
       "estimand" %in% names(spec)
     ) spec$estimand[[1]] else NA_character_,
@@ -208,7 +235,12 @@ provenance_prototype <- function() {
     descriptive_function_ids = list(),
     descriptive_function_hashes = list(), comparison_method = character(),
     comparison_estimand = character(), comparison_scale = character(),
-    comparison_ci_method = character(), comparison_function_hash = character()
+    comparison_ci_method = character(), comparison_function_hash = character(),
+    comparison_hypothesis = list(), comparison_contrast = list(),
+    comparison_multiplicity = list(), comparison_omnibus = list(),
+    comparison_effect_size = list(), baseline_strategy = character(),
+    baseline_variables = list(), subgroup_strategy = character(),
+    subgroup_variable = character()
     , correlation_estimand = character(), correlation_adjustment_ids = list(),
     correlation_missing_policy = character(), correlation_comparator_id = character(),
     correlation_comparator_hash = character(), bootstrap_replicates = integer(),

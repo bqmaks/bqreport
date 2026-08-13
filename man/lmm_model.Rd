@@ -4,6 +4,7 @@
 \alias{lmm_model}
 \alias{gee_model}
 \alias{glmm_model}
+\alias{negative_binomial_glmm_model}
 \alias{binary_gee_model}
 \title{Construct longitudinal model specifications}
 \usage{
@@ -13,6 +14,8 @@ gee_model(correlation = c("exchangeable", "independence", "ar1"))
 
 glmm_model()
 
+negative_binomial_glmm_model(family = c("nbinom2", "nbinom1"))
+
 binary_gee_model(correlation = c("exchangeable", "independence", "ar1"))
 }
 \arguments{
@@ -20,6 +23,8 @@ binary_gee_model(correlation = c("exchangeable", "independence", "ar1"))
 fixed-effect tests are comparable.}
 
 \item{correlation}{Working correlation structure for GEE.}
+
+\item{family}{Negative-binomial variance parameterization.}
 }
 \value{
 A concrete longitudinal method specification.

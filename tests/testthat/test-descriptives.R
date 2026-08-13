@@ -475,6 +475,70 @@ test_that("descriptive comparisons estimate a Welch mean difference", {
   )
 })
 
+test_that("standalone two-group t inference agrees with stats and has no omnibus", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 3, 5, 7, 9),
+    arm = factor(rep(c("Control", "Treatment"), each = 3L))
+  )) |>
+    set_outcome(value, type = "continuous") |>
+    set_predictor(arm, type = "binary", reference = "Control")
+  method <- two_group_comparison(
+    method = t_test(var_equal = FALSE),
+    estimand = mean_difference(),
+    contrast = against_reference("Control"),
+    hypothesis = two_sided(null = 0, alpha = 0.05),
+    multiplicity = no_adjustment()
+  )
+  result <- data |>
+    plan_descriptives(value, groups = arm, comparisons = method) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  direct <- stats::t.test(
+    data$value[data$arm == "Treatment"],
+    data$value[data$arm == "Control"], var.equal = FALSE
+  )
+
+  expect_equal(contrasts(result)$estimate, unname(diff(rev(direct$estimate))))
+  expect_equal(contrasts(result)$p_value, direct$p.value)
+  expect_identical(nrow(tests(result)), 1L)
+  expect_identical(tests(result)$test, "welch_t_test")
+  expect_identical(nrow(omnibus_effects(result)), 0L)
+})
+
+test_that("two-group hypothesis changes p-value but not the effect estimate", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 3, 5, 7, 9),
+    arm = factor(rep(c("Control", "Treatment"), each = 3L))
+  )) |>
+    set_outcome(value, type = "continuous") |>
+    set_predictor(arm, type = "binary", reference = "Control")
+  run <- function(hypothesis) data |>
+    plan_descriptives(
+      value, groups = arm,
+      comparisons = two_group_comparison(
+        method = t_test(var_equal = FALSE), estimand = mean_difference(),
+        contrast = against_reference("Control"), hypothesis = hypothesis,
+        multiplicity = no_adjustment()
+      )
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  two <- run(two_sided(null = 0, alpha = 0.05))
+  superior <- run(superiority(null = 0, direction = "greater", alpha = 0.025))
+  equivalent <- run(equivalence(lower = -10, upper = 10, alpha = 0.05))
+
+  expect_equal(contrasts(two)$estimate, contrasts(superior)$estimate)
+  expect_equal(contrasts(two)$estimate, contrasts(equivalent)$estimate)
+  expect_lt(contrasts(superior)$p_value, contrasts(two)$p_value)
+  expect_lt(contrasts(equivalent)$p_value, 0.05)
+  expect_false(identical(two$plan$analysis_id, superior$plan$analysis_id))
+  expect_identical(
+    superior$provenance$comparison_hypothesis[[1]]$type,
+    "superiority"
+  )
+})
+
 test_that("descriptive comparisons estimate a binary risk difference", {
   data <- as_bq_data(tibble::tibble(
     response = c(1, 1, 0, 0, 1, 0, 0, 0),
@@ -582,6 +646,42 @@ test_that("categorical multi-group comparisons return Cramer's V", {
   expect_identical(effect$effect_measure, "cramers_v")
   expect_equal(effect$estimate, expected)
   expect_identical(effect$scale, "zero_to_one")
+})
+
+test_that("Fisher omnibus and Cramer's V share a contingency artifact", {
+  data <- as_bq_data(tibble::tibble(
+    response = factor(c("No", "No", "Yes", "No", "Yes", "Yes", "Yes", "Yes", "No")),
+    arm = factor(rep(c("A", "B", "C"), each = 3L))
+  )) |>
+    set_outcome(response, type = "binary", event = "Yes") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+  method <- categorical_group_analysis(
+    omnibus = fisher_exact_test(simulate_p_value = FALSE),
+    effect_size = cramers_v(ci_method = "noncentral_chi_squared"),
+    pairwise = no_post_hoc()
+  )
+  result <- data |>
+    plan_descriptives(response, groups = arm, comparisons = method) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  contingency <- table(data$arm, data$response)
+  direct_fisher <- stats::fisher.test(contingency)
+  direct_chi <- suppressWarnings(stats::chisq.test(contingency, correct = FALSE))
+  expected_v <- sqrt(unname(direct_chi$statistic) / nrow(data))
+  artifact <- models(result)[[result$plan$analysis_id]]
+
+  expect_equal(tests(result)$p_value, direct_fisher$p.value)
+  expect_identical(tests(result)$test, "fisher_exact")
+  expect_equal(omnibus_effects(result)$estimate, expected_v)
+  expect_identical(omnibus_effects(result)$method, "pearson_chi_squared")
+  expect_identical(artifact$table_build_count, 1L)
+  expect_equal(unname(artifact$contingency_table), unname(contingency))
+  expect_identical(
+    result$provenance$comparison_omnibus[[1]]$id, "fisher_exact"
+  )
+  expect_identical(
+    result$provenance$comparison_effect_size[[1]]$id, "cramers_v"
+  )
 })
 
 test_that("descriptive means can be compared with the global group mean", {

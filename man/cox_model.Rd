@@ -4,10 +4,18 @@
 \alias{cox_model}
 \title{Construct a Cox proportional hazards method}
 \usage{
-cox_model(ties = c("efron", "breslow", "exact"))
+cox_model(
+  ties = c("efron", "breslow", "exact"),
+  baseline = common_baseline(),
+  subgroup = no_subgroup_analysis()
+)
 }
 \arguments{
 \item{ties}{Ties method passed to \code{survival::coxph()}.}
+
+\item{baseline}{Baseline-hazard strategy.}
+
+\item{subgroup}{Subgroup-fitting strategy.}
 }
 \value{
 A concrete method specification.
