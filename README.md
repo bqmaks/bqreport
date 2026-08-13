@@ -4,6 +4,37 @@
 analysis. It separates study metadata, inspectable analysis plans, statistical
 execution, tidy numerical results, and reporting.
 
+## Installation
+
+`bqreport` is currently distributed from GitHub. The recommended installation
+method uses [`pak`](https://pak.r-lib.org/):
+
+```r
+install.packages("pak")
+pak::pak("bqmaks/bqreport")
+```
+
+Alternatively, install the package with `remotes`:
+
+```r
+install.packages("remotes")
+remotes::install_github("bqmaks/bqreport")
+```
+
+To install a local checkout for development, run this command from the package
+directory:
+
+```r
+install.packages("devtools")
+devtools::install()
+```
+
+Optional statistical backends are installed when their corresponding analyses
+are needed. Missing backend packages are reported during plan validation rather
+than silently changing the requested method.
+
+## Quick start
+
 ```r
 library(bqreport)
 
