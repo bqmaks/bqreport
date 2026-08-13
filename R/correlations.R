@@ -26,6 +26,35 @@ kendall_correlation <- function() {
   )
 }
 
+#' Construct weighted and repeated-measures correlation methods
+#' @return A concrete `correlation_method_spec`.
+#' @export
+weighted_pearson_correlation <- function() {
+  method <- new_correlation_method(
+    "weighted_pearson", "fisher_z_effective_n",
+    compute = compute_weighted_pearson,
+    effect_measure = "weighted_pearson_correlation",
+    supports_partial = FALSE, supports_interaction = FALSE
+  )
+  method$requires_weights <- TRUE
+  method$supports_weights <- TRUE
+  method
+}
+
+#' @rdname weighted_pearson_correlation
+#' @export
+repeated_measures_correlation <- function() {
+  method <- new_correlation_method(
+    "repeated_measures", "fisher_z_within_subject",
+    compute = compute_repeated_measures_correlation,
+    effect_measure = "repeated_measures_correlation",
+    supports_partial = FALSE, supports_interaction = FALSE
+  )
+  method$requires_id <- TRUE
+  method$supports_id <- TRUE
+  method
+}
+
 new_correlation_method <- function(
   id, ci_method, compute, effect_measure = paste0(id, "_correlation"),
   scale = "minus_one_to_one", supports_partial = TRUE,
@@ -38,6 +67,8 @@ new_correlation_method <- function(
     required_packages = required_packages, compute = compute,
     supports_partial = supports_partial, supports_strata = supports_strata,
     supports_interaction = supports_interaction,
+    supports_weights = FALSE, supports_id = FALSE,
+    requires_weights = FALSE, requires_id = FALSE,
     function_id = id, function_hash = function_hash
   ), class = "correlation_method_spec")
 }
@@ -51,13 +82,16 @@ new_correlation_method <- function(
 #' @param ci_method Confidence-interval method identifier.
 #' @param supports_partial,supports_strata,supports_interaction Declared method
 #'   capabilities checked before compilation.
+#' @param supports_weights,supports_id Whether optional weights or subject IDs
+#'   may be supplied to the method.
 #' @param required_packages Optional packages checked during preflight.
 #' @return A validated `correlation_method_spec`.
 #' @export
 correlation_method <- function(
   id, compute, effect_measure, scale = "minus_one_to_one", ci_method,
   supports_partial = FALSE, supports_strata = TRUE,
-  supports_interaction = FALSE, required_packages = character()
+  supports_interaction = FALSE, supports_weights = FALSE, supports_id = FALSE,
+  required_packages = character()
 ) {
   for (value in list(id = id, effect_measure = effect_measure, scale = scale,
                      ci_method = ci_method)) {
@@ -66,15 +100,21 @@ correlation_method <- function(
     }
   }
   if (!is.function(compute)) stop_invalid_correlation("`compute` must be a function.")
-  capabilities <- c(supports_partial, supports_strata, supports_interaction)
-  if (!is.logical(capabilities) || length(capabilities) != 3L || anyNA(capabilities)) {
+  capabilities <- c(
+    supports_partial, supports_strata, supports_interaction,
+    supports_weights, supports_id
+  )
+  if (!is.logical(capabilities) || length(capabilities) != 5L || anyNA(capabilities)) {
     stop_invalid_correlation("Correlation method capabilities must be TRUE or FALSE.")
   }
-  new_correlation_method(
+  output <- new_correlation_method(
     id, ci_method, compute, effect_measure, scale, supports_partial,
     supports_strata, supports_interaction, required_packages,
     function_hash = digest::digest(compute)
   )
+  output$supports_weights <- supports_weights
+  output$supports_id <- supports_id
+  output
 }
 
 #' Add bootstrap intervals and permutation inference to a correlation method
@@ -122,6 +162,10 @@ resampled_correlation <- function(
     function_hash = digest::digest(list(method$function_hash, bootstrap, permutations, seed))
   )
   output$base_method <- method
+  output$supports_weights <- method$supports_weights
+  output$supports_id <- method$supports_id
+  output$requires_weights <- method$requires_weights
+  output$requires_id <- method$requires_id
   output$bootstrap_replicates <- bootstrap
   output$permutation_replicates <- permutations
   output$resampling_seed <- seed
@@ -273,6 +317,8 @@ fisher_z_comparator <- function() {
 #' @param method A correlation method specification.
 #' @param adjust_for Optional numeric covariates for partial correlation.
 #' @param strata Optional variables defining independent correlation strata.
+#' @param weights Optional numeric analysis-weight column.
+#' @param id Optional subject identifier for repeated-measures methods.
 #' @param interaction_test Whether to test equality of Pearson correlations
 #'   across strata and compute pairwise Fisher z contrasts.
 #' @param comparator Optional comparator used when `interaction_test = TRUE`.
@@ -285,6 +331,8 @@ plan_correlations <- function(
   .data, variables = where_continuous(), with = NULL,
   adjust_for = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
+  weights = tidyselect::any_of(character()),
+  id = tidyselect::any_of(character()),
   interaction_test = FALSE,
   comparator = NULL,
   method = pearson_correlation(), missing = c("pairwise", "complete"),
@@ -310,6 +358,23 @@ plan_correlations <- function(
   strata_names <- names(tidyselect::eval_select(
     rlang::enquo(strata), .data
   ))
+  weight_names <- names(tidyselect::eval_select(rlang::enquo(weights), .data))
+  id_names <- names(tidyselect::eval_select(rlang::enquo(id), .data))
+  if (length(weight_names) > 1L || length(id_names) > 1L) {
+    stop_invalid_correlation("Select at most one weight and one subject ID.")
+  }
+  if (isTRUE(method$requires_weights) && !length(weight_names)) {
+    stop_invalid_correlation(paste0("Method `", method$id, "` requires `weights`."))
+  }
+  if (length(weight_names) && !isTRUE(method$supports_weights)) {
+    stop_invalid_correlation(paste0("Method `", method$id, "` does not support weights."))
+  }
+  if (isTRUE(method$requires_id) && !length(id_names)) {
+    stop_invalid_correlation(paste0("Method `", method$id, "` requires `id`."))
+  }
+  if (length(id_names) && !isTRUE(method$supports_id)) {
+    stop_invalid_correlation(paste0("Method `", method$id, "` does not support subject IDs."))
+  }
   if (!is.logical(interaction_test) || length(interaction_test) != 1L ||
       is.na(interaction_test)) {
     stop_invalid_correlation("`interaction_test` must be `TRUE` or `FALSE`.")
@@ -356,9 +421,11 @@ plan_correlations <- function(
   registry <- tibble::as_tibble(
     attr(.data, "variable_registry", exact = TRUE)
   )
-  selected_names <- unique(c(left, right, adjustment_names))
+  selected_names <- unique(c(left, right, adjustment_names, weight_names, id_names))
   selected_ids <- registry$var_id[match(selected_names, registry$name)]
   adjustment_ids <- registry$var_id[match(adjustment_names, registry$name)]
+  weight_id <- registry$var_id[match(weight_names, registry$name)]
+  subject_id <- registry$var_id[match(id_names, registry$name)]
   stratum_specs <- compile_stratum_specs(.data, strata_names, registry)
   task_index <- expand.grid(
     pair = seq_len(ncol(pairs)), stratum = seq_along(stratum_specs),
@@ -403,7 +470,12 @@ plan_correlations <- function(
     row$correlation_variable_ids <- list(selected_ids)
     row$adjustment_ids <- list(adjustment_ids)
     row$adjustment_variables <- list(adjustment_names)
-    row$estimand <- if (length(adjustment_ids)) "partial_correlation" else "correlation"
+    row$weight_id <- if (length(weight_id)) weight_id else NA_character_
+    row$weight <- if (length(weight_names)) weight_names else NA_character_
+    row$correlation_subject_id <- if (length(subject_id)) subject_id else NA_character_
+    row$correlation_subject <- if (length(id_names)) id_names else NA_character_
+    row$estimand <- if (isTRUE(method$requires_id)) "within_subject_correlation" else
+      if (length(adjustment_ids)) "partial_correlation" else "correlation"
     row$method <- method$id
     row$engine <- "stats_cor_test"
     row$estimator <- method$estimator
@@ -449,6 +521,26 @@ validate_correlation_task <- function(plan, i, data, registry) {
     analysis_data <- data[stratum_mask(
       data, current_strata, plan$stratum_values[[i]]
     ), , drop = FALSE]
+  }
+  if (!is.na(plan$weight_id[[i]])) {
+    weight_row <- match(plan$weight_id[[i]], registry$var_id)
+    if (is.na(weight_row)) {
+      issues <- c(issues, "The correlation weight is absent.")
+    } else {
+      plan$weight[[i]] <- registry$name[[weight_row]]
+      weight <- analysis_vector(analysis_data[[plan$weight[[i]]]])
+      if (!is.numeric(weight) || any(!is.na(weight) & (!is.finite(weight) | weight <= 0))) {
+        issues <- c(issues, "Correlation weights must be finite and positive.")
+      }
+    }
+  }
+  if (!is.na(plan$correlation_subject_id[[i]])) {
+    subject_row <- match(plan$correlation_subject_id[[i]], registry$var_id)
+    if (is.na(subject_row)) {
+      issues <- c(issues, "The correlation subject identifier is absent.")
+    } else {
+      plan$correlation_subject[[i]] <- registry$name[[subject_row]]
+    }
   }
   if (is.na(x_row) || is.na(y_row)) {
     issues <- c(issues, "A correlation variable referenced by stable id is absent.")
@@ -507,6 +599,16 @@ validate_correlation_task <- function(plan, i, data, registry) {
           issues <- c(issues, "Adjustment variables are linearly dependent.")
         }
       }
+      if (!is.na(plan$correlation_subject_id[[i]]) && n > 0L) {
+        subject <- analysis_vector(
+          analysis_data[[plan$correlation_subject[[i]]]]
+        )[mask]
+        counts <- table(subject)
+        if (length(counts) < 2L || sum(counts >= 2L) < 2L) {
+          issues <- c(issues,
+            "Repeated-measures correlation requires at least two subjects with repeated observations.")
+        }
+      }
     }
   }
   if (length(issues)) {
@@ -535,14 +637,20 @@ correlation_complete_mask <- function(spec, data, x, y) {
   if (spec$missing_policy[[1]] == "pairwise") {
     ids <- unique(c(
       spec$variable_x_id[[1]], spec$variable_y_id[[1]],
-      spec$adjustment_ids[[1]]
+      spec$adjustment_ids[[1]], spec$weight_id[[1]],
+      spec$correlation_subject_id[[1]]
     ))
   } else ids <- spec$correlation_variable_ids[[1]]
   registry <- variables(data)
   mask <- rep(TRUE, nrow(data))
   for (id in ids) {
+    if (is.na(id)) next
     row <- match(id, registry$var_id)
     if (is.na(row)) return(rep(FALSE, nrow(data)))
+    if (id %in% c(spec$weight_id[[1]], spec$correlation_subject_id[[1]])) {
+      mask <- mask & !special_missing_mask(data[[registry$name[[row]]]])
+      next
+    }
     value <- correlation_analysis_vector(
       data, spec, registry$name[[row]], id
     )
@@ -579,6 +687,10 @@ execute_correlation <- function(spec, data) {
     analysis_id = spec$analysis_id[[1]], x = x, y = y,
     adjustment = adjustment, confidence_level = spec$confidence_level[[1]],
     estimand = spec$estimand[[1]], method = method,
+    weights = if (is.na(spec$weight[[1]])) NULL else
+      analysis_vector(data[[spec$weight[[1]]]])[mask],
+    id = if (is.na(spec$correlation_subject[[1]])) NULL else
+      analysis_vector(data[[spec$correlation_subject[[1]]]])[mask],
     stratum_label = spec$stratum_label[[1]], missing_policy = spec$missing_policy[[1]]
   ), class = "correlation_context")
   method_object <- spec$method_object[[1]]
@@ -607,6 +719,11 @@ execute_correlation <- function(spec, data) {
     scale = spec$scale[[1]], n = as.integer(length(x)), method = method,
     ci_method = spec$ci_method[[1]], missing_policy = spec$missing_policy[[1]],
     confidence_level = spec$confidence_level[[1]],
+    weight = spec$weight[[1]], id = spec$correlation_subject[[1]],
+    effective_n = if (is.null(attr(output, "effective_n"))) as.numeric(length(x)) else
+      attr(output, "effective_n"),
+    n_subjects = if (is.null(attr(output, "n_subjects"))) NA_integer_ else
+      attr(output, "n_subjects"),
     bootstrap_replicates = spec$bootstrap_replicates[[1]],
     permutation_replicates = spec$permutation_replicates[[1]],
     resampling_seed = spec$resampling_seed[[1]],
@@ -615,6 +732,52 @@ execute_correlation <- function(spec, data) {
     permutation_successful = if (is.null(attr(output, "permutation_successful"))) 0L else
       attr(output, "permutation_successful")
   )
+}
+
+compute_weighted_pearson <- function(context) {
+  weights <- context$weights
+  total <- sum(weights)
+  mean_x <- sum(weights * context$x) / total
+  mean_y <- sum(weights * context$y) / total
+  centered_x <- context$x - mean_x; centered_y <- context$y - mean_y
+  estimate <- sum(weights * centered_x * centered_y) /
+    sqrt(sum(weights * centered_x^2) * sum(weights * centered_y^2))
+  effective_n <- total^2 / sum(weights^2)
+  if (effective_n <= 3) {
+    stop_invalid_correlation_output("Weighted correlation effective sample size must exceed 3.")
+  }
+  std_error <- 1 / sqrt(effective_n - 3)
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  ci <- tanh(atanh(estimate) + c(-1, 1) * critical * std_error)
+  statistic <- estimate * sqrt((effective_n - 2) / (1 - estimate^2))
+  output <- correlation_output(
+    estimate, std_error, "fisher_z_effective_n", ci[[1]], ci[[2]], statistic,
+    effective_n - 2, 2 * stats::pt(abs(statistic), effective_n - 2,
+      lower.tail = FALSE)
+  )
+  attr(output, "effective_n") <- effective_n
+  output
+}
+
+compute_repeated_measures_correlation <- function(context) {
+  centered_x <- context$x - ave(context$x, context$id, FUN = mean)
+  centered_y <- context$y - ave(context$y, context$id, FUN = mean)
+  estimate <- stats::cor(centered_x, centered_y)
+  n_subjects <- length(unique(context$id))
+  df <- length(context$x) - n_subjects - 1L
+  if (df <= 1L) stop_invalid_correlation_output(
+    "Repeated-measures correlation has insufficient residual degrees of freedom."
+  )
+  statistic <- estimate * sqrt(df / (1 - estimate^2))
+  std_error <- 1 / sqrt(df - 1)
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  ci <- tanh(atanh(estimate) + c(-1, 1) * critical * std_error)
+  output <- correlation_output(
+    estimate, std_error, "fisher_z_within_subject", ci[[1]], ci[[2]], statistic,
+    df, 2 * stats::pt(abs(statistic), df, lower.tail = FALSE)
+  )
+  attr(output, "n_subjects") <- as.integer(n_subjects)
+  output
 }
 
 compute_builtin_correlation <- function(context, method) {
@@ -812,6 +975,8 @@ correlations_prototype <- function() {
     effect_measure = character(), scale = character(), n = integer(),
     method = character(), ci_method = character(), missing_policy = character(),
     confidence_level = double(), bootstrap_replicates = integer(),
+    weight = character(), id = character(), effective_n = double(),
+    n_subjects = integer(),
     permutation_replicates = integer(), resampling_seed = integer(),
     bootstrap_successful = integer(), permutation_successful = integer()
   )

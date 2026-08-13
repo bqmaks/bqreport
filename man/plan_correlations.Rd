@@ -10,6 +10,8 @@ plan_correlations(
   with = NULL,
   adjust_for = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
+  weights = tidyselect::any_of(character()),
+  id = tidyselect::any_of(character()),
   interaction_test = FALSE,
   comparator = NULL,
   method = pearson_correlation(),
@@ -29,6 +31,10 @@ plan_correlations(
 \item{adjust_for}{Optional numeric covariates for partial correlation.}
 
 \item{strata}{Optional variables defining independent correlation strata.}
+
+\item{weights}{Optional numeric analysis-weight column.}
+
+\item{id}{Optional subject identifier for repeated-measures methods.}
 
 \item{interaction_test}{Whether to test equality of Pearson correlations
 across strata and compute pairwise Fisher z contrasts.}

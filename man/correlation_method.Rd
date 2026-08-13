@@ -13,6 +13,8 @@ correlation_method(
   supports_partial = FALSE,
   supports_strata = TRUE,
   supports_interaction = FALSE,
+  supports_weights = FALSE,
+  supports_id = FALSE,
   required_packages = character()
 )
 }
@@ -30,6 +32,9 @@ returning a value constructed by \code{correlation_output()}.}
 
 \item{supports_partial, supports_strata, supports_interaction}{Declared method
 capabilities checked before compilation.}
+
+\item{supports_weights, supports_id}{Whether optional weights or subject IDs
+may be supplied to the method.}
 
 \item{required_packages}{Optional packages checked during preflight.}
 }

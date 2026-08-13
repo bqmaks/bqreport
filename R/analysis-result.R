@@ -1041,7 +1041,13 @@ provenance_row <- function(spec) {
     ) spec$permutation_replicates[[1]] else 0L,
     resampling_seed = if (
       "resampling_seed" %in% names(spec)
-    ) spec$resampling_seed[[1]] else NA_integer_
+    ) spec$resampling_seed[[1]] else NA_integer_,
+    correlation_weight_id = if (
+      "weight_id" %in% names(spec) && identical(spec$analysis_type[[1]], "correlation")
+    ) spec$weight_id[[1]] else NA_character_,
+    correlation_subject_id = if (
+      "correlation_subject_id" %in% names(spec)
+    ) spec$correlation_subject_id[[1]] else NA_character_
   )
 }
 
@@ -1139,7 +1145,8 @@ provenance_prototype <- function() {
     , correlation_estimand = character(), correlation_adjustment_ids = list(),
     correlation_missing_policy = character(), correlation_comparator_id = character(),
     correlation_comparator_hash = character(), bootstrap_replicates = integer(),
-    permutation_replicates = integer(), resampling_seed = integer()
+    permutation_replicates = integer(), resampling_seed = integer(),
+    correlation_weight_id = character(), correlation_subject_id = character()
   )
 }
 

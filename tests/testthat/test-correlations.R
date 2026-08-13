@@ -442,3 +442,72 @@ test_that("resampling parameters are validated", {
     class = "bq_error_invalid_correlation"
   )
 })
+
+test_that("weighted Pearson correlation agrees with direct weighted moments", {
+  data <- as_bq_data(tibble::tibble(
+    x = c(1, 2, 3, 5, 8, 13), y = c(2, 1, 4, 6, 7, 12),
+    w = c(1, 2, 1, 3, 2, 1)
+  ))
+  result <- data |>
+    plan_correlations(
+      x, with = y, weights = w, method = weighted_pearson_correlation()
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  output <- correlations(result)
+  mx <- weighted.mean(data$x, data$w)
+  my <- weighted.mean(data$y, data$w)
+  expected <- sum(data$w * (data$x - mx) * (data$y - my)) /
+    sqrt(sum(data$w * (data$x - mx)^2) * sum(data$w * (data$y - my)^2))
+  effective_n <- sum(data$w)^2 / sum(data$w^2)
+
+  expect_equal(output$estimate, expected)
+  expect_equal(output$effective_n, effective_n)
+  expect_identical(output$weight, "w")
+  expect_identical(output$effect_measure, "weighted_pearson_correlation")
+})
+
+test_that("repeated-measures correlation removes subject means", {
+  data <- as_bq_data(tibble::tibble(
+    id = rep(letters[1:5], each = 4),
+    x = rep(1:4, 5) + rep(c(0, 10, -5, 20, 7), each = 4),
+    y = rep(c(1, 3, 2, 5), 5) + rep(c(5, -4, 12, 30, -8), each = 4)
+  ))
+  result <- data |>
+    plan_correlations(
+      x, with = y, id = id, method = repeated_measures_correlation()
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  output <- correlations(result)
+  centered_x <- data$x - ave(data$x, data$id)
+  centered_y <- data$y - ave(data$y, data$id)
+
+  expect_equal(output$estimate, stats::cor(centered_x, centered_y))
+  expect_identical(output$id, "id")
+  expect_identical(output$n_subjects, 5L)
+  expect_identical(output$estimand, "within_subject_correlation")
+})
+
+test_that("weighted and repeated correlation requirements fail in preflight", {
+  data <- as_bq_data(tibble::tibble(
+    id = rep(c("a", "b"), each = 3), x = 1:6, y = 2:7,
+    bad_weight = c(1, 1, -1, 1, 1, 1)
+  ))
+  expect_error(
+    plan_correlations(data, x, with = y, method = weighted_pearson_correlation()),
+    class = "bq_error_invalid_correlation"
+  )
+  weighted <- plan_correlations(
+    data, x, with = y, weights = bad_weight,
+    method = weighted_pearson_correlation()
+  ) |>
+    validate_plan(data)
+  expect_identical(weighted$status, "invalid")
+  expect_match(weighted$reason, "weight", ignore.case = TRUE)
+
+  expect_error(
+    plan_correlations(data, x, with = y, method = repeated_measures_correlation()),
+    class = "bq_error_invalid_correlation"
+  )
+})
