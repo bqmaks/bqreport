@@ -378,15 +378,15 @@ validate_plan <- function(plan, data) {
     comparison_registry <- contrasts(data)
     if (nrow(comparison_registry) > 0L) {
       comparison_rows <- comparison_registry$contrast_id %in% out$contrast_ids[[i]]
-      conditional_rows <- comparison_rows &
-        comparison_registry$comparison_type == "within_levels"
+      conditional_rows <- comparison_rows & comparison_registry$comparison_type %in%
+        c("within_levels", "contrast_of_contrasts")
       missing_modifiers <- setdiff(
         comparison_registry$modifier_id[conditional_rows],
         out$effect_modifier_ids[[i]]
       )
       if (length(missing_modifiers)) {
         issues <- c(issues,
-          "A `within_levels()` comparison references a variable that is not an effect modifier in this plan.")
+          "A conditional comparison references a variable that is not an effect modifier in this plan.")
       }
       comparison_packages <- unique(unlist(
         comparison_registry$required_packages[comparison_rows],

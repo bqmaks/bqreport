@@ -143,6 +143,43 @@ within_levels <- function(modifier) {
   ), class = "contrast_spec")
 }
 
+#' Compare conditional effects across modifier levels
+#'
+#' @param modifier Exactly one categorical effect modifier.
+#' @param inner A contrast specification for levels of the main predictor.
+#' @param outer A contrast specification for levels of `modifier`.
+#' @param exponentiate Whether to exponentiate the model-scale contrast of
+#'   contrasts. This must always be supplied explicitly.
+#' @return A backend-independent contrast-of-contrasts specification.
+#' @export
+contrast_of_contrasts <- function(modifier, inner, outer, exponentiate) {
+  if (missing(exponentiate) || !is.logical(exponentiate) ||
+      length(exponentiate) != 1L || is.na(exponentiate)) {
+    stop_comparison(
+      "`exponentiate` must be explicitly supplied as TRUE or FALSE.",
+      "bq_error_invalid_comparison"
+    )
+  }
+  supported <- c(
+    "against_reference", "all_pairwise", "consecutive", "against_global_mean"
+  )
+  if (!inherits(inner, "contrast_spec") || !inner$type %in% supported ||
+      !inherits(outer, "contrast_spec") || !outer$type %in% supported) {
+    stop_comparison(
+      "`inner` and `outer` must be supported level contrast specifications.",
+      "bq_error_invalid_comparison"
+    )
+  }
+  structure(list(
+    type = "contrast_of_contrasts", modifier_quo = rlang::enquo(modifier),
+    inner = inner, outer = outer, exponentiate = exponentiate,
+    reference = NULL, compute = NULL, effect_measure = NA_character_,
+    scale = NA_character_, model_scale = NA_character_,
+    required_packages = character(), function_id = NA_character_,
+    function_hash = NA_character_
+  ), class = "contrast_spec")
+}
+
 #' Register target comparisons
 #' @param .data A `bq_data` object.
 #' @param .cols Predictor columns selected with tidyselect.
@@ -171,10 +208,10 @@ set_comparisons <- function(.data, .cols, comparisons, adjust = "none") {
     )
   }
   modifier_id <- modifier_name <- NA_character_
-  if (identical(comparisons$type, "within_levels")) {
+  if (comparisons$type %in% c("within_levels", "contrast_of_contrasts")) {
     modifier_selected <- names(tidyselect::eval_select(comparisons$modifier_quo, .data))
     if (length(modifier_selected) != 1L) {
-      stop_comparison("`within_levels()` requires exactly one modifier.",
+      stop_comparison("The comparison requires exactly one modifier.",
         "bq_error_invalid_comparison")
     }
     modifier_name <- modifier_selected[[1]]
@@ -390,7 +427,7 @@ compute_conditional_contrasts <- function(fit, spec, data) {
         estimate <- sum(contrast_vector * beta)
         std_error <- sqrt(drop(t(contrast_vector) %*% covariance %*% contrast_vector))
         statistic <- estimate / std_error
-        if (inherits(fit, "glm")) {
+        if (inherits(fit, "glm") || inherits(fit, "coxph")) {
           critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
           p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
         } else {
@@ -425,6 +462,158 @@ compute_conditional_contrasts <- function(fit, spec, data) {
     result
   })
   vctrs::vec_rbind(!!!outputs)
+}
+
+compute_contrasts_of_contrasts <- function(fit, spec, data) {
+  registry <- contrasts(data)
+  if (nrow(registry) == 0L) return(contrasts_prototype())
+  registered <- registry[
+    registry$contrast_id %in% spec$contrast_ids[[1]] &
+      registry$comparison_type == "contrast_of_contrasts", , drop = FALSE
+  ]
+  if (nrow(registered) == 0L) return(contrasts_prototype())
+  model_frame <- stats::model.frame(fit)
+  predictor_name <- spec$predictor[[1]]
+  predictor <- model_frame[[predictor_name]]
+  if (!is.factor(predictor)) {
+    stop_comparison_output(
+      "`contrast_of_contrasts()` requires a categorical predictor."
+    )
+  }
+  covariance <- covariance_for_contrasts(fit, spec)
+  beta <- stats::coef(fit)
+  terms_object <- stats::delete.response(stats::terms(fit))
+  outputs <- lapply(seq_len(nrow(registered)), function(i) {
+    comparison <- registered[i, , drop = FALSE]
+    comparison_spec <- comparison$comparison_object[[1]]
+    modifier_name <- comparison$modifier[[1]]
+    modifier <- model_frame[[modifier_name]]
+    if (!is.factor(modifier)) {
+      stop_comparison_output(
+        "`contrast_of_contrasts()` requires a categorical modifier."
+      )
+    }
+    inner <- level_contrast_vectors(
+      levels(predictor), comparison_spec$inner, predictor
+    )
+    outer <- level_contrast_vectors(
+      levels(modifier), comparison_spec$outer, modifier
+    )
+    base <- model_frame[1, -1L, drop = FALSE]
+    for (name in names(base)) {
+      column <- model_frame[[name]]
+      if (is.factor(column)) {
+        base[[name]] <- factor(levels(column)[[1]], levels = levels(column))
+      } else if (is.numeric(column)) {
+        base[[name]] <- mean(column, na.rm = TRUE)
+      }
+    }
+    cell_matrices <- lapply(levels(modifier), function(modifier_level) {
+      lapply(levels(predictor), function(predictor_level) {
+        cell <- base
+        cell[[predictor_name]] <- factor(
+          predictor_level, levels = levels(predictor)
+        )
+        cell[[modifier_name]] <- factor(
+          modifier_level, levels = levels(modifier)
+        )
+        stats::model.matrix(
+          terms_object, cell, contrasts.arg = fit$contrasts
+        )
+      })
+    })
+    rows <- list()
+    for (inner_i in seq_len(nrow(inner))) {
+      for (outer_i in seq_len(nrow(outer))) {
+        vector <- rep(0, length(beta)); names(vector) <- names(beta)
+        for (modifier_i in seq_along(levels(modifier))) {
+          for (predictor_i in seq_along(levels(predictor))) {
+            coefficient <- outer$weights[[outer_i]][[modifier_i]] *
+              inner$weights[[inner_i]][[predictor_i]]
+            matrix_row <- cell_matrices[[modifier_i]][[predictor_i]]
+            vector <- vector + coefficient * as.numeric(matrix_row[, names(beta)])
+          }
+        }
+        estimate <- sum(vector * beta)
+        standard_error <- sqrt(drop(t(vector) %*% covariance %*% vector))
+        statistic <- estimate / standard_error
+        if (inherits(fit, "glm")) {
+          critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+          p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
+        } else {
+          critical <- stats::qt(
+            (1 + spec$confidence_level[[1]]) / 2, stats::df.residual(fit)
+          )
+          p_value <- 2 * stats::pt(
+            abs(statistic), stats::df.residual(fit), lower.tail = FALSE
+          )
+        }
+        conf_low <- estimate - critical * standard_error
+        conf_high <- estimate + critical * standard_error
+        exponentiate <- isTRUE(comparison_spec$exponentiate)
+        effect_measure <- if (inherits(fit, "glm")) {
+          if (exponentiate) "ratio_of_odds_ratios" else "log_ratio_of_odds_ratios"
+        } else if (inherits(fit, "coxph")) {
+          if (exponentiate) "ratio_of_hazard_ratios" else "log_ratio_of_hazard_ratios"
+        } else "difference_of_differences"
+        output_scale <- if (exponentiate) "ratio" else spec$model_scale[[1]]
+        if (exponentiate) {
+          estimate <- exp(estimate)
+          conf_low <- exp(conf_low)
+          conf_high <- exp(conf_high)
+        }
+        rows[[length(rows) + 1L]] <- tibble::tibble(
+          analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+          predictor = predictor_name, contrast_id = comparison$contrast_id[[1]],
+          contrast = paste0("(", inner$label[[inner_i]], ") | ",
+            outer$label[[outer_i]]),
+          numerator = inner$numerator[[inner_i]],
+          denominator = inner$denominator[[inner_i]],
+          modifier = modifier_name, modifier_level = NA_character_,
+          inner_contrast = inner$label[[inner_i]],
+          outer_contrast = outer$label[[outer_i]],
+          estimand = "difference_of_differences", exponentiated = exponentiate,
+          estimate = estimate, std_error = standard_error,
+          std_error_scale = spec$model_scale[[1]],
+          conf_low = conf_low, conf_high = conf_high,
+          p_value = p_value, p_adjusted = NA_real_,
+          adjust_method = comparison$adjust_method[[1]],
+          effect_measure = effect_measure, scale = output_scale
+        )
+      }
+    }
+    result <- vctrs::vec_rbind(!!!rows)
+    result$p_adjusted <- stats::p.adjust(
+      result$p_value, method = comparison$adjust_method[[1]]
+    )
+    result
+  })
+  vctrs::vec_rbind(!!!outputs)
+}
+
+level_contrast_vectors <- function(levels, contrast_spec, observed) {
+  pairs <- contrast_level_pairs(
+    levels, contrast_spec$type, contrast_spec$reference
+  )
+  level_weights <- if (contrast_spec$type == "against_global_mean" &&
+      identical(contrast_spec$weights, "observed")) {
+    as.numeric(table(observed)[levels]) / length(observed)
+  } else rep(1 / length(levels), length(levels))
+  weights <- lapply(seq_len(nrow(pairs)), function(i) {
+    vector <- stats::setNames(rep(0, length(levels)), levels)
+    vector[[pairs$numerator[[i]]]] <- 1
+    if (pairs$denominator[[i]] == ".global_mean") {
+      vector <- vector - level_weights
+    } else {
+      vector[[pairs$denominator[[i]]]] <-
+        vector[[pairs$denominator[[i]]]] - 1
+    }
+    unname(vector)
+  })
+  tibble::tibble(
+    numerator = pairs$numerator, denominator = pairs$denominator,
+    label = paste0(pairs$numerator, " - ", pairs$denominator), weights = weights
+  )
 }
 
 covariance_for_contrasts <- function(fit, spec) {

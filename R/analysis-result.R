@@ -250,6 +250,18 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
     } else if (nrow(conditional_contrasts)) {
       contrast_rows[[length(contrast_rows) + 1L]] <- conditional_contrasts
     }
+    interaction_contrasts <- tryCatch(
+      compute_contrasts_of_contrasts(fit, spec, data),
+      error = function(condition) condition
+    )
+    if (inherits(interaction_contrasts, "error")) {
+      issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+        analysis_id, "contrasts", "error", class(interaction_contrasts)[[1]],
+        conditionMessage(interaction_contrasts)
+      )
+    } else if (nrow(interaction_contrasts)) {
+      contrast_rows[[length(contrast_rows) + 1L]] <- interaction_contrasts
+    }
     custom_comparisons <- tryCatch(
       compute_custom_comparisons(fit, spec, frame, data),
       error = function(condition) condition
@@ -374,6 +386,7 @@ validate_comparison_output <- function(x, spec, comparison) {
   if (!"std_error_scale" %in% names(x)) {
     x$std_error_scale <- rep(comparison$model_scale, nrow(x))
   }
+  x <- add_optional_interaction_contrast_columns(x)
   prototype <- contrasts_prototype()
   missing <- setdiff(names(prototype), names(x))
   if (length(missing)) {
@@ -492,6 +505,7 @@ validate_custom_component <- function(x, prototype, component, spec, method, req
     if (!"modifier_level" %in% names(x)) {
       x$modifier_level <- rep(NA_character_, nrow(x))
     }
+    x <- add_optional_interaction_contrast_columns(x)
   }
   missing <- setdiff(names(prototype), names(x))
   if (length(missing)) stop_method_output(paste0("`", component, "` is missing columns: ", paste(missing, collapse = ", "), "."))
@@ -506,6 +520,20 @@ validate_custom_component <- function(x, prototype, component, spec, method, req
   tryCatch(vctrs::vec_cast(x, prototype), error = function(error) {
     stop_method_output(paste0("`", component, "` has incompatible column types."))
   })
+}
+
+add_optional_interaction_contrast_columns <- function(x) {
+  if (!"inner_contrast" %in% names(x)) {
+    x$inner_contrast <- rep(NA_character_, nrow(x))
+  }
+  if (!"outer_contrast" %in% names(x)) {
+    x$outer_contrast <- rep(NA_character_, nrow(x))
+  }
+  if (!"estimand" %in% names(x)) x$estimand <- rep(NA_character_, nrow(x))
+  if (!"exponentiated" %in% names(x)) {
+    x$exponentiated <- rep(FALSE, nrow(x))
+  }
+  x
 }
 
 stop_method_output <- function(message) {
@@ -1011,6 +1039,8 @@ contrasts_prototype <- function() {
     analysis_id = character(), outcome = character(), predictor = character(),
       contrast_id = character(), contrast = character(), numerator = character(), denominator = character(),
     modifier = character(), modifier_level = character(),
+    inner_contrast = character(), outer_contrast = character(),
+    estimand = character(), exponentiated = logical(),
     estimate = double(), std_error = double(), std_error_scale = character(),
     conf_low = double(), conf_high = double(),
     p_value = double(), p_adjusted = double(), adjust_method = character(),
