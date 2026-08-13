@@ -23,6 +23,90 @@ logistic_model <- function(ci_method = "wald", exponentiate = TRUE) {
     scale = if (exponentiate) "ratio" else "link")
 }
 
+#' Construct a Poisson count-regression specification
+#'
+#' @inheritParams linear_model
+#' @return A concrete `method_spec` returning rate ratios by default.
+#' @export
+poisson_model <- function(ci_method = "wald", exponentiate = TRUE) {
+  check_exponentiate(exponentiate)
+  new_method_spec(
+    "poisson_model", "glm", "maximum_likelihood", ci_method,
+    "poisson", "log", if (exponentiate) "rate_ratio" else "log_rate",
+    exponentiate = exponentiate, model_scale = "link",
+    scale = if (exponentiate) "ratio" else "link"
+  )
+}
+
+#' Construct a negative-binomial count-regression specification
+#'
+#' @inheritParams linear_model
+#' @return A concrete custom `method_spec` using the optional `MASS` backend.
+#' @export
+negative_binomial_model <- function(ci_method = "wald", exponentiate = TRUE) {
+  check_exponentiate(exponentiate)
+  analysis_function(
+    id = "negative_binomial_model",
+    effect_measure = if (exponentiate) "rate_ratio" else "log_rate",
+    scale = if (exponentiate) "ratio" else "link", model_scale = "link",
+    exponentiate = exponentiate, required_packages = "MASS",
+    run = function(context) run_negative_binomial(context)
+  )
+}
+
+run_negative_binomial <- function(context) {
+  fit_args <- list(
+    formula = context$formula, data = context$model_frame,
+    na.action = stats::na.omit
+  )
+  if (!is.null(context$weights)) fit_args$weights <- context$weights
+  fit <- do.call(MASS::glm.nb, fit_args)
+  coefficients <- summary(fit)$coefficients
+  beta <- unname(coefficients[, "Estimate"])
+  standard_error <- unname(coefficients[, "Std. Error"])
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  null_args <- list(
+    formula = stats::reformulate(
+      character(), response = context$outcome_spec$name[[1]]
+    ),
+    data = context$model_frame, na.action = stats::na.omit
+  )
+  if (!is.null(context$weights)) null_args$weights <- context$weights
+  null_fit <- do.call(MASS::glm.nb, null_args)
+  statistic <- 2 * (stats::logLik(fit) - stats::logLik(null_fit))
+  degrees <- attr(stats::logLik(fit), "df") - attr(stats::logLik(null_fit), "df")
+  analysis_output(
+    model = fit,
+    estimates = tibble::tibble(
+      analysis_id = context$analysis_id, outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]], term = rownames(coefficients),
+      level = NA_character_, estimate = beta, std_error = standard_error,
+      std_error_scale = "log_rate", conf_low = beta - critical * standard_error,
+      conf_high = beta + critical * standard_error,
+      statistic = beta / standard_error, df = NA_real_,
+      p_value = 2 * stats::pnorm(abs(beta / standard_error), lower.tail = FALSE),
+      effect_measure = "rate_ratio", scale = "link",
+      n = as.integer(stats::nobs(fit)), n_events = NA_integer_,
+      method = "negative_binomial_model", variance = "model_based"
+    ),
+    tests = tibble::tibble(
+      analysis_id = context$analysis_id, outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]],
+      contrast = NA_character_, numerator = NA_character_, denominator = NA_character_,
+      test = "likelihood_ratio",
+      statistic = as.numeric(statistic), df = as.numeric(degrees),
+      p_value = stats::pchisq(statistic, degrees, lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = "none",
+      method = "negative_binomial_model"
+    ),
+    diagnostics = tibble::tibble(
+      analysis_id = context$analysis_id,
+      metric = c("theta", "converged"), value = c(fit$theta, as.numeric(fit$converged)),
+      status = "observed", message = NA_character_
+    )
+  )
+}
+
 #' Construct Firth penalized logistic regression
 #'
 #' @param exponentiate Whether coefficients and confidence limits are returned

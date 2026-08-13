@@ -271,6 +271,11 @@ default_method_spec <- function(outcome_type) {
     method$selection_reason <- "System default for a binary outcome."
     return(method)
   }
+  if (identical(outcome_type, "count")) {
+    method <- poisson_model()
+    method$selection_reason <- "System default for a count outcome."
+    return(method)
+  }
   NULL
 }
 
@@ -451,6 +456,13 @@ validate_plan <- function(plan, data) {
     predictor <- analysis_data[[predictor_name]]
     missing_outcome <- special_missing_mask(outcome)
     missing_predictor <- special_missing_mask(predictor)
+    if (identical(outcome_spec$type[[1]], "count")) {
+      count_values <- analysis_vector(outcome)[!missing_outcome]
+      if (any(!is.finite(count_values) | count_values < 0 |
+              count_values != floor(count_values))) {
+        issues <- c(issues, "Count outcome must contain non-negative integer values.")
+      }
+    }
     transformed_names <- c(predictor_name, covariate_names)
     transformed_ids <- c(out$predictor_id[[i]], out$covariate_ids[[i]])
     for (j in seq_along(transformed_names)) {

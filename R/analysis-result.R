@@ -687,20 +687,29 @@ fit_builtin_engine <- function(spec, frame) {
     return(stats::lm(fit_formula, data = frame, na.action = stats::na.omit))
   }
   if (spec$engine[[1]] == "glm") {
+    family <- builtin_glm_family(spec)
     if (!is.null(fit_weights)) {
       return(stats::glm(
-        fit_formula, data = frame, family = stats::binomial("logit"),
+        fit_formula, data = frame, family = family,
         weights = fit_weights, na.action = stats::na.omit
       ))
     }
     return(stats::glm(
       fit_formula,
       data = frame,
-      family = stats::binomial("logit"),
+      family = family,
       na.action = stats::na.omit
     ))
   }
   stop(paste0("Unknown built-in engine `", spec$engine[[1]], "`."))
+}
+
+builtin_glm_family <- function(spec) {
+  family <- spec$family[[1]]
+  link <- spec$link[[1]]
+  if (identical(family, "binomial")) return(stats::binomial(link))
+  if (identical(family, "poisson")) return(stats::poisson(link))
+  stop(paste0("Unsupported GLM family `", family, "`."))
 }
 
 tidy_builtin_estimates <- function(fit, spec) {
@@ -739,8 +748,10 @@ tidy_builtin_estimates <- function(fit, spec) {
     conf_low <- beta - critical * standard_error
     conf_high <- beta + critical * standard_error
     scale <- "link"
-    std_error_scale <- "log_odds"
-    n_events <- as.integer(sum(stats::model.response(stats::model.frame(fit)) == 1))
+    std_error_scale <- if (identical(spec$family[[1]], "poisson")) "log_rate" else "log_odds"
+    n_events <- if (identical(spec$family[[1]], "binomial")) {
+      as.integer(sum(stats::model.response(stats::model.frame(fit)) == 1))
+    } else NA_integer_
   }
   if (isTRUE(spec$exponentiate[[1]])) {
     estimate <- exp(estimate)
@@ -861,10 +872,11 @@ tidy_builtin_test <- function(fit, spec, frame) {
     p_value <- comparison$`Pr(>F)`[[2]]
     test <- "partial_f"
   } else {
+    family <- builtin_glm_family(spec)
     null_fit <- stats::glm(
       null_formula,
       data = frame,
-      family = stats::binomial("logit"),
+      family = family,
       na.action = stats::na.omit
     )
     comparison <- stats::anova(null_fit, fit, test = "Chisq")
@@ -898,8 +910,9 @@ tidy_builtin_test <- function(fit, spec, frame) {
       statistic <- comparison$F[[2]]; df <- comparison$Df[[2]]
       p_value <- comparison$`Pr(>F)`[[2]]
     } else {
+      family <- builtin_glm_family(spec)
       reduced <- stats::glm(
-        reduced_formula, data = frame, family = stats::binomial("logit"),
+        reduced_formula, data = frame, family = family,
         na.action = stats::na.omit
       )
       comparison <- stats::anova(reduced, fit, test = "Chisq")
@@ -928,8 +941,9 @@ tidy_builtin_test <- function(fit, spec, frame) {
       p_value <- comparison$`Pr(>F)`[[2]]
       df <- comparison$Df[[2]]
     } else {
+      family <- builtin_glm_family(spec)
       reduced <- stats::glm(reduced_formula, data = frame,
-        family = stats::binomial("logit"), na.action = stats::na.omit)
+        family = family, na.action = stats::na.omit)
       comparison <- stats::anova(reduced, fit, test = "Chisq")
       statistic <- comparison$Deviance[[2]]
       p_value <- comparison$`Pr(>Chi)`[[2]]
@@ -958,8 +972,9 @@ tidy_builtin_test <- function(fit, spec, frame) {
       p_value <- comparison$`Pr(>F)`[[2]]
       df <- comparison$Df[[2]]
     } else {
+      family <- builtin_glm_family(spec)
       reduced <- stats::glm(
-        reduced_formula, data = frame, family = stats::binomial("logit"),
+        reduced_formula, data = frame, family = family,
         na.action = stats::na.omit
       )
       comparison <- stats::anova(reduced, fit, test = "Chisq")
@@ -991,7 +1006,8 @@ diagnose_builtin <- function(fit, spec) {
     metrics <- c(
       converged = as.numeric(isTRUE(fit$converged)),
       deviance = fit$deviance,
-      null_deviance = fit$null.deviance
+      null_deviance = fit$null.deviance,
+      dispersion_ratio = fit$deviance / fit$df.residual
     )
   }
   tibble::tibble(
