@@ -192,6 +192,12 @@ analysis_plan_row <- function(
   method_model_scale <- if (is.null(method)) NA_character_ else method$model_scale
   method_output_scale <- if (is.null(method)) NA_character_ else method$scale
   method_spec_object <- method
+  method_chain <- if (inherits(method, "analysis_method_chain")) {
+    names(method$methods)
+  } else character()
+  fallback_conditions <- if (inherits(method, "analysis_method_chain")) {
+    method$advance_on
+  } else character()
   predictor_color_spec <- if ("colors" %in% names(predictor_spec)) {
     predictor_spec$colors[[1]]
   } else NULL
@@ -242,6 +248,9 @@ analysis_plan_row <- function(
     function_hash = method_function_hash,
     required_packages = list(method_packages),
     method_object = list(method_spec_object),
+    method_chain = list(method_chain),
+    fallback_conditions = list(fallback_conditions),
+    executed_method = NA_character_,
     selector_object = list(selector),
     contrast_ids = list(contrast_ids),
     adjust_method = "none",

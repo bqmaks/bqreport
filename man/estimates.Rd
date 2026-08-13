@@ -5,6 +5,7 @@
 \alias{tests}
 \alias{diagnostics}
 \alias{issues}
+\alias{attempts}
 \alias{models}
 \alias{descriptives}
 \alias{survival_estimates}
@@ -19,6 +20,8 @@ tests(x)
 diagnostics(x)
 
 issues(x)
+
+attempts(x)
 
 models(x)
 

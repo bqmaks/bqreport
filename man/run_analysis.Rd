@@ -19,5 +19,6 @@ An \code{analysis_result}.
 \description{
 Only validated tasks with status \code{ready} are executed. Other tasks are
 retained in the result plan and represented in the issues component. Engine
-failures never trigger a fallback method.
+failures never trigger an undeclared fallback method. Explicit
+\code{\link[=analysis_method_chain]{analysis_method_chain()}} objects retain every runtime attempt.
 }

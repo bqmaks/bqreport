@@ -155,6 +155,7 @@ reference:
     contents:
       - analysis_function
       - analysis_method
+      - analysis_method_chain
       - analysis_output
       - method_selector
       - method_choice
@@ -164,6 +165,7 @@ reference:
       - tests
       - diagnostics
       - issues
+      - attempts
       - models
       - descriptives
       - survival_estimates

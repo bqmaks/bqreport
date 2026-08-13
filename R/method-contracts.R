@@ -384,19 +384,102 @@ new_method_spec <- function(id, engine, estimator, ci_method, family, link,
 #'   confidence limits, and contrasts returned on `model_scale`.
 #' @param model_scale Scale returned by the custom callbacks before optional
 #'   exponentiation.
+#' @param fallback Optional named list of additional custom methods attempted
+#'   sequentially after an explicitly allowed failure of `run`.
+#' @param advance_on Condition classes that permit advancing to the next
+#'   declared method. Contract violations never permit advancement.
 #' @return A concrete custom `method_spec`.
 #' @export
 analysis_function <- function(id, run, effect_measure, scale,
                               required_packages = character(),
-                              exponentiate = FALSE, model_scale = scale) {
+                              exponentiate = FALSE, model_scale = scale,
+                              fallback = NULL, advance_on = character()) {
   check_contract_id(id)
   if (!is.function(run)) stop_method_contract("`run` must be a function.")
   check_contract_id(effect_measure, "effect_measure")
   check_contract_id(scale, "scale")
   check_exponentiate(exponentiate)
-  new_method_spec(id, "custom_function", "custom", "custom", NA_character_,
+  method <- new_method_spec(id, "custom_function", "custom", "custom", NA_character_,
     NA_character_, effect_measure, run, scale, required_packages,
     exponentiate, model_scale)
+  if (is.null(fallback)) {
+    if (length(advance_on)) {
+      stop_method_contract("`advance_on` requires at least one `fallback` method.")
+    }
+    return(method)
+  }
+  if (inherits(fallback, "method_spec")) fallback <- list(fallback = fallback)
+  analysis_method_chain(
+    paste0(id, "_chain"), c(stats::setNames(list(method), id), fallback),
+    advance_on = advance_on
+  )
+}
+
+#' Construct an explicit runtime method chain
+#'
+#' Methods are attempted in order. Advancement occurs only when a failed
+#' method signals one of the condition classes declared in `advance_on`.
+#' Every attempted method is retained in the result audit trail.
+#'
+#' @param id Stable identifier for the chain.
+#' @param methods Uniquely named list of custom `method_spec` objects.
+#' @param advance_on Non-empty character vector of condition classes that
+#'   permit advancement.
+#' @return A concrete `analysis_method_chain` and `method_spec` object.
+#' @export
+analysis_method_chain <- function(id, methods, advance_on) {
+  check_contract_id(id)
+  if (!is.list(methods) || length(methods) < 2L ||
+      is.null(names(methods)) || any(!nzchar(names(methods))) ||
+      anyDuplicated(names(methods))) {
+    stop_method_contract(
+      "`methods` must be a uniquely named list containing at least two methods."
+    )
+  }
+  if (!all(vapply(methods, inherits, logical(1), "method_spec")) ||
+      any(vapply(methods, inherits, logical(1), "analysis_method_chain"))) {
+    stop_method_contract("Every chain member must be a concrete, non-chain method_spec.")
+  }
+  if (any(vapply(methods, function(x) !identical(x$engine, "custom_function"), logical(1)))) {
+    stop_method_contract(
+      "Runtime chains currently support custom analysis_function() methods only."
+    )
+  }
+  if (!is.character(advance_on) || !length(advance_on) || anyNA(advance_on) ||
+      any(!nzchar(advance_on))) {
+    stop_method_contract("`advance_on` must contain explicit condition classes.")
+  }
+  contract_fields <- c("effect_measure", "scale", "model_scale", "exponentiate")
+  compatible <- vapply(methods[-1], function(method) {
+    all(vapply(contract_fields, function(field) {
+      identical(method[[field]], methods[[1]][[field]])
+    }, logical(1)))
+  }, logical(1))
+  if (!all(compatible)) {
+    stop_method_contract(
+      "All chain methods must declare identical effect_measure, scale, model_scale, and exponentiate values."
+    )
+  }
+  primary <- methods[[1]]
+  chain <- new_method_spec(
+    id, "method_chain", "declared_fallback_chain", primary$ci_method,
+    primary$family, primary$link, primary$effect_measure,
+    scale = primary$scale,
+    required_packages = unique(unlist(lapply(methods, `[[`, "required_packages"))),
+    exponentiate = primary$exponentiate, model_scale = primary$model_scale
+  )
+  chain$methods <- methods
+  chain$advance_on <- unique(advance_on)
+  chain$function_id <- id
+  chain$function_hash <- digest::digest(list(
+    methods = lapply(methods, `[[`, "function_hash"),
+    advance_on = chain$advance_on
+  ))
+  chain$selection_reason <- paste0(
+    "Declared method chain: ", paste(names(methods), collapse = " -> "), "."
+  )
+  class(chain) <- c("analysis_method_chain", "method_spec")
+  chain
 }
 
 #' Construct a structured custom analysis method

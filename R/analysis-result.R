@@ -2,7 +2,8 @@
 #'
 #' Only validated tasks with status `ready` are executed. Other tasks are
 #' retained in the result plan and represented in the issues component. Engine
-#' failures never trigger a fallback method.
+#' failures never trigger an undeclared fallback method. Explicit
+#' [analysis_method_chain()] objects retain every runtime attempt.
 #'
 #' @param plan A validated `analysis_plan`.
 #' @param data A `bq_data` object.
@@ -35,6 +36,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   survival_rows <- list()
   omnibus_effect_rows <- list()
   correlation_rows <- list()
+  attempt_rows <- list()
 
   for (i in seq_len(nrow(plan))) {
     spec <- plan[i, , drop = FALSE]
@@ -208,6 +210,49 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
 
     frame <- build_analysis_frame(spec, data)
     captured_warnings <- character()
+    if (identical(spec$engine[[1]], "method_chain")) {
+      chain_result <- execute_method_chain(spec, frame, data)
+      attempt_rows[[length(attempt_rows) + 1L]] <- chain_result$attempts
+      for (j in which(chain_result$attempts$status == "failed")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "fit",
+          if (isTRUE(chain_result$success) && j < nrow(chain_result$attempts)) "warning" else "error",
+          chain_result$attempts$condition_class[[j]],
+          paste0(
+            "Method `", chain_result$attempts$method[[j]], "` failed: ",
+            chain_result$attempts$message[[j]]
+          )
+        )
+      }
+      if (!isTRUE(chain_result$success)) next
+      custom_result <- chain_result$output
+      spec <- chain_result$spec
+      plan$executed_method[[i]] <- chain_result$method
+      if (!is.null(custom_result$model)) model_list[[analysis_id]] <- custom_result$model
+      if (nrow(custom_result$estimates)) estimate_rows[[length(estimate_rows) + 1L]] <- custom_result$estimates
+      if (nrow(custom_result$tests)) test_rows[[length(test_rows) + 1L]] <- custom_result$tests
+      if (nrow(custom_result$contrasts)) contrast_rows[[length(contrast_rows) + 1L]] <- custom_result$contrasts
+      if (nrow(custom_result$diagnostics)) diagnostic_rows[[length(diagnostic_rows) + 1L]] <- custom_result$diagnostics
+      if (nrow(custom_result$issues)) issue_rows[[length(issue_rows) + 1L]] <- custom_result$issues
+      if (!is.null(custom_result$model)) {
+        additional_comparisons <- tryCatch(
+          compute_custom_comparisons(custom_result$model, spec, frame, data),
+          error = function(condition) condition
+        )
+        if (inherits(additional_comparisons, "error")) {
+          issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+            analysis_id, "contrasts", "error", class(additional_comparisons)[[1]],
+            conditionMessage(additional_comparisons)
+          )
+        } else if (nrow(additional_comparisons)) {
+          contrast_rows[[length(contrast_rows) + 1L]] <- additional_comparisons
+        }
+      }
+      provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(
+        spec, declared_spec = plan[i, , drop = FALSE], fallback_used = nrow(chain_result$attempts) > 1L
+      )
+      next
+    }
     if (identical(spec$engine[[1]], "custom_function")) {
       custom_result <- tryCatch(
         execute_custom_method(spec, frame, data),
@@ -382,6 +427,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       correlations = correlation_output,
       diagnostics = bind_component(diagnostic_rows, diagnostics_prototype()),
       issues = bind_component(issue_rows, issues_prototype()),
+      attempts = bind_component(attempt_rows, attempts_prototype()),
       provenance = bind_component(provenance_rows, provenance_prototype())
     ),
     class = "analysis_result"
@@ -483,6 +529,73 @@ stop_comparison_output <- function(message) {
     list(message = message, call = sys.call(-1L)),
     class = c("bq_error_invalid_comparison_output", "error", "condition")
   ))
+}
+
+execute_method_chain <- function(spec, frame, data) {
+  chain <- spec$method_object[[1]]
+  rows <- list()
+  non_advanceable <- c(
+    "bq_error_invalid_engine_output",
+    "bq_error_invalid_method_contract"
+  )
+  last_condition <- NULL
+  for (i in seq_along(chain$methods)) {
+    method_name <- names(chain$methods)[[i]]
+    method <- chain$methods[[i]]
+    member_spec <- spec
+    member_spec$method[[1]] <- method$method
+    member_spec$engine[[1]] <- method$engine
+    member_spec$estimator[[1]] <- method$estimator
+    member_spec$ci_method[[1]] <- method$ci_method
+    member_spec$family[[1]] <- method$family
+    member_spec$link[[1]] <- method$link
+    member_spec$effect_measure[[1]] <- method$effect_measure
+    member_spec$model_scale[[1]] <- method$model_scale
+    member_spec$scale[[1]] <- method$scale
+    member_spec$exponentiate[[1]] <- method$exponentiate
+    member_spec$function_id[[1]] <- method$function_id
+    member_spec$function_hash[[1]] <- method$function_hash
+    member_spec$required_packages[[1]] <- method$required_packages
+    member_spec$method_object[[1]] <- method
+    output <- tryCatch(
+      execute_custom_method(member_spec, frame, data),
+      error = function(condition) condition
+    )
+    if (!inherits(output, "error")) {
+      rows[[length(rows) + 1L]] <- attempt_row(
+        spec$analysis_id[[1]], chain$method, i, method_name, method$method,
+        "success", NA_character_, NA_character_
+      )
+      return(list(
+        success = TRUE, output = output,
+        attempts = bind_component(rows, attempts_prototype()),
+        method = method$method, spec = member_spec
+      ))
+    }
+    last_condition <- output
+    condition_class <- class(output)[[1]]
+    rows[[length(rows) + 1L]] <- attempt_row(
+      spec$analysis_id[[1]], chain$method, i, method_name, method$method,
+      "failed", condition_class, conditionMessage(output)
+    )
+    contract_failure <- any(inherits(output, non_advanceable))
+    allowed <- any(vapply(chain$advance_on, function(x) inherits(output, x), logical(1)))
+    if (contract_failure || !allowed || i == length(chain$methods)) break
+  }
+  list(
+    success = FALSE, output = last_condition,
+    attempts = bind_component(rows, attempts_prototype()),
+    method = NA_character_, spec = spec
+  )
+}
+
+attempt_row <- function(analysis_id, chain_id, attempt, member, method,
+                        status, condition_class, message) {
+  tibble::tibble(
+    analysis_id = analysis_id, chain_id = chain_id,
+    attempt = as.integer(attempt), member = member, method = method,
+    status = status, condition_class = condition_class, message = message
+  )
 }
 
 execute_custom_method <- function(spec, frame, data) {
@@ -1026,7 +1139,7 @@ diagnose_builtin <- function(fit, spec) {
   )
 }
 
-provenance_row <- function(spec) {
+provenance_row <- function(spec, declared_spec = spec, fallback_used = FALSE) {
   transformations <- spec$transformation_specs[[1]]
   transformations <- transformations[!vapply(transformations, is.null, logical(1))]
   model_terms <- if ("model_term_specs" %in% names(spec)) {
@@ -1040,17 +1153,25 @@ provenance_row <- function(spec) {
   ) spec$descriptive_functions[[1]] else list()
   tibble::tibble(
     analysis_id = spec$analysis_id[[1]],
-    method = spec$method[[1]],
-    engine = spec$engine[[1]],
+    method = declared_spec$method[[1]],
+    engine = declared_spec$engine[[1]],
     selector_id = spec$selector_id[[1]],
     selector_hash = spec$selector_hash[[1]],
     candidate_methods = spec$candidate_methods,
-    selection_reason = spec$selection_reason[[1]],
+    method_chain = if ("method_chain" %in% names(declared_spec)) {
+      declared_spec$method_chain
+    } else list(character()),
+    fallback_conditions = if ("fallback_conditions" %in% names(declared_spec)) {
+      declared_spec$fallback_conditions
+    } else list(character()),
+    executed_method = spec$method[[1]],
+    fallback_used = fallback_used,
+    selection_reason = declared_spec$selection_reason[[1]],
     selection_diagnostics = spec$selection_diagnostics,
-    function_id = spec$function_id[[1]],
-    function_hash = spec$function_hash[[1]],
+    function_id = declared_spec$function_id[[1]],
+    function_hash = declared_spec$function_hash[[1]],
     r_version = as.character(getRversion()),
-    required_packages = spec$required_packages,
+    required_packages = declared_spec$required_packages,
     package_versions = list(c(stats = as.character(utils::packageVersion("stats")))),
     transformation_ids = list(vapply(transformations, `[[`, character(1), "id")),
     transformation_hashes = list(vapply(transformations, `[[`, character(1), "function_hash")),
@@ -1189,11 +1310,21 @@ issues_prototype <- function() {
   )
 }
 
+attempts_prototype <- function() {
+  tibble::tibble(
+    analysis_id = character(), chain_id = character(), attempt = integer(),
+    member = character(), method = character(), status = character(),
+    condition_class = character(), message = character()
+  )
+}
+
 provenance_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), method = character(), engine = character(),
     selector_id = character(), selector_hash = character(),
     candidate_methods = list(), selection_reason = character(),
+    method_chain = list(), fallback_conditions = list(),
+    executed_method = character(), fallback_used = logical(),
     selection_diagnostics = list(),
     function_id = character(), function_hash = character(), r_version = character(),
     required_packages = list(), package_versions = list()
@@ -1271,6 +1402,13 @@ diagnostics <- function(x) {
 issues <- function(x) {
   check_analysis_result(x)
   x$issues
+}
+
+#' @rdname estimates
+#' @export
+attempts <- function(x) {
+  check_analysis_result(x)
+  x$attempts
 }
 
 #' @rdname estimates
