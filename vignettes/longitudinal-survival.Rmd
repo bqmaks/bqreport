@@ -1,0 +1,86 @@
+---
+title: "Longitudinal and survival workflows"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Longitudinal and survival workflows}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(bqreport)
+```
+
+## Longitudinal data
+
+Long and wide inputs compile to the same internal long analysis frame without
+mutating the original `bq_data`.
+
+```{r eval=requireNamespace("lme4", quietly=TRUE)}
+long <- expand.grid(
+  id = factor(seq_len(12)), visit = factor(c("V0", "V1", "V2"),
+    levels = c("V0", "V1", "V2"))
+)
+long$arm <- factor(ifelse(as.integer(long$id) <= 6, "Control", "Treatment"))
+long$score <- 10 + as.integer(long$id) / 3 +
+  as.numeric(long$visit) + (long$arm == "Treatment") * as.numeric(long$visit)
+
+data <- tibble::as_tibble(long) |>
+  as_bq_data() |>
+  set_predictor(arm, type = "binary", reference = "Control") |>
+  set_colors(arm, c(Control = "#4477AA", Treatment = "#CC6677")) |>
+  set_longitudinal_design(id, visit, group = arm, layout = "long",
+    baseline = "V0", time_scale = "categorical") |>
+  add_longitudinal_outcome(score_change, values = score,
+    baseline = "V0", type = "continuous")
+
+result <- data |>
+  plan_longitudinal(score_change, method = lmm_model(),
+    comparisons = TRUE, adjust = "holm") |>
+  validate_plan(data) |>
+  run_analysis(data)
+
+estimates(result)
+contrasts(result)
+```
+
+Use `gee_model()` for a population-average estimand and `lmm_model()` for a
+mixed-model estimand. The choice is explicit and never treated as interchangeable.
+
+## Kaplan--Meier, RMST, and Cox regression
+
+```{r eval=requireNamespace("survival", quietly=TRUE)}
+survival_data <- tibble::tibble(
+  time = c(3, 5, 8, 10, 4, 7, 9, 12, 2, 6, 11, 13),
+  event = c(1, 0, 1, 1, 1, 0, 1, 0, 1, 1, 0, 1),
+  arm = factor(rep(c("Control", "Treatment"), each = 6)),
+  age = c(44, 57, 51, 63, 46, 55, 60, 49, 52, 67, 58, 45)
+) |>
+  as_bq_data() |>
+  set_predictor(arm, type = "binary", reference = "Control") |>
+  set_predictor(age, type = "continuous") |>
+  set_colors(arm, c(Control = "#4477AA", Treatment = "#CC6677")) |>
+  add_survival_outcome(os, time, event, event_value = 1, time_unit = "months")
+
+km <- survival_data |>
+  plan_kaplan_meier(os, groups = arm, times = c(3, 6, 9),
+    quantiles = c(.25, .5), rmst_tau = 9,
+    estimates = c("survival", "cumulative_risk")) |>
+  validate_plan(survival_data) |>
+  run_analysis(survival_data)
+
+survival_estimates(km)
+
+cox <- survival_data |>
+  plan_survival(os, arm, covariates = age) |>
+  validate_plan(survival_data) |>
+  run_analysis(survival_data)
+
+estimates(cox)
+diagnostics(cox)
+```
+
+Competing-risk outcomes use `add_competing_risk_outcome()` and
+`plan_cumulative_incidence()`, which estimate Aalen--Johansen cumulative
+incidence rather than substituting `1 - S(t)`.

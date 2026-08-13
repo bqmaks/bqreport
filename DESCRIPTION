@@ -5,6 +5,8 @@ Authors@R: person("Bqreport", "Developers", role = c("aut", "cre"),
     email = "developers@example.com")
 Description: Provides metadata-aware planning and execution tools for
     reproducible biomedical data analysis.
+URL: https://bqmaks.github.io/bqreport/, https://github.com/bqmaks/bqreport
+BugReports: https://github.com/bqmaks/bqreport/issues
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
@@ -25,14 +27,18 @@ Suggests:
     ggplot2,
     gt,
     MASS,
+    knitr,
     logistf,
     lme4,
     geepack,
     nnet,
     polycor,
+    pkgdown,
+    rmarkdown,
     sandwich,
     survival,
     tidyr,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.0.0
+VignetteBuilder: knitr

@@ -1,0 +1,72 @@
+---
+title: "Correlation analysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Correlation analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(bqreport)
+```
+
+```{r}
+data <- tibble::tibble(
+  x = c(1, 2, 3, 4, 5, 6, 7, 8),
+  y = c(1.2, 1.7, 3.4, 3.8, 5.3, 5.7, 7.4, 7.8),
+  age = c(40, 52, 47, 60, 44, 56, 49, 63),
+  arm = factor(rep(c("Control", "Treatment"), each = 4))
+) |>
+  as_bq_data() |>
+  set_role(arm, "stratum")
+
+result <- data |>
+  plan_correlations(x, with = y, adjust_for = age,
+    method = pearson_correlation()) |>
+  validate_plan(data) |>
+  run_analysis(data)
+
+correlations(result)
+table_body(tbl_correlation(result))
+```
+
+Built-in methods include Pearson, Spearman, Kendall, biweight, weighted
+Pearson, repeated-measures, polychoric, and tetrachoric correlations.
+
+## Resampling inference
+
+```{r}
+resampled <- resampled_correlation(
+  pearson_correlation(), bootstrap = 49, permutations = 49, seed = 2026
+)
+
+resampled_result <- data |>
+  plan_correlations(x, with = y, method = resampled) |>
+  validate_plan(data) |>
+  run_analysis(data)
+
+correlations(resampled_result)[, c("estimate", "std_error", "conf_low",
+  "conf_high", "p_value", "bootstrap_successful", "permutation_successful")]
+```
+
+The seed and successful replicate counts are recorded without changing the
+global RNG state.
+
+## Strata and interaction
+
+```{r}
+stratified <- data |>
+  plan_correlations(x, with = y, strata = arm,
+    interaction_test = TRUE, adjust = "holm") |>
+  validate_plan(data) |>
+  run_analysis(data)
+
+correlations(stratified)
+tests(stratified)
+contrasts(stratified)
+```
+
+The omnibus test and pairwise differences compare correlations across strata;
+they are distinct from merely reporting separate stratified estimates.

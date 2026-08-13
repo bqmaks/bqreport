@@ -1,0 +1,73 @@
+---
+title: "Regression models, transformations, and contrasts"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Regression models, transformations, and contrasts}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(bqreport)
+```
+
+```{r}
+trial <- tibble::tibble(
+  score = c(10, 12, 13, 15, 17, 18, 20, 22, 23, 25, 27, 30),
+  arm = factor(rep(c("Control", "Low", "High"), each = 4),
+    levels = c("Control", "Low", "High")),
+  age = c(40, 51, 47, 60, 42, 55, 49, 63, 45, 53, 58, 61)
+) |>
+  as_bq_data() |>
+  set_outcome(score, type = "continuous") |>
+  set_predictor(arm, type = "nominal", reference = "Control") |>
+  set_predictor(age, type = "continuous") |>
+  set_comparisons(arm, against_reference("Control"), adjust = "holm") |>
+  set_colors(arm, c(Control = "#4477AA", Low = "#DDCC77", High = "#CC6677"))
+
+plan <- trial |>
+  plan_analysis(score, arm, covariates = age) |>
+  validate_plan(trial)
+result <- run_analysis(plan, trial)
+
+estimates(result)
+contrasts(result)
+table_body(tbl_comparison(result))
+```
+
+Available target specifications include `all_pairwise()`,
+`against_reference()`, `consecutive_comparisons()`, and
+`against_global_mean()`. Model coding and target comparisons remain separate.
+
+## Explicit nonlinear covariates
+
+Transformations and model terms are metadata and are compiled into the plan.
+
+```{r eval=FALSE}
+trial <- trial |>
+  set_transformation(age, log10_transform()) |>
+  set_model_term(age, natural_spline(df = 3))
+
+plan <- plan_analysis(trial, score, arm, covariates = age)
+```
+
+This represents a sequential log transformation followed by a spline basis.
+The transformation identity and basis settings are included in provenance.
+
+## Other outcome families
+
+System defaults cover linear, logistic, Poisson, proportional-odds ordinal,
+and baseline-category multinomial models. Alternatives can be selected with
+rules, for example:
+
+```{r eval=FALSE}
+rules <- analysis_rules(
+  where_count() ~ negative_binomial_model(exponentiate = TRUE)
+)
+
+plan_analysis(data, outcomes = events, predictors = treatment, rules = rules)
+```
+
+Exponentiation is always explicit in the selected method specification; SEs
+remain on their declared model scale.

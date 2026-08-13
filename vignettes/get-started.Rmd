@@ -1,0 +1,76 @@
+---
+title: "Get started with bqreport"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Get started with bqreport}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+library(bqreport)
+```
+
+`bqreport` treats analysis as a compilation pipeline. Data and metadata are
+compiled into an inspectable plan; only a validated plan can be executed.
+
+## Register data and metadata
+
+```{r}
+trial <- tibble::tibble(
+  response = c(0, 0, 1, 0, 1, 1, 1, 0, 1, 0, 1, 1),
+  treatment = factor(rep(c("Control", "Treatment"), each = 6)),
+  age = c(44, 57, 51, 63, 46, 55, 60, 49, 52, 67, 58, 45),
+  biomarker = c(2.1, 3.4, 2.7, 4.2, 3.0, 3.8, 4.6, 3.9, 5.1, 4.8, 5.4, 4.2)
+) |>
+  as_bq_data() |>
+  set_outcome(response, type = "binary", event = 1) |>
+  set_predictor(treatment, type = "binary", reference = "Control") |>
+  set_role(treatment, "group") |>
+  set_predictor(c(age, biomarker), type = "continuous") |>
+  set_colors(treatment, c(Control = "#4477AA", Treatment = "#CC6677"))
+
+variables(trial)[, c("name", "role", "type", "reference", "status")]
+```
+
+Roles are additive, so `treatment` is both a grouping variable and predictor.
+Stable `var_id` values allow registry references to survive renaming.
+
+## Compile and review a plan
+
+```{r}
+plan <- trial |>
+  plan_analysis(
+    outcomes = response,
+    predictors = treatment,
+    covariates = age
+  ) |>
+  validate_plan(trial)
+
+plan[, c("analysis_id", "formula", "method", "effect_measure", "scale",
+         "n_analyzed", "status")]
+```
+
+At this point the method is concrete. A data-dependent selector, if used, has
+already run and recorded its reason and diagnostics.
+
+## Execute and inspect tidy components
+
+```{r}
+result <- run_analysis(plan, trial)
+estimates(result)
+tests(result)
+diagnostics(result)
+issues(result)
+```
+
+Numbers remain unrounded. Formatting is a separate operation:
+
+```{r}
+table <- tbl_regression(result, locale = "en")
+table_body(table)
+```
+
+Optional renderers convert the backend-independent table to `gt` or
+`flextable`, while `plot_forest(result)` returns a normal ggplot object.
