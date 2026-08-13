@@ -42,6 +42,7 @@
 </li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../articles/examples-gallery.html">Examples</a></li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -119,7 +120,7 @@ references to survive renaming.</p>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 7</span></span></span>
 <span><span class="co">#&gt;   analysis_id            formula   method effect_measure scale n_analyzed status</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                  <span style="color: #949494; font-style: italic;">&lt;list&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>          <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;int&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_a263b065-c20… <span style="color: #949494;">&lt;formula&gt;</span> logis… odds_ratio     ratio         12 ready</span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_be2bd84b98cc… <span style="color: #949494;">&lt;formula&gt;</span> logis… odds_ratio     ratio         12 ready</span></span></code></pre></div>
 <p>At this point the method is concrete. A data-dependent selector, if
 used, has already run and recorded its reason and diagnostics.</p>
 </div>
@@ -130,11 +131,11 @@ used, has already run and recorded its reason and diagnostics.</p>
 <code class="sourceCode R"><span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/run_analysis.html">run_analysis</a></span><span class="op">(</span><span class="va">plan</span>, <span class="va">trial</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/estimates.html">estimates</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 22</span></span></span>
-<span><span class="co">#&gt;   analysis_id                  outcome predictor stratum_label transformation_id</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_a263b065-c204-489a… respon… treatment <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_a263b065-c204-489a… respon… treatment <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_a263b065-c204-489a… respon… treatment <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt;   analysis_id               outcome  predictor stratum_label transformation_id</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_be2bd84b98cc7388 response treatment <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_be2bd84b98cc7388 response treatment <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_be2bd84b98cc7388 response treatment <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 17 more variables: transformation_label &lt;chr&gt;, term &lt;chr&gt;, level &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   estimate &lt;dbl&gt;, std_error &lt;dbl&gt;, std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   conf_high &lt;dbl&gt;, statistic &lt;dbl&gt;, df &lt;dbl&gt;, p_value &lt;dbl&gt;,</span></span></span>
@@ -144,16 +145,16 @@ used, has already run and recorded its reason and diagnostics.</p>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 8</span></span></span>
 <span><span class="co">#&gt;   analysis_id             outcome predictor test  statistic    df p_value method</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_a263b065-c204… respon… treatment like…     1.37      2   0.503 logis…</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_a263b065-c204… respon… treatment pred…     0.612     1   0.434 logis…</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_be2bd84b98cc7… respon… treatment like…     1.37      2   0.503 logis…</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_be2bd84b98cc7… respon… treatment pred…     0.612     1   0.434 logis…</span></span>
 <span><span class="fu"><a href="../reference/estimates.html">diagnostics</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 4 × 5</span></span></span>
-<span><span class="co">#&gt;   analysis_id                                   metric      value status message</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                                         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_a263b065-c204-489a-84d8-a45c4de7ff87 converged    1    obser… <span style="color: #BB0000;">NA</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_a263b065-c204-489a-84d8-a45c4de7ff87 deviance    14.9  obser… <span style="color: #BB0000;">NA</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_a263b065-c204-489a-84d8-a45c4de7ff87 null_devia… 16.3  obser… <span style="color: #BB0000;">NA</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> analysis_a263b065-c204-489a-84d8-a45c4de7ff87 dispersion…  1.66 obser… <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt;   analysis_id               metric           value status   message</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_be2bd84b98cc7388 converged         1    observed <span style="color: #BB0000;">NA</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_be2bd84b98cc7388 deviance         14.9  observed <span style="color: #BB0000;">NA</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_be2bd84b98cc7388 null_deviance    16.3  observed <span style="color: #BB0000;">NA</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> analysis_be2bd84b98cc7388 dispersion_ratio  1.66 observed <span style="color: #BB0000;">NA</span></span></span>
 <span><span class="fu"><a href="../reference/estimates.html">issues</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 0 × 5</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 5 variables: analysis_id &lt;chr&gt;, stage &lt;chr&gt;, severity &lt;chr&gt;,</span></span></span>
@@ -179,7 +180,7 @@ used, has already run and recorded its reason and diagnostics.</p>
 
 
     <footer><div class="pkgdown-footer-left">
-  <p>Developed by Bqreport Developers.</p>
+  <p>Developed by bqmaks.</p>
 </div>
 
 <div class="pkgdown-footer-right">

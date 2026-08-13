@@ -1,30 +1,65 @@
 # Контекст для следующей сессии
 
-Обновлено: 2026-08-12.
+Обновлено: 2026-08-13 (Europe/Moscow).
 
-## Как начать
+## Изменения сессии 2026-08-13 (вечер)
 
-1.  Полностью прочитать `AGENTS.md`: это источник архитектурных
-    требований.
-2.  Проверить `git status --short` и последние коммиты.
-3.  Не менять уже принятые публичные контракты без предварительного
-    теста.
-4.  Перед новым коммитом запускать полный набор тестов и
+Пакет прошёл внешнюю ревизию; все найденные проблемы исправлены:
+
+- **Баг resampling**:
+  [`resampled_correlation()`](https://bqmaks.github.io/bqreport/reference/resampled_correlation.md)
+  теперь ресемплирует веса вместе с наблюдениями; для методов с subject
+  id — cluster bootstrap по субъектам и перестановки только внутри
+  субъекта (`R/correlation-methods.R`: `resample_correlation_context()`,
+  `permute_correlation_context()`).
+- **Spearman CI**: SE Bonett–Wright `sqrt((1 + r^2/2)/(n - k - 3))`,
+  `ci_method = "fisher_z_bonett_wright"`.
+- **Point-estimate-only методы**
+  ([`biweight_correlation()`](https://bqmaks.github.io/bqreport/reference/biweight_correlation.md)):
+  статус `review` при валидации; запуск после
+  [`approve_plan()`](https://bqmaks.github.io/bqreport/reference/approve_plan.md)
+  или через
+  [`resampled_correlation()`](https://bqmaks.github.io/bqreport/reference/resampled_correlation.md).
+  Ревизия учитывает `approved` при повторной валидации внутри
+  [`run_analysis()`](https://bqmaks.github.io/bqreport/reference/run_analysis.md).
+- **Минимум наблюдений** для resampled-методов берётся от base method.
+- **Детерминированные id**: все идентификаторы — digest содержимого
+  (`R/ids.R`, `bq_id()`); `uuid` удалён из Imports. Одинаковый вход даёт
+  идентичные планы/результаты между запусками
+  (`tests/testthat/test-reproducible-ids.R`). `var_id` = `var_<имя>` с
+  детерминированной суффиксацией при повторном использовании имени.
+- **Файлы разрезаны**: `correlations.R` →
+  `correlation-methods/plan/ execute/interactions.R`;
+  `analysis-result.R` → `+ engines-builtin.R`, `engines-custom.R`,
+  `result-components.R`, `result-accessors.R`.
+- Примеры `@examples` у ключевых экспортов; `NEWS.md`; реальный автор в
+  `DESCRIPTION`; workflow `.github/workflows/R-CMD-check.yaml`;
+  AGENTS.md синхронизирован (Imports, стиль ошибок, инвариант №13 об
+  id).
+
+## Быстрый старт
+
+1.  Полностью прочитать `AGENTS.md`.
+2.  Проверить `git status -sb` и `git log -5 --oneline`.
+3.  Текущая ветка: `main`, remote: `origin` (`bqmaks/bqreport`).
+4.  Перед изменением публичного API сначала добавлять тест.
+5.  Перед публикацией запускать `devtools::test()` и
     `R CMD check --no-manual`.
 
-Текущая ветка: `main`.
-
-Последний функциональный коммит:
+На момент handoff рабочее дерево было чистым до обновления этого файла.
+Последние опубликованные коммиты:
 
 ``` text
-6e7cb69 Add separation-aware logistic policy
+88ee3c4 Document package installation
+8af8e98 Add explicit custom method fallback chains
+9b3ea21 Add vignettes and pkgdown site
+fb968ae Add categorical plot colors
+1e402b4 Add reporting tables and plots
 ```
 
-## Цель пакета
+## Архитектура
 
-`bqreport` — tidyverse-native R-пакет для воспроизводимого анализа
-биомедицинских данных. Архитектура строится как аналитический
-компилятор:
+Пакет — tidyverse-native аналитический компилятор:
 
 ``` text
 bq_data + metadata + design
@@ -35,198 +70,165 @@ bq_data + metadata + design
   -> tidy data / tables / plots
 ```
 
-Источником истины остаются `bq_data` и `analysis_plan`. Вычисление,
-диагностика и представление должны оставаться разделёнными. Runtime
-fallback запрещён.
+Источники истины — `bq_data` и `analysis_plan`. Вычисления, диагностика
+и представление разделены. Все численные результаты хранятся без
+округления.
 
-## Уже реализовано
+## Реализованные подсистемы
 
-### Данные и метаданные
+- `bq_data`, stable `var_id`, labels, roles (включая несколько ролей),
+  types, references/events, distribution metadata и tidyselect
+  selectors.
+- Реконструкция metadata при основных dplyr-операциях.
+- Описательные статистики для continuous/binary/nominal/ordinal/count:
+  групповые и overall (`All patients`), шаблоны glue, `n`/`N`/`p`, MAD,
+  skewness, kurtosis, normality и пользовательские
+  [`descriptive_function()`](https://bqmaks.github.io/bqreport/reference/descriptive_function.md).
+- Сравнения групп, omnibus tests/effect sizes,
+  [`against_reference()`](https://bqmaks.github.io/bqreport/reference/against_reference.md),
+  [`all_pairwise()`](https://bqmaks.github.io/bqreport/reference/all_pairwise.md),
+  [`consecutive_comparisons()`](https://bqmaks.github.io/bqreport/reference/consecutive_comparisons.md)
+  и `against_global_mean(exponentiate = ...)`.
+- Linear/logistic/count/ordinal/multinomial models; explicit
+  exponentiation, SE/CI, transformations and nonlinear covariate terms.
+- Survival: KM, log-rank, Cox, RMST, survival quantiles, survival and
+  cumulative-risk estimates; competing risks.
+- Longitudinal long/wide design, LMM/GLMM/GEE, group × time and
+  contrasts.
+- Correlations: Pearson/Spearman/Kendall and extended methods, partial,
+  weighted/repeated/resampled workflows, strata interactions and
+  contrasts-of-contrasts.
+- Reporting tables/plots, categorical colors as vector/named
+  vector/function, `ru`/`en` groundwork, vignettes and pkgdown
+  configuration.
+- README contains GitHub installation via `pak`, `remotes`, and local
+  `devtools::install()`.
 
-- `bq_data` как подкласс tibble.
-- Непрозрачные стабильные `var_id` на UUID.
-- Реестры переменных, ролей, outcomes, дизайна и contrasts.
-- Несколько ролей у одной переменной.
-- Labels, units, rounding rules и расширяемые поля словаря.
-- Аналитические типы, references, event values и distribution metadata.
-- Tidyselect-селекторы ролей, типов, распределений и статусов.
-- Сохранение и инвалидирование метаданных при основных операциях dplyr.
-- Обновление ссылок по стабильным ID при rename.
+## Пользовательские функции
 
-### Планирование и исполнение
-
-- [`plan_analysis()`](https://bqmaks.github.io/bqreport/reference/plan_analysis.md)
-  для outcome–predictor задач.
-- Ковариаты, regression weights/IPW и model-based/robust variance.
-- Cluster-robust variance для кластеров после matching.
-- Независимый strata pipeline: отдельная задача для каждой наблюдаемой
-  страты.
-- Effect modifiers и формулы `predictor * modifier`.
-- Preflight variation, missingness, references/events, sparse
-  interaction cells, weights, clusters и required packages.
-- [`approve_plan()`](https://bqmaks.github.io/bqreport/reference/approve_plan.md)
-  для задач со статусом `review`.
-- [`run_analysis()`](https://bqmaks.github.io/bqreport/reference/run_analysis.md)
-  с `error = "collect" | "stop" | "warn"`.
-- `analysis_result` и tidy accessors для estimates, contrasts, tests,
-  diagnostics, issues и models.
-
-### Методы и расширяемость
-
-- Встроенные
-  [`linear_model()`](https://bqmaks.github.io/bqreport/reference/linear_model.md)
-  и
-  [`logistic_model()`](https://bqmaks.github.io/bqreport/reference/linear_model.md).
 - [`analysis_function()`](https://bqmaks.github.io/bqreport/reference/analysis_function.md)
-  и
+  and
   [`analysis_method()`](https://bqmaks.github.io/bqreport/reference/analysis_method.md)
-  для пользовательских engines.
-- Строгая нормализация пользовательского
-  [`analysis_output()`](https://bqmaks.github.io/bqreport/reference/analysis_output.md).
-- Хеширование пользовательских функций и provenance.
-- Явное `exponentiate` и разделение model/output scale.
+  validate stable output schemas.
 - [`method_selector()`](https://bqmaks.github.io/bqreport/reference/method_selector.md)
-  и
-  [`method_choice()`](https://bqmaks.github.io/bqreport/reference/method_choice.md):
-  - selector выполняется только в
-    [`validate_plan()`](https://bqmaks.github.io/bqreport/reference/validate_plan.md);
-  - получает подготовленный `analysis_context`;
-  - выбирает только из именованных candidates;
-  - сохраняет reason и diagnostics;
-  - [`run_analysis()`](https://bqmaks.github.io/bqreport/reference/run_analysis.md)
-    selector повторно не вызывает.
-- [`firth_logistic()`](https://bqmaks.github.io/bqreport/reference/firth_logistic.md)
-  на optional backend `logistf`.
-- [`separation_logistic()`](https://bqmaks.github.io/bqreport/reference/separation_logistic.md)
-  использует `detectseparation` на preflight и фиксирует `glm` либо
-  Firth без runtime fallback.
+  is pre-fit only: candidates, reason and diagnostics are fixed during
+  [`validate_plan()`](https://bqmaks.github.io/bqreport/reference/validate_plan.md)
+  and never re-selected in
+  [`run_analysis()`](https://bqmaks.github.io/bqreport/reference/run_analysis.md).
+- [`comparison_function()`](https://bqmaks.github.io/bqreport/reference/comparison_function.md),
+  [`descriptive_function()`](https://bqmaks.github.io/bqreport/reference/descriptive_function.md),
+  correlation method and comparator contracts are available.
+- Function id/hash and required packages are retained in
+  plan/provenance.
+- Malformed output is a typed error and is never repaired heuristically.
 
-### Трансформации и contrasts
+### Explicit runtime method chains
 
-- Структурированные scalar transformations:
-  [`per()`](https://bqmaks.github.io/bqreport/reference/per.md),
-  [`log2_transform()`](https://bqmaks.github.io/bqreport/reference/per.md),
-  [`log10_transform()`](https://bqmaks.github.io/bqreport/reference/per.md)
-  и
-  [`transformation_function()`](https://bqmaks.github.io/bqreport/reference/transformation_function.md).
-- Трансформации применяются к predictor/covariates и сохраняются в плане
-  и provenance.
-- Независимое model coding через
-  [`set_coding()`](https://bqmaks.github.io/bqreport/reference/set_coding.md).
-- [`against_reference()`](https://bqmaks.github.io/bqreport/reference/against_reference.md)
-  и
-  [`within_levels()`](https://bqmaks.github.io/bqreport/reference/within_levels.md).
-- Пользовательские попарные сравнения через
-  [`comparison_function()`](https://bqmaks.github.io/bqreport/reference/comparison_function.md).
-- Условные эффекты внутри уровней modifier.
-- Omnibus-тесты взаимодействия.
-- Model-based, robust и cluster-robust covariance используются и для
-  условных эффектов.
-
-## Последняя проверка
-
-Перед handoff успешно выполнены:
-
-``` text
-devtools::test(): 370 PASS, 0 FAIL, 0 WARN, 0 SKIP
-R CMD check --no-manual: Status: OK
-```
-
-Firth-оценки, профильные confidence intervals и p-values тестами сверены
-с прямым
-[`logistf::logistf()`](https://rdrr.io/pkg/logistf/man/logistf.html).
-
-Optional packages `detectseparation` и `logistf` находятся в `Suggests`.
-`logistf` проверяется только после выбора Firth candidate; обычную
-GLM-ветвь не должно блокировать отсутствие неиспользуемого backend.
-
-## Пример текущего pipeline
+Commit `8af8e98` added:
 
 ``` r
 
-data <- raw_data |>
-  as_bq_data(metadata = dictionary) |>
-  set_outcome(response, type = "binary", event = 1) |>
-  set_predictor(treatment, type = "nominal", reference = "Placebo") |>
-  set_transformation(age, per(10)) |>
-  set_weight(iptw, type = "ipw") |>
-  set_cluster(matched_set, type = "matched_set") |>
-  set_comparisons(
-    treatment,
-    comparisons = against_reference("Placebo"),
-    adjust = "holm"
-  )
+analysis_method_chain(id, methods, advance_on)
 
-rules <- analysis_rules(
-  where_binary() ~ separation_logistic(exponentiate = TRUE)
+analysis_function(
+  id, run, effect_measure, scale,
+  fallback = list(...),
+  advance_on = c("bq_error_convergence")
 )
-
-plan <- data |>
-  plan_analysis(
-    outcomes = all_outcomes(),
-    predictors = all_predictors(),
-    covariates = age,
-    weights = iptw,
-    cluster = matched_set,
-    strata = sex,
-    rules = rules
-  ) |>
-  validate_plan(data)
-
-result <- run_analysis(plan, data, error = "collect")
-result |> estimates()
-result |> contrasts()
-result |> diagnostics()
 ```
 
-## Важные архитектурные ограничения
+Properties:
 
-- Не передавать пользовательским функциям полный изменяемый `bq_data`.
-- Не пытаться эвристически исправлять malformed output пользовательской
-  функции.
-- Не округлять числа в вычислительном слое.
-- Не хранить локализованный текст в численных результатах.
-- Не смешивать coding коэффициентов и целевые comparisons.
-- Не считать robust/cluster-robust covariance только свойством таблицы:
-  она должна использоваться во всех производных оценках.
-- Не запускать selector в
-  [`run_analysis()`](https://bqmaks.github.io/bqreport/reference/run_analysis.md)
-  и не переключать engine после ошибки fit.
-- В реестрах и планах ссылаться на стабильные IDs, имена обновлять при
-  validation.
+- only declared condition classes allow advancement;
+- all members must have identical effect measure, scale, model scale and
+  exponentiation policy;
+- `bq_error_invalid_engine_output` and contract errors never advance;
+- `attempts(result)` contains every attempted method;
+- plan stores `method_chain`, `fallback_conditions`, `executed_method`;
+- provenance stores declared chain, actual method and `fallback_used`;
+- failed attempts also appear in
+  [`issues()`](https://bqmaks.github.io/bqreport/reference/estimates.md).
 
-## Рекомендуемый следующий вертикальный срез
+Current limitation: runtime chains accept custom
+[`analysis_function()`](https://bqmaks.github.io/bqreport/reference/analysis_function.md)
+/
+[`analysis_method()`](https://bqmaks.github.io/bqreport/reference/analysis_method.md)
+members only. Built-in engines are not chain members yet.
 
-Начать вычислительный слой описательной статистики и сравнений групп из
-v0.2:
+## Документация
 
-1.  Сначала определить tidy-схемы `descriptives` и group comparisons.
-2.  Добавить отдельный тип задач в `analysis_plan`, не встраивая расчёт
-    в regression engine.
-3.  Реализовать continuous descriptives (`n`, missing, mean/SD,
-    median/IQR, min/max) без округления.
-4.  Реализовать categorical counts/proportions с явными знаменателями.
-5.  Поддержать общий результат и результаты по группам/стратам.
-6.  Затем добавить базовые group tests как отдельные estimates/tests, с
-    effect estimates первичнее p-values.
-7.  Только после стабильного вычислительного контракта переходить к
-    первому `gt`-представлению.
+Pkgdown site: <https://bqmaks.github.io/bqreport/>
 
-Перед реализацией нужно согласовать с пользователем минимум два решения:
+Main vignettes:
 
-- должна ли одна descriptives-задача возвращать несколько статистик
-  длинным форматом (`statistic`, `value`) или использовать стабильные
-  широкие поля;
-- какие знаменатели для процентов считать обязательными: `n_analyzed`,
-  внутри группы и/или общий eligible denominator.
+- `vignettes/get-started.Rmd`
+- `vignettes/descriptive-analysis.Rmd`
+- `vignettes/models-and-contrasts.Rmd`
+- `vignettes/correlation-analysis.Rmd`
+- `vignettes/longitudinal-survival.Rmd`
+- `vignettes/custom-functions.Rmd`
+- `vignettes/examples-gallery.Rmd`
 
-## Более поздние незакрытые области
+`custom-functions.Rmd` now contains an executable three-group custom HC3
+linear model showing
+[`analysis_method()`](https://bqmaks.github.io/bqreport/reference/analysis_method.md),
+estimates, omnibus test, custom pairwise contrasts, Holm adjustment and
+standard reporting.
 
-- Survival outcomes, Kaplan–Meier, log-rank, Cox и PH diagnostics.
-- Longitudinal long/wide design, canonical long analysis frame,
-  LMM/GLMM/GEE.
-- Полноценные outcome/design registries за пределами текущего первого
-  среза.
-- Публикационные таблицы и графики.
-- Локали `ru`/`en` для presentation layer.
-- Join/pivot edge cases и специальные методы для неоднозначных reshapes.
+## Последняя верификация
+
+После правок сессии 2026-08-13 (вечер):
+
+``` text
+devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
+devtools::run_examples(): OK
+R CMD check --no-manual: Status: OK
+```
+
+## Важный незакрытый пробел
+
+В workflow сравнения трёх групп все четыре outcome-типа уже
+моделируются:
+
+``` text
+continuous  -> linear_model
+binary      -> logistic_model
+nominal     -> multinomial_logistic_model
+ordinal     -> ordinal_logistic_model
+```
+
+Но общий
+[`contrasts()`](https://bqmaks.github.io/bqreport/reference/contrasts.md)
+сейчас полностью нормализует model-based group contrasts прежде всего
+для continuous/binary paths. Для ordinal и multinomial коэффициенты, SE,
+CI и omnibus likelihood-ratio tests доступны в
+[`estimates()`](https://bqmaks.github.io/bqreport/reference/estimates.md)/[`tests()`](https://bqmaks.github.io/bqreport/reference/estimates.md),
+однако target specifications (`all_pairwise`, `against_reference`,
+`consecutive`, global mean where meaningful) ещё нужно адаптировать к
+стабильной схеме
+[`contrasts()`](https://bqmaks.github.io/bqreport/reference/contrasts.md)
+и multiplicity adjustment.
+
+## Рекомендуемый следующий шаг
+
+Сделать вертикальный срез model-based contrasts для ordinal и
+multinomial outcomes:
+
+1.  До изменения API добавить контрактные тесты для трёх групп.
+2.  Явно определить estimand для каждой outcome category у multinomial
+    model.
+3.  Нормализовать reference/all-pairwise/consecutive contrasts, SE и CI.
+4.  Применять explicit exponentiation и сохранять model/output scale.
+5.  Добавить Holm/другие `p.adjust` методы и non-estimable diagnostics.
+6.  Обновить three-group vignette полным исполняемым workflow, включая
+    пользовательские функции на descriptive/selector/model/contrast
+    этапах.
+7.  После тестов обновить pkgdown и опубликовать.
+
+## GitHub/окружение
+
+- SSH push в `origin/main` работает.
+- `gh auth status` сообщал о недействительном CLI token; это не
+  блокировало обычный `git push` по SSH.
+- Не добавлять build/check artifacts: `/*.tar.gz`, `/*.Rcheck/` и
+  `docs/` исключены через `.gitignore`.

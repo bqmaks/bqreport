@@ -21,7 +21,7 @@ correlations(result)
 #> # A tibble: 1 × 43
 #>   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x
 #>   <chr>             <chr>                 <chr>         <chr>         <chr>     
-#> 1 analysis_384a811… correlation_family_3… var_1cb463cb… var_82370649… x         
+#> 1 analysis_9c0a9c2… correlation_family_b… var_x         var_y         x         
 #> # ℹ 38 more variables: variable_y <chr>, stratum_label <chr>, strata <list>,
 #> #   correlation_interaction_id <chr>, interaction_test <lgl>,
 #> #   correlation_comparator <list>, correlation_comparator_id <chr>,
@@ -78,8 +78,8 @@ correlations(stratified)
 #> # A tibble: 2 × 43
 #>   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x
 #>   <chr>             <chr>                 <chr>         <chr>         <chr>     
-#> 1 analysis_ef04f27… correlation_family_c… var_1cb463cb… var_82370649… x         
-#> 2 analysis_d5e25d9… correlation_family_3… var_1cb463cb… var_82370649… x         
+#> 1 analysis_fd2add8… correlation_family_d… var_x         var_y         x         
+#> 2 analysis_cfb7958… correlation_family_8… var_x         var_y         x         
 #> # ℹ 38 more variables: variable_y <chr>, stratum_label <chr>, strata <list>,
 #> #   correlation_interaction_id <chr>, interaction_test <lgl>,
 #> #   correlation_comparator <list>, correlation_comparator_id <chr>,
@@ -98,7 +98,7 @@ contrasts(stratified)
 #> # A tibble: 1 × 23
 #>   analysis_id       outcome predictor contrast_id contrast numerator denominator
 #>   <chr>             <chr>   <chr>     <chr>       <chr>    <chr>     <chr>      
-#> 1 correlation_inte… x       y         contrast_5… arm=Con… arm=Cont… arm=Treatm…
+#> 1 correlation_inte… x       y         contrast_f… arm=Con… arm=Cont… arm=Treatm…
 #> # ℹ 16 more variables: modifier <chr>, modifier_level <chr>,
 #> #   inner_contrast <chr>, outer_contrast <chr>, estimand <chr>,
 #> #   exponentiated <lgl>, estimate <dbl>, std_error <dbl>,

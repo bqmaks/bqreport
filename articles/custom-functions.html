@@ -42,6 +42,7 @@
 </li>
 <li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../articles/examples-gallery.html">Examples</a></li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
 <li class="nav-item"><form class="form-inline" role="search">
@@ -104,7 +105,7 @@ value.</p>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 43</span></span></span>
 <span><span class="co">#&gt;   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>             <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                 <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_d9f9d33… correlation_family_b… var_be3e5a13… var_e3dcb99f… x         </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_f041311… correlation_family_e… var_x         var_y         x         </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 38 more variables: variable_y &lt;chr&gt;, stratum_label &lt;chr&gt;, strata &lt;list&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   correlation_interaction_id &lt;chr&gt;, interaction_test &lt;lgl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   correlation_comparator &lt;list&gt;, correlation_comparator_id &lt;chr&gt;,</span></span></span>
@@ -169,10 +170,10 @@ and robust interpretation declared in advance.</p>
 <span></span>
 <span><span class="fu"><a href="../reference/estimates.html">estimates</a></span><span class="op">(</span><span class="va">custom_result</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 22</span></span></span>
-<span><span class="co">#&gt;   analysis_id                  outcome predictor stratum_label transformation_id</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_96d0d78f-55f8-4617… outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_96d0d78f-55f8-4617… outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt;   analysis_id               outcome predictor stratum_label transformation_id</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_5300d9d8ea30d485 outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_5300d9d8ea30d485 outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 17 more variables: transformation_label &lt;chr&gt;, term &lt;chr&gt;, level &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   estimate &lt;dbl&gt;, std_error &lt;dbl&gt;, std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   conf_high &lt;dbl&gt;, statistic &lt;dbl&gt;, df &lt;dbl&gt;, p_value &lt;dbl&gt;,</span></span></span>
@@ -221,8 +222,8 @@ attempted only for a condition class listed in
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 8</span></span></span>
 <span><span class="co">#&gt;   analysis_id      chain_id attempt member method status condition_class message</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;int&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>           <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_17d86d… primary…       1 prima… prima… failed bq_error_numer… Numeri…</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_17d86d… primary…       2 poiss… custo… succe… <span style="color: #BB0000;">NA</span>              <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_4333c4… primary…       1 prima… prima… failed bq_error_numer… Numeri…</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_4333c4… primary…       2 poiss… custo… succe… <span style="color: #BB0000;">NA</span>              <span style="color: #BB0000;">NA</span></span></span>
 <span><span class="va">fallback_result</span><span class="op">$</span><span class="va">provenance</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
 <span>  <span class="st">"method_chain"</span>, <span class="st">"fallback_conditions"</span>, <span class="st">"executed_method"</span>, <span class="st">"fallback_used"</span></span>
 <span><span class="op">)</span><span class="op">]</span></span>
@@ -405,11 +406,11 @@ by the same planner and reporting layer as built-in models.</p>
 <span></span>
 <span><span class="fu"><a href="../reference/estimates.html">estimates</a></span><span class="op">(</span><span class="va">hc3_result</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 22</span></span></span>
-<span><span class="co">#&gt;   analysis_id                  outcome predictor stratum_label transformation_id</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_3596d18e-d148-4c9c… score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_3596d18e-d148-4c9c… score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_3596d18e-d148-4c9c… score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt;   analysis_id               outcome predictor stratum_label transformation_id</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_f83f8da037bb7d42 score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_f83f8da037bb7d42 score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_f83f8da037bb7d42 score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 17 more variables: transformation_label &lt;chr&gt;, term &lt;chr&gt;, level &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   estimate &lt;dbl&gt;, std_error &lt;dbl&gt;, std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   conf_high &lt;dbl&gt;, statistic &lt;dbl&gt;, df &lt;dbl&gt;, p_value &lt;dbl&gt;,</span></span></span>
@@ -419,16 +420,16 @@ by the same planner and reporting layer as built-in models.</p>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 13</span></span></span>
 <span><span class="co">#&gt;   analysis_id   outcome predictor contrast numerator denominator test  statistic</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_359… score   arm       <span style="color: #BB0000;">NA</span>       <span style="color: #BB0000;">NA</span>        <span style="color: #BB0000;">NA</span>          pred…      6.39</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_f83… score   arm       <span style="color: #BB0000;">NA</span>       <span style="color: #BB0000;">NA</span>        <span style="color: #BB0000;">NA</span>          pred…      6.39</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 5 more variables: df &lt;dbl&gt;, p_value &lt;dbl&gt;, p_adjusted &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   adjust_method &lt;chr&gt;, method &lt;chr&gt;</span></span></span>
 <span><span class="fu"><a href="../reference/contrasts.html">contrasts</a></span><span class="op">(</span><span class="va">hc3_result</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 23</span></span></span>
 <span><span class="co">#&gt;   analysis_id       outcome predictor contrast_id contrast numerator denominator</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>             <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_3596d18… score   arm       contrast_f… Treatme… Treatmen… Control    </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_3596d18… score   arm       contrast_f… Treatme… Treatmen… Control    </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_3596d18… score   arm       contrast_f… Treatme… Treatmen… Treatment A</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_f83f8da… score   arm       contrast_3… Treatme… Treatmen… Control    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_f83f8da… score   arm       contrast_3… Treatme… Treatmen… Control    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_f83f8da… score   arm       contrast_3… Treatme… Treatmen… Treatment A</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 16 more variables: modifier &lt;chr&gt;, modifier_level &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   inner_contrast &lt;chr&gt;, outer_contrast &lt;chr&gt;, estimand &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   exponentiated &lt;lgl&gt;, estimate &lt;dbl&gt;, std_error &lt;dbl&gt;,</span></span></span>
@@ -476,7 +477,7 @@ the selector to run again.</p>
 
 
     <footer><div class="pkgdown-footer-left">
-  <p>Developed by Bqreport Developers.</p>
+  <p>Developed by bqmaks.</p>
 </div>
 
 <div class="pkgdown-footer-right">

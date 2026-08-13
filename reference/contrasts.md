@@ -5,9 +5,9 @@ Access registered or computed contrasts
 ## Usage
 
 ``` r
-# S3 method for class 'analysis_result'
 contrasts(x)
 
+# S3 method for class 'analysis_result'
 contrasts(x)
 ```
 

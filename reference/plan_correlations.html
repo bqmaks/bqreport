@@ -26,6 +26,7 @@
   </ul></li>
 <li class="active nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="../articles/examples-gallery.html">Examples</a></li>
+<li class="nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
 <li class="nav-item"><a class="external-link nav-link" href="https://github.com/bqmaks/bqreport/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
@@ -38,7 +39,7 @@
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>Compile a correlation analysis plan</h1>
-      <small class="dont-index">Source: <a href="https://github.com/bqmaks/bqreport/blob/main/R/correlations.R" class="external-link"><code>R/correlations.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/bqmaks/bqreport/blob/main/R/correlation-plan.R" class="external-link"><code>R/correlation-plan.R</code></a></small>
       <div class="d-none name"><code>plan_correlations.Rd</code></div>
     </div>
 
@@ -128,12 +129,35 @@ across strata and compute pairwise Fisher z contrasts.</p></dd>
     <p>An <code>analysis_plan</code> with one row per unique variable pair.</p>
     </div>
 
+    <div class="section level2">
+    <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="va">data</span> <span class="op">&lt;-</span> <span class="fu"><a href="as_bq_data.html">as_bq_data</a></span><span class="op">(</span><span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html" class="external-link">tibble</a></span><span class="op">(</span></span></span>
+<span class="r-in"><span>  crp <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">1.2</span>, <span class="fl">5.4</span>, <span class="fl">2.8</span>, <span class="fl">9.1</span>, <span class="fl">4.4</span>, <span class="fl">6.0</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  bmi <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">21.4</span>, <span class="fl">27.9</span>, <span class="fl">24.2</span>, <span class="fl">30.1</span>, <span class="fl">26.6</span>, <span class="fl">23.0</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu">plan_correlations</span><span class="op">(</span><span class="va">data</span>, <span class="va">crp</span>, with <span class="op">=</span> <span class="va">bmi</span><span class="op">)</span> <span class="op">|&gt;</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="validate_plan.html">validate_plan</a></span><span class="op">(</span><span class="va">data</span><span class="op">)</span> <span class="op">|&gt;</span></span></span>
+<span class="r-in"><span>  <span class="fu"><a href="run_analysis.html">run_analysis</a></span><span class="op">(</span><span class="va">data</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="fu"><a href="estimates.html">correlations</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A tibble: 1 × 43</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>             <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                 <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">1</span> analysis_d4f7fab… correlation_family_e… var_crp       var_bmi       crp       </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># ℹ 38 more variables: variable_y &lt;chr&gt;, stratum_label &lt;chr&gt;, strata &lt;list&gt;,</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;">#   correlation_interaction_id &lt;chr&gt;, interaction_test &lt;lgl&gt;,</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;">#   correlation_comparator &lt;list&gt;, correlation_comparator_id &lt;chr&gt;,</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;">#   transformation_x &lt;chr&gt;, transformation_y &lt;chr&gt;,</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;">#   adjustment_variables &lt;list&gt;, n_adjustment &lt;int&gt;, estimand &lt;chr&gt;,</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;">#   estimate &lt;dbl&gt;, std_error &lt;dbl&gt;, std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;,</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;">#   conf_high &lt;dbl&gt;, statistic &lt;dbl&gt;, df &lt;dbl&gt;, p_value &lt;dbl&gt;, …</span></span>
+</code></pre></div>
+    </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>
 
 
     <footer><div class="pkgdown-footer-left">
-  <p>Developed by Bqreport Developers.</p>
+  <p>Developed by bqmaks.</p>
 </div>
 
 <div class="pkgdown-footer-right">

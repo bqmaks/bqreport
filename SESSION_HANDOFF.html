@@ -26,6 +26,7 @@
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="articles/examples-gallery.html">Examples</a></li>
+<li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json"></form></li>
 <li class="nav-item"><a class="external-link nav-link" href="https://github.com/bqmaks/bqreport/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
@@ -43,172 +44,143 @@
 
 <div id="контекст-для-следующей-сессии" class="section level1">
 
-<p>Обновлено: 2026-08-12.</p>
+<p>Обновлено: 2026-08-13 (Europe/Moscow).</p>
 <div class="section level2">
-<h2 id="как-начать">Как начать<a class="anchor" aria-label="anchor" href="#%D0%BA%D0%B0%D0%BA-%D0%BD%D0%B0%D1%87%D0%B0%D1%82%D1%8C"></a></h2>
-<ol style="list-style-type: decimal"><li>Полностью прочитать <code>AGENTS.md</code>: это источник архитектурных требований.</li>
-<li>Проверить <code>git status --short</code> и последние коммиты.</li>
-<li>Не менять уже принятые публичные контракты без предварительного теста.</li>
-<li>Перед новым коммитом запускать полный набор тестов и <code>R CMD check --no-manual</code>.</li>
-</ol><p>Текущая ветка: <code>main</code>.</p>
-<p>Последний функциональный коммит:</p>
-<pre class="text"><code>6e7cb69 Add separation-aware logistic policy</code></pre>
+<h2 id="изменения-сессии-2026-08-13-вечер">Изменения сессии 2026-08-13 (вечер)<a class="anchor" aria-label="anchor" href="#%D0%B8%D0%B7%D0%BC%D0%B5%D0%BD%D0%B5%D0%BD%D0%B8%D1%8F-%D1%81%D0%B5%D1%81%D1%81%D0%B8%D0%B8-2026-08-13-%D0%B2%D0%B5%D1%87%D0%B5%D1%80"></a></h2>
+<p>Пакет прошёл внешнюю ревизию; все найденные проблемы исправлены:</p>
+<ul><li>
+<strong>Баг resampling</strong>: <code><a href="reference/resampled_correlation.html">resampled_correlation()</a></code> теперь ресемплирует веса вместе с наблюдениями; для методов с subject id — cluster bootstrap по субъектам и перестановки только внутри субъекта (<code>R/correlation-methods.R</code>: <code>resample_correlation_context()</code>, <code>permute_correlation_context()</code>).</li>
+<li>
+<strong>Spearman CI</strong>: SE Bonett–Wright <code>sqrt((1 + r^2/2)/(n - k - 3))</code>, <code>ci_method = "fisher_z_bonett_wright"</code>.</li>
+<li>
+<strong>Point-estimate-only методы</strong> (<code><a href="reference/biweight_correlation.html">biweight_correlation()</a></code>): статус <code>review</code> при валидации; запуск после <code><a href="reference/approve_plan.html">approve_plan()</a></code> или через <code><a href="reference/resampled_correlation.html">resampled_correlation()</a></code>. Ревизия учитывает <code>approved</code> при повторной валидации внутри <code><a href="reference/run_analysis.html">run_analysis()</a></code>.</li>
+<li>
+<strong>Минимум наблюдений</strong> для resampled-методов берётся от base method.</li>
+<li>
+<strong>Детерминированные id</strong>: все идентификаторы — digest содержимого (<code>R/ids.R</code>, <code>bq_id()</code>); <code>uuid</code> удалён из Imports. Одинаковый вход даёт идентичные планы/результаты между запусками (<code>tests/testthat/test-reproducible-ids.R</code>). <code>var_id</code> = <code>var_&lt;имя&gt;</code> с детерминированной суффиксацией при повторном использовании имени.</li>
+<li>
+<strong>Файлы разрезаны</strong>: <code>correlations.R</code> → <code>correlation-methods/plan/ execute/interactions.R</code>; <code>analysis-result.R</code> → <code>+ engines-builtin.R</code>, <code>engines-custom.R</code>, <code>result-components.R</code>, <code>result-accessors.R</code>.</li>
+<li>Примеры <code>@examples</code> у ключевых экспортов; <code>NEWS.md</code>; реальный автор в <code>DESCRIPTION</code>; workflow <code>.github/workflows/R-CMD-check.yaml</code>; AGENTS.md синхронизирован (Imports, стиль ошибок, инвариант №13 об id).</li>
+</ul></div>
+<div class="section level2">
+<h2 id="быстрый-старт">Быстрый старт<a class="anchor" aria-label="anchor" href="#%D0%B1%D1%8B%D1%81%D1%82%D1%80%D1%8B%D0%B9-%D1%81%D1%82%D0%B0%D1%80%D1%82"></a></h2>
+<ol style="list-style-type: decimal"><li>Полностью прочитать <code>AGENTS.md</code>.</li>
+<li>Проверить <code>git status -sb</code> и <code>git log -5 --oneline</code>.</li>
+<li>Текущая ветка: <code>main</code>, remote: <code>origin</code> (<code>bqmaks/bqreport</code>).</li>
+<li>Перед изменением публичного API сначала добавлять тест.</li>
+<li>Перед публикацией запускать <code>devtools::test()</code> и <code>R CMD check --no-manual</code>.</li>
+</ol><p>На момент handoff рабочее дерево было чистым до обновления этого файла. Последние опубликованные коммиты:</p>
+<pre class="text"><code>88ee3c4 Document package installation
+8af8e98 Add explicit custom method fallback chains
+9b3ea21 Add vignettes and pkgdown site
+fb968ae Add categorical plot colors
+1e402b4 Add reporting tables and plots</code></pre>
 </div>
 <div class="section level2">
-<h2 id="цель-пакета">Цель пакета<a class="anchor" aria-label="anchor" href="#%D1%86%D0%B5%D0%BB%D1%8C-%D0%BF%D0%B0%D0%BA%D0%B5%D1%82%D0%B0"></a></h2>
-<p><code>bqreport</code> — tidyverse-native R-пакет для воспроизводимого анализа биомедицинских данных. Архитектура строится как аналитический компилятор:</p>
+<h2 id="архитектура">Архитектура<a class="anchor" aria-label="anchor" href="#%D0%B0%D1%80%D1%85%D0%B8%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D0%B0"></a></h2>
+<p>Пакет — tidyverse-native аналитический компилятор:</p>
 <pre class="text"><code>bq_data + metadata + design
   -&gt; selectors + analysis_rules
   -&gt; validated analysis_plan
   -&gt; statistical engines
   -&gt; analysis_result
   -&gt; tidy data / tables / plots</code></pre>
-<p>Источником истины остаются <code>bq_data</code> и <code>analysis_plan</code>. Вычисление, диагностика и представление должны оставаться разделёнными. Runtime fallback запрещён.</p>
+<p>Источники истины — <code>bq_data</code> и <code>analysis_plan</code>. Вычисления, диагностика и представление разделены. Все численные результаты хранятся без округления.</p>
 </div>
 <div class="section level2">
-<h2 id="уже-реализовано">Уже реализовано<a class="anchor" aria-label="anchor" href="#%D1%83%D0%B6%D0%B5-%D1%80%D0%B5%D0%B0%D0%BB%D0%B8%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%BE"></a></h2>
-<div class="section level3">
-<h3 id="данные-и-метаданные">Данные и метаданные<a class="anchor" aria-label="anchor" href="#%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5-%D0%B8-%D0%BC%D0%B5%D1%82%D0%B0%D0%B4%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5"></a></h3>
+<h2 id="реализованные-подсистемы">Реализованные подсистемы<a class="anchor" aria-label="anchor" href="#%D1%80%D0%B5%D0%B0%D0%BB%D0%B8%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5-%D0%BF%D0%BE%D0%B4%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B"></a></h2>
 <ul><li>
-<code>bq_data</code> как подкласс tibble.</li>
-<li>Непрозрачные стабильные <code>var_id</code> на UUID.</li>
-<li>Реестры переменных, ролей, outcomes, дизайна и contrasts.</li>
-<li>Несколько ролей у одной переменной.</li>
-<li>Labels, units, rounding rules и расширяемые поля словаря.</li>
-<li>Аналитические типы, references, event values и distribution metadata.</li>
-<li>Tidyselect-селекторы ролей, типов, распределений и статусов.</li>
-<li>Сохранение и инвалидирование метаданных при основных операциях dplyr.</li>
-<li>Обновление ссылок по стабильным ID при rename.</li>
+<code>bq_data</code>, stable <code>var_id</code>, labels, roles (включая несколько ролей), types, references/events, distribution metadata и tidyselect selectors.</li>
+<li>Реконструкция metadata при основных dplyr-операциях.</li>
+<li>Описательные статистики для continuous/binary/nominal/ordinal/count: групповые и overall (<code>All patients</code>), шаблоны glue, <code>n</code>/<code>N</code>/<code>p</code>, MAD, skewness, kurtosis, normality и пользовательские <code><a href="reference/descriptive_function.html">descriptive_function()</a></code>.</li>
+<li>Сравнения групп, omnibus tests/effect sizes, <code><a href="reference/against_reference.html">against_reference()</a></code>, <code><a href="reference/all_pairwise.html">all_pairwise()</a></code>, <code><a href="reference/consecutive_comparisons.html">consecutive_comparisons()</a></code> и <code>against_global_mean(exponentiate = ...)</code>.</li>
+<li>Linear/logistic/count/ordinal/multinomial models; explicit exponentiation, SE/CI, transformations and nonlinear covariate terms.</li>
+<li>Survival: KM, log-rank, Cox, RMST, survival quantiles, survival and cumulative-risk estimates; competing risks.</li>
+<li>Longitudinal long/wide design, LMM/GLMM/GEE, group × time and contrasts.</li>
+<li>Correlations: Pearson/Spearman/Kendall and extended methods, partial, weighted/repeated/resampled workflows, strata interactions and contrasts-of-contrasts.</li>
+<li>Reporting tables/plots, categorical colors as vector/named vector/function, <code>ru</code>/<code>en</code> groundwork, vignettes and pkgdown configuration.</li>
+<li>README contains GitHub installation via <code>pak</code>, <code>remotes</code>, and local <code>devtools::install()</code>.</li>
 </ul></div>
-<div class="section level3">
-<h3 id="планирование-и-исполнение">Планирование и исполнение<a class="anchor" aria-label="anchor" href="#%D0%BF%D0%BB%D0%B0%D0%BD%D0%B8%D1%80%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-%D0%B8-%D0%B8%D1%81%D0%BF%D0%BE%D0%BB%D0%BD%D0%B5%D0%BD%D0%B8%D0%B5"></a></h3>
+<div class="section level2">
+<h2 id="пользовательские-функции">Пользовательские функции<a class="anchor" aria-label="anchor" href="#%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D1%82%D0%B5%D0%BB%D1%8C%D1%81%D0%BA%D0%B8%D0%B5-%D1%84%D1%83%D0%BD%D0%BA%D1%86%D0%B8%D0%B8"></a></h2>
 <ul><li>
-<code><a href="reference/plan_analysis.html">plan_analysis()</a></code> для outcome–predictor задач.</li>
-<li>Ковариаты, regression weights/IPW и model-based/robust variance.</li>
-<li>Cluster-robust variance для кластеров после matching.</li>
-<li>Независимый strata pipeline: отдельная задача для каждой наблюдаемой страты.</li>
-<li>Effect modifiers и формулы <code>predictor * modifier</code>.</li>
-<li>Preflight variation, missingness, references/events, sparse interaction cells, weights, clusters и required packages.</li>
+<code><a href="reference/analysis_function.html">analysis_function()</a></code> and <code><a href="reference/analysis_method.html">analysis_method()</a></code> validate stable output schemas.</li>
 <li>
-<code><a href="reference/approve_plan.html">approve_plan()</a></code> для задач со статусом <code>review</code>.</li>
+<code><a href="reference/method_selector.html">method_selector()</a></code> is pre-fit only: candidates, reason and diagnostics are fixed during <code><a href="reference/validate_plan.html">validate_plan()</a></code> and never re-selected in <code><a href="reference/run_analysis.html">run_analysis()</a></code>.</li>
 <li>
-<code><a href="reference/run_analysis.html">run_analysis()</a></code> с <code>error = "collect" | "stop" | "warn"</code>.</li>
+<code><a href="reference/comparison_function.html">comparison_function()</a></code>, <code><a href="reference/descriptive_function.html">descriptive_function()</a></code>, correlation method and comparator contracts are available.</li>
+<li>Function id/hash and required packages are retained in plan/provenance.</li>
+<li>Malformed output is a typed error and is never repaired heuristically.</li>
+</ul><div class="section level3">
+<h3 id="explicit-runtime-method-chains">Explicit runtime method chains<a class="anchor" aria-label="anchor" href="#explicit-runtime-method-chains"></a></h3>
+<p>Commit <code>8af8e98</code> added:</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="reference/analysis_method_chain.html">analysis_method_chain</a></span><span class="op">(</span><span class="va">id</span>, <span class="va">methods</span>, <span class="va">advance_on</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="reference/analysis_function.html">analysis_function</a></span><span class="op">(</span></span>
+<span>  <span class="va">id</span>, <span class="va">run</span>, <span class="va">effect_measure</span>, <span class="va">scale</span>,</span>
+<span>  fallback <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">...</span><span class="op">)</span>,</span>
+<span>  advance_on <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bq_error_convergence"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Properties:</p>
+<ul><li>only declared condition classes allow advancement;</li>
+<li>all members must have identical effect measure, scale, model scale and exponentiation policy;</li>
 <li>
-<code>analysis_result</code> и tidy accessors для estimates, contrasts, tests, diagnostics, issues и models.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="методы-и-расширяемость">Методы и расширяемость<a class="anchor" aria-label="anchor" href="#%D0%BC%D0%B5%D1%82%D0%BE%D0%B4%D1%8B-%D0%B8-%D1%80%D0%B0%D1%81%D1%88%D0%B8%D1%80%D1%8F%D0%B5%D0%BC%D0%BE%D1%81%D1%82%D1%8C"></a></h3>
-<ul><li>Встроенные <code><a href="reference/linear_model.html">linear_model()</a></code> и <code><a href="reference/linear_model.html">logistic_model()</a></code>.</li>
+<code>bq_error_invalid_engine_output</code> and contract errors never advance;</li>
 <li>
-<code><a href="reference/analysis_function.html">analysis_function()</a></code> и <code><a href="reference/analysis_method.html">analysis_method()</a></code> для пользовательских engines.</li>
-<li>Строгая нормализация пользовательского <code><a href="reference/analysis_output.html">analysis_output()</a></code>.</li>
-<li>Хеширование пользовательских функций и provenance.</li>
-<li>Явное <code>exponentiate</code> и разделение model/output scale.</li>
-<li>
-<code><a href="reference/method_selector.html">method_selector()</a></code> и <code><a href="reference/method_choice.html">method_choice()</a></code>:
-<ul><li>selector выполняется только в <code><a href="reference/validate_plan.html">validate_plan()</a></code>;</li>
-<li>получает подготовленный <code>analysis_context</code>;</li>
-<li>выбирает только из именованных candidates;</li>
-<li>сохраняет reason и diagnostics;</li>
-<li>
-<code><a href="reference/run_analysis.html">run_analysis()</a></code> selector повторно не вызывает.</li>
-</ul></li>
-<li>
-<code><a href="reference/firth_logistic.html">firth_logistic()</a></code> на optional backend <code>logistf</code>.</li>
-<li>
-<code><a href="reference/separation_logistic.html">separation_logistic()</a></code> использует <code>detectseparation</code> на preflight и фиксирует <code>glm</code> либо Firth без runtime fallback.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="трансформации-и-contrasts">Трансформации и contrasts<a class="anchor" aria-label="anchor" href="#%D1%82%D1%80%D0%B0%D0%BD%D1%81%D1%84%D0%BE%D1%80%D0%BC%D0%B0%D1%86%D0%B8%D0%B8-%D0%B8-contrasts"></a></h3>
-<ul><li>Структурированные scalar transformations: <code><a href="reference/per.html">per()</a></code>, <code><a href="reference/per.html">log2_transform()</a></code>, <code><a href="reference/per.html">log10_transform()</a></code> и <code><a href="reference/transformation_function.html">transformation_function()</a></code>.</li>
-<li>Трансформации применяются к predictor/covariates и сохраняются в плане и provenance.</li>
-<li>Независимое model coding через <code><a href="reference/set_coding.html">set_coding()</a></code>.</li>
-<li>
-<code><a href="reference/against_reference.html">against_reference()</a></code> и <code><a href="reference/within_levels.html">within_levels()</a></code>.</li>
-<li>Пользовательские попарные сравнения через <code><a href="reference/comparison_function.html">comparison_function()</a></code>.</li>
-<li>Условные эффекты внутри уровней modifier.</li>
-<li>Omnibus-тесты взаимодействия.</li>
-<li>Model-based, robust и cluster-robust covariance используются и для условных эффектов.</li>
-</ul></div>
+<code>attempts(result)</code> contains every attempted method;</li>
+<li>plan stores <code>method_chain</code>, <code>fallback_conditions</code>, <code>executed_method</code>;</li>
+<li>provenance stores declared chain, actual method and <code>fallback_used</code>;</li>
+<li>failed attempts also appear in <code><a href="reference/estimates.html">issues()</a></code>.</li>
+</ul><p>Current limitation: runtime chains accept custom <code><a href="reference/analysis_function.html">analysis_function()</a></code> / <code><a href="reference/analysis_method.html">analysis_method()</a></code> members only. Built-in engines are not chain members yet.</p>
+</div>
 </div>
 <div class="section level2">
-<h2 id="последняя-проверка">Последняя проверка<a class="anchor" aria-label="anchor" href="#%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D1%8F%D1%8F-%D0%BF%D1%80%D0%BE%D0%B2%D0%B5%D1%80%D0%BA%D0%B0"></a></h2>
-<p>Перед handoff успешно выполнены:</p>
-<pre class="text"><code>devtools::test(): 370 PASS, 0 FAIL, 0 WARN, 0 SKIP
+<h2 id="документация">Документация<a class="anchor" aria-label="anchor" href="#%D0%B4%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D0%B0%D1%86%D0%B8%D1%8F"></a></h2>
+<p>Pkgdown site: <a href="https://bqmaks.github.io/bqreport/" class="uri">https://bqmaks.github.io/bqreport/</a></p>
+<p>Main vignettes:</p>
+<ul><li><code>vignettes/get-started.Rmd</code></li>
+<li><code>vignettes/descriptive-analysis.Rmd</code></li>
+<li><code>vignettes/models-and-contrasts.Rmd</code></li>
+<li><code>vignettes/correlation-analysis.Rmd</code></li>
+<li><code>vignettes/longitudinal-survival.Rmd</code></li>
+<li><code>vignettes/custom-functions.Rmd</code></li>
+<li><code>vignettes/examples-gallery.Rmd</code></li>
+</ul><p><code>custom-functions.Rmd</code> now contains an executable three-group custom HC3 linear model showing <code><a href="reference/analysis_method.html">analysis_method()</a></code>, estimates, omnibus test, custom pairwise contrasts, Holm adjustment and standard reporting.</p>
+</div>
+<div class="section level2">
+<h2 id="последняя-верификация">Последняя верификация<a class="anchor" aria-label="anchor" href="#%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D1%8F%D1%8F-%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F"></a></h2>
+<p>После правок сессии 2026-08-13 (вечер):</p>
+<pre class="text"><code>devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
+devtools::run_examples(): OK
 R CMD check --no-manual: Status: OK</code></pre>
-<p>Firth-оценки, профильные confidence intervals и p-values тестами сверены с прямым <code><a href="https://rdrr.io/pkg/logistf/man/logistf.html" class="external-link">logistf::logistf()</a></code>.</p>
-<p>Optional packages <code>detectseparation</code> и <code>logistf</code> находятся в <code>Suggests</code>. <code>logistf</code> проверяется только после выбора Firth candidate; обычную GLM-ветвь не должно блокировать отсутствие неиспользуемого backend.</p>
 </div>
 <div class="section level2">
-<h2 id="пример-текущего-pipeline">Пример текущего pipeline<a class="anchor" aria-label="anchor" href="#%D0%BF%D1%80%D0%B8%D0%BC%D0%B5%D1%80-%D1%82%D0%B5%D0%BA%D1%83%D1%89%D0%B5%D0%B3%D0%BE-pipeline"></a></h2>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">data</span> <span class="op">&lt;-</span> <span class="va">raw_data</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/as_bq_data.html">as_bq_data</a></span><span class="op">(</span>metadata <span class="op">=</span> <span class="va">dictionary</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/set_outcome.html">set_outcome</a></span><span class="op">(</span><span class="va">response</span>, type <span class="op">=</span> <span class="st">"binary"</span>, event <span class="op">=</span> <span class="fl">1</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/set_predictor.html">set_predictor</a></span><span class="op">(</span><span class="va">treatment</span>, type <span class="op">=</span> <span class="st">"nominal"</span>, reference <span class="op">=</span> <span class="st">"Placebo"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/set_transformation.html">set_transformation</a></span><span class="op">(</span><span class="va">age</span>, <span class="fu"><a href="reference/per.html">per</a></span><span class="op">(</span><span class="fl">10</span><span class="op">)</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/set_weight.html">set_weight</a></span><span class="op">(</span><span class="va">iptw</span>, type <span class="op">=</span> <span class="st">"ipw"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/set_cluster.html">set_cluster</a></span><span class="op">(</span><span class="va">matched_set</span>, type <span class="op">=</span> <span class="st">"matched_set"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/set_comparisons.html">set_comparisons</a></span><span class="op">(</span></span>
-<span>    <span class="va">treatment</span>,</span>
-<span>    comparisons <span class="op">=</span> <span class="fu"><a href="reference/against_reference.html">against_reference</a></span><span class="op">(</span><span class="st">"Placebo"</span><span class="op">)</span>,</span>
-<span>    adjust <span class="op">=</span> <span class="st">"holm"</span></span>
-<span>  <span class="op">)</span></span>
-<span></span>
-<span><span class="va">rules</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/analysis_rules.html">analysis_rules</a></span><span class="op">(</span></span>
-<span>  <span class="fu"><a href="reference/where_type.html">where_binary</a></span><span class="op">(</span><span class="op">)</span> <span class="op">~</span> <span class="fu"><a href="reference/separation_logistic.html">separation_logistic</a></span><span class="op">(</span>exponentiate <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">plan</span> <span class="op">&lt;-</span> <span class="va">data</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/plan_analysis.html">plan_analysis</a></span><span class="op">(</span></span>
-<span>    outcomes <span class="op">=</span> <span class="fu"><a href="reference/where_role.html">all_outcomes</a></span><span class="op">(</span><span class="op">)</span>,</span>
-<span>    predictors <span class="op">=</span> <span class="fu"><a href="reference/where_role.html">all_predictors</a></span><span class="op">(</span><span class="op">)</span>,</span>
-<span>    covariates <span class="op">=</span> <span class="va">age</span>,</span>
-<span>    weights <span class="op">=</span> <span class="va">iptw</span>,</span>
-<span>    cluster <span class="op">=</span> <span class="va">matched_set</span>,</span>
-<span>    strata <span class="op">=</span> <span class="va">sex</span>,</span>
-<span>    rules <span class="op">=</span> <span class="va">rules</span></span>
-<span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
-<span>  <span class="fu"><a href="reference/validate_plan.html">validate_plan</a></span><span class="op">(</span><span class="va">data</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">result</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/run_analysis.html">run_analysis</a></span><span class="op">(</span><span class="va">plan</span>, <span class="va">data</span>, error <span class="op">=</span> <span class="st">"collect"</span><span class="op">)</span></span>
-<span><span class="va">result</span> <span class="op">|&gt;</span> <span class="fu"><a href="reference/estimates.html">estimates</a></span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="va">result</span> <span class="op">|&gt;</span> <span class="fu"><a href="reference/contrasts.html">contrasts</a></span><span class="op">(</span><span class="op">)</span></span>
-<span><span class="va">result</span> <span class="op">|&gt;</span> <span class="fu"><a href="reference/estimates.html">diagnostics</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<h2 id="важный-незакрытый-пробел">Важный незакрытый пробел<a class="anchor" aria-label="anchor" href="#%D0%B2%D0%B0%D0%B6%D0%BD%D1%8B%D0%B9-%D0%BD%D0%B5%D0%B7%D0%B0%D0%BA%D1%80%D1%8B%D1%82%D1%8B%D0%B9-%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB"></a></h2>
+<p>В workflow сравнения трёх групп все четыре outcome-типа уже моделируются:</p>
+<pre class="text"><code><span><span class="va">continuous</span>  <span class="op">-&gt;</span> <span class="va">linear_model</span></span>
+<span><span class="va">binary</span>      <span class="op">-&gt;</span> <span class="va">logistic_model</span></span>
+<span><span class="va">nominal</span>     <span class="op">-&gt;</span> <span class="va">multinomial_logistic_model</span></span>
+<span><span class="va">ordinal</span>     <span class="op">-&gt;</span> <span class="va">ordinal_logistic_model</span></span></code></pre>
+<p>Но общий <code><a href="reference/contrasts.html">contrasts()</a></code> сейчас полностью нормализует model-based group contrasts прежде всего для continuous/binary paths. Для ordinal и multinomial коэффициенты, SE, CI и omnibus likelihood-ratio tests доступны в <code><a href="reference/estimates.html">estimates()</a></code>/<code><a href="reference/estimates.html">tests()</a></code>, однако target specifications (<code>all_pairwise</code>, <code>against_reference</code>, <code>consecutive</code>, global mean where meaningful) ещё нужно адаптировать к стабильной схеме <code><a href="reference/contrasts.html">contrasts()</a></code> и multiplicity adjustment.</p>
 </div>
 <div class="section level2">
-<h2 id="важные-архитектурные-ограничения">Важные архитектурные ограничения<a class="anchor" aria-label="anchor" href="#%D0%B2%D0%B0%D0%B6%D0%BD%D1%8B%D0%B5-%D0%B0%D1%80%D1%85%D0%B8%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D0%BD%D1%8B%D0%B5-%D0%BE%D0%B3%D1%80%D0%B0%D0%BD%D0%B8%D1%87%D0%B5%D0%BD%D0%B8%D1%8F"></a></h2>
-<ul><li>Не передавать пользовательским функциям полный изменяемый <code>bq_data</code>.</li>
-<li>Не пытаться эвристически исправлять malformed output пользовательской функции.</li>
-<li>Не округлять числа в вычислительном слое.</li>
-<li>Не хранить локализованный текст в численных результатах.</li>
-<li>Не смешивать coding коэффициентов и целевые comparisons.</li>
-<li>Не считать robust/cluster-robust covariance только свойством таблицы: она должна использоваться во всех производных оценках.</li>
-<li>Не запускать selector в <code><a href="reference/run_analysis.html">run_analysis()</a></code> и не переключать engine после ошибки fit.</li>
-<li>В реестрах и планах ссылаться на стабильные IDs, имена обновлять при validation.</li>
-</ul></div>
+<h2 id="рекомендуемый-следующий-шаг">Рекомендуемый следующий шаг<a class="anchor" aria-label="anchor" href="#%D1%80%D0%B5%D0%BA%D0%BE%D0%BC%D0%B5%D0%BD%D0%B4%D1%83%D0%B5%D0%BC%D1%8B%D0%B9-%D1%81%D0%BB%D0%B5%D0%B4%D1%83%D1%8E%D1%89%D0%B8%D0%B9-%D1%88%D0%B0%D0%B3"></a></h2>
+<p>Сделать вертикальный срез model-based contrasts для ordinal и multinomial outcomes:</p>
+<ol style="list-style-type: decimal"><li>До изменения API добавить контрактные тесты для трёх групп.</li>
+<li>Явно определить estimand для каждой outcome category у multinomial model.</li>
+<li>Нормализовать reference/all-pairwise/consecutive contrasts, SE и CI.</li>
+<li>Применять explicit exponentiation и сохранять model/output scale.</li>
+<li>Добавить Holm/другие <code>p.adjust</code> методы и non-estimable diagnostics.</li>
+<li>Обновить three-group vignette полным исполняемым workflow, включая пользовательские функции на descriptive/selector/model/contrast этапах.</li>
+<li>После тестов обновить pkgdown и опубликовать.</li>
+</ol></div>
 <div class="section level2">
-<h2 id="рекомендуемый-следующий-вертикальный-срез">Рекомендуемый следующий вертикальный срез<a class="anchor" aria-label="anchor" href="#%D1%80%D0%B5%D0%BA%D0%BE%D0%BC%D0%B5%D0%BD%D0%B4%D1%83%D0%B5%D0%BC%D1%8B%D0%B9-%D1%81%D0%BB%D0%B5%D0%B4%D1%83%D1%8E%D1%89%D0%B8%D0%B9-%D0%B2%D0%B5%D1%80%D1%82%D0%B8%D0%BA%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D0%B9-%D1%81%D1%80%D0%B5%D0%B7"></a></h2>
-<p>Начать вычислительный слой описательной статистики и сравнений групп из v0.2:</p>
-<ol style="list-style-type: decimal"><li>Сначала определить tidy-схемы <code>descriptives</code> и group comparisons.</li>
-<li>Добавить отдельный тип задач в <code>analysis_plan</code>, не встраивая расчёт в regression engine.</li>
-<li>Реализовать continuous descriptives (<code>n</code>, missing, mean/SD, median/IQR, min/max) без округления.</li>
-<li>Реализовать categorical counts/proportions с явными знаменателями.</li>
-<li>Поддержать общий результат и результаты по группам/стратам.</li>
-<li>Затем добавить базовые group tests как отдельные estimates/tests, с effect estimates первичнее p-values.</li>
-<li>Только после стабильного вычислительного контракта переходить к первому <code>gt</code>-представлению.</li>
-</ol><p>Перед реализацией нужно согласовать с пользователем минимум два решения:</p>
-<ul><li>должна ли одна descriptives-задача возвращать несколько статистик длинным форматом (<code>statistic</code>, <code>value</code>) или использовать стабильные широкие поля;</li>
-<li>какие знаменатели для процентов считать обязательными: <code>n_analyzed</code>, внутри группы и/или общий eligible denominator.</li>
-</ul></div>
-<div class="section level2">
-<h2 id="более-поздние-незакрытые-области">Более поздние незакрытые области<a class="anchor" aria-label="anchor" href="#%D0%B1%D0%BE%D0%BB%D0%B5%D0%B5-%D0%BF%D0%BE%D0%B7%D0%B4%D0%BD%D0%B8%D0%B5-%D0%BD%D0%B5%D0%B7%D0%B0%D0%BA%D1%80%D1%8B%D1%82%D1%8B%D0%B5-%D0%BE%D0%B1%D0%BB%D0%B0%D1%81%D1%82%D0%B8"></a></h2>
-<ul><li>Survival outcomes, Kaplan–Meier, log-rank, Cox и PH diagnostics.</li>
-<li>Longitudinal long/wide design, canonical long analysis frame, LMM/GLMM/GEE.</li>
-<li>Полноценные outcome/design registries за пределами текущего первого среза.</li>
-<li>Публикационные таблицы и графики.</li>
-<li>Локали <code>ru</code>/<code>en</code> для presentation layer.</li>
-<li>Join/pivot edge cases и специальные методы для неоднозначных reshapes.</li>
+<h2 id="githubокружение">GitHub/окружение<a class="anchor" aria-label="anchor" href="#github%D0%BE%D0%BA%D1%80%D1%83%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5"></a></h2>
+<ul><li>SSH push в <code>origin/main</code> работает.</li>
+<li>
+<code>gh auth status</code> сообщал о недействительном CLI token; это не блокировало обычный <code>git push</code> по SSH.</li>
+<li>Не добавлять build/check artifacts: <code>/*.tar.gz</code>, <code>/*.Rcheck/</code> и <code>docs/</code> исключены через <code>.gitignore</code>.</li>
 </ul></div>
 </div>
 
@@ -217,7 +189,7 @@ R CMD check --no-manual: Status: OK</code></pre>
 
 
     <footer><div class="pkgdown-footer-left">
-  <p>Developed by Bqreport Developers.</p>
+  <p>Developed by bqmaks.</p>
 </div>
 
 <div class="pkgdown-footer-right">

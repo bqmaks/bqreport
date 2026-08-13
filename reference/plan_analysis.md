@@ -73,3 +73,22 @@ plan_analysis(
 ## Value
 
 An `analysis_plan` tibble.
+
+## Examples
+
+``` r
+data <- as_bq_data(tibble::tibble(
+  response = c(0, 0, 1, 0, 1, 1, 1, 0),
+  treatment = factor(rep(c("Control", "Treatment"), each = 4)),
+  age = c(44, 57, 51, 63, 46, 55, 60, 49)
+)) |>
+  set_outcome(response, type = "binary", event = 1) |>
+  set_predictor(treatment, type = "binary", reference = "Control") |>
+  set_predictor(age, type = "continuous")
+plan <- plan_analysis(data, response, treatment, covariates = age)
+plan[, c("analysis_id", "outcome", "predictor", "method", "status")]
+#> # A tibble: 1 × 5
+#>   analysis_id               outcome  predictor method         status
+#>   <chr>                     <chr>    <chr>     <chr>          <chr> 
+#> 1 analysis_be2bd84b98cc7388 response treatment logistic_model ready 
+```

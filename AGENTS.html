@@ -26,6 +26,7 @@
   </ul></li>
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
 <li class="nav-item"><a class="nav-link" href="articles/examples-gallery.html">Examples</a></li>
+<li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="search.json"></form></li>
 <li class="nav-item"><a class="external-link nav-link" href="https://github.com/bqmaks/bqreport/" aria-label="GitHub"><span class="fa fab fa-github fa-lg"></span></a></li>
@@ -86,6 +87,7 @@
 <li>Вычисление, диагностика и представление разделены.</li>
 <li>Лонгитудинальные engines работают с каноническим long analysis frame; преобразование из wide задаётся явно, проверяется до моделирования и фиксируется в плане и provenance без изменения исходного <code>bq_data</code>.</li>
 <li>Пользователь может передавать функции выбора метода и статистические engines через валидируемые публичные контракты; выбор и идентичность функции фиксируются в плане и provenance.</li>
+<li>Идентификаторы (<code>var_id</code>, <code>outcome_id</code>, <code>design_id</code>, <code>analysis_id</code>, <code>contrast_id</code>) — детерминированные digest-и определяющего содержимого (<code>R/ids.R</code>), не случайные значения: одинаковый вход компилируется в идентичные план и результат между запусками.</li>
 </ol></div>
 <div class="section level2">
 <h2 id="доменные-объекты">Доменные объекты<a class="anchor" aria-label="anchor" href="#%D0%B4%D0%BE%D0%BC%D0%B5%D0%BD%D0%BD%D1%8B%D0%B5-%D0%BE%D0%B1%D1%8A%D0%B5%D0%BA%D1%82%D1%8B"></a></h2>
@@ -391,10 +393,9 @@ p_adjusted, adjust_method, effect_measure, scale</code></pre>
 </div>
 <div class="section level2">
 <h2 id="tidyverse-совместимость">Tidyverse-совместимость<a class="anchor" aria-label="anchor" href="#tidyverse-%D1%81%D0%BE%D0%B2%D0%BC%D0%B5%D1%81%D1%82%D0%B8%D0%BC%D0%BE%D1%81%D1%82%D1%8C"></a></h2>
-<p>В <code>Imports</code> использовать отдельные пакеты, не метапакет <code>tidyverse</code>:</p>
-<pre class="text"><code>cli, dplyr, forcats, labelled, lifecycle, purrr, rlang,
-stringr, tibble, tidyr, tidyselect, vctrs, broom</code></pre>
-<p>Специализированные backends по возможности держать в <code>Suggests</code>. Для разделения в логистической регрессии предусмотреть опциональные <code>detectseparation</code> и <code>logistf</code>; отсутствие required package выявлять до запуска соответствующего задания.</p>
+<p>В <code>Imports</code> использовать отдельные пакеты, не метапакет <code>tidyverse</code>, и держать список минимальным. Текущий фактический список:</p>
+<pre class="text"><code>digest, dplyr, labelled, rlang, tibble, tidyselect, vctrs</code></pre>
+<p>Новые кандидаты (<code>purrr</code>, <code>tidyr</code>, <code>stringr</code>, <code>forcats</code>, <code>broom</code>, <code>cli</code>, <code>lifecycle</code>) добавлять только когда появляется реальный вызов, а не заранее. Специализированные backends по возможности держать в <code>Suggests</code>. Для разделения в логистической регрессии предусмотреть опциональные <code>detectseparation</code> и <code>logistf</code>; отсутствие required package выявлять до запуска соответствующего задания.</p>
 <p>Для <code>bq_data</code> реализовать и тестировать <code>dplyr_reconstruct()</code>, <code>dplyr_row_slice()</code>, <code>dplyr_col_modify()</code>, <code>[.bq_data</code> и <code>names&lt;-.bq_data</code>.</p>
 <table class="table"><colgroup><col width="50%"><col width="50%"></colgroup><thead><tr><th>Операция</th>
 <th>Метаданные</th>
@@ -425,7 +426,7 @@ stringr, tibble, tidyr, tidyselect, vctrs, broom</code></pre>
 </tr></tbody></table></div>
 <div class="section level2">
 <h2 id="ошибки-и-диагностика">Ошибки и диагностика<a class="anchor" aria-label="anchor" href="#%D0%BE%D1%88%D0%B8%D0%B1%D0%BA%D0%B8-%D0%B8-%D0%B4%D0%B8%D0%B0%D0%B3%D0%BD%D0%BE%D1%81%D1%82%D0%B8%D0%BA%D0%B0"></a></h2>
-<p>Использовать типизированные conditions и <code>cli</code>, например:</p>
+<p>Использовать типизированные base-conditions (<code>stop(structure(...))</code> с классами <code>bq_error_*</code>/<code>bq_warning_*</code>); <code>cli</code> сейчас не используется и не входит в Imports. Сообщение обязано называть проблемную переменную, метод или analysis id, когда они известны. Примеры классов:</p>
 <pre class="text"><code><span><span class="va">bq_error_invalid_outcome</span></span>
 <span><span class="va">bq_error_ambiguous_rule</span></span>
 <span><span class="va">bq_error_missing_reference</span></span>
@@ -504,7 +505,7 @@ stringr, tibble, tidyr, tidyselect, vctrs, broom</code></pre>
 
 
     <footer><div class="pkgdown-footer-left">
-  <p>Developed by Bqreport Developers.</p>
+  <p>Developed by bqmaks.</p>
 </div>
 
 <div class="pkgdown-footer-right">
