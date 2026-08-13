@@ -275,3 +275,43 @@ test_that("analysis_plan builder executes mixed analysis blocks end to end", {
   expect_identical(nrow(correlations(result)), 1L)
   expect_equal(correlations(result)$estimate, stats::cor(data$y, data$z))
 })
+
+test_that("combine_plans safely combines compatible builder plans", {
+  data <- as_bq_data(tibble::tibble(y = 1:6, x = 2:7, z = 7:2)) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+  regression <- data |> analysis_plan() |> add_analysis(y, x) |> build_plan()
+  renamed <- dplyr::rename(data, outcome_new = y, correlate_new = z)
+  correlation <- renamed |>
+    analysis_plan() |>
+    add_correlations(outcome_new, with = correlate_new) |>
+    build_plan()
+
+  combined <- combine_plans(regression, correlation)
+
+  expect_s3_class(combined, "analysis_plan")
+  expect_identical(nrow(combined), 2L)
+  expect_identical(length(unique(combined$data_signature)), 1L)
+})
+
+test_that("combine_plans rejects incompatible, duplicate, and mixed-state plans", {
+  data <- as_bq_data(tibble::tibble(y = 1:6, x = 2:7)) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+  plan <- data |> analysis_plan() |> add_analysis(y, x) |> build_plan()
+  incompatible_data <- data |> set_predictor(x, type = "count")
+  incompatible <- incompatible_data |>
+    analysis_plan() |>
+    add_analysis(y, x) |>
+    build_plan()
+
+  expect_error(combine_plans(plan, plan), class = "bq_error_duplicate_analysis")
+  expect_error(
+    combine_plans(plan, incompatible),
+    class = "bq_error_incompatible_plans"
+  )
+  expect_error(
+    combine_plans(plan, validate_plan(plan, data)),
+    class = "bq_error_incompatible_plan_state"
+  )
+})

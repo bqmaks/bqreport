@@ -17,6 +17,33 @@ test_that("plan_survival compiles Cox tasks from composite outcomes", {
   expect_identical(plan$effect_measure, "hazard_ratio")
 })
 
+test_that("analysis_plan builder accumulates and executes survival tasks", {
+  skip_if_not_installed("survival")
+  data <- as_bq_data(tibble::tibble(
+    time = c(5, 8, 12, 4, 10, 15, 7, 9),
+    event = c(1, 0, 1, 1, 0, 1, 0, 1),
+    arm = factor(rep(c("A", "B"), each = 4L))
+  )) |>
+    set_predictor(arm, type = "binary", reference = "A") |>
+    add_survival_outcome(
+      os, time = time, event = event, event_value = 1, time_unit = "months"
+    )
+
+  result <- data |>
+    analysis_plan() |>
+    add_survival(os, arm) |>
+    add_kaplan_meier(os, groups = arm, times = c(5, 10)) |>
+    validate_plan() |>
+    run_analysis(data)
+
+  expect_identical(
+    result$plan$analysis_type,
+    c("survival_regression", "kaplan_meier")
+  )
+  expect_gt(nrow(estimates(result)), 0L)
+  expect_gt(nrow(survival_estimates(result)), 0L)
+})
+
 test_that("Cox estimates agree with direct survival backend", {
   skip_if_not_installed("survival")
   data <- as_bq_data(tibble::tibble(
