@@ -181,6 +181,8 @@ correlation_method <- function(
 #' @param bootstrap Number of bootstrap replicates, or zero.
 #' @param permutations Number of permutation replicates, or zero.
 #' @param seed Required integer seed used without changing global RNG state.
+#' @param ci Bootstrap confidence interval computed by [boot::boot.ci()].
+#'   Supported methods are `percentile`, `basic`, `normal`, and `bca`.
 #' @return A resampling `correlation_method_spec`.
 #' @examples
 #' data <- as_bq_data(tibble::tibble(
@@ -197,7 +199,8 @@ correlation_method <- function(
 #' @export
 resampled_correlation <- function(
   method = pearson_correlation(), bootstrap = 999L,
-  permutations = 999L, seed
+  permutations = 999L, seed,
+  ci = c("percentile", "basic", "normal", "bca")
 ) {
   if (!inherits(method, "correlation_method_spec")) {
     stop_invalid_correlation("`method` must be a correlation method specification.")
@@ -211,6 +214,17 @@ resampled_correlation <- function(
   }
   bootstrap <- check_replicates(bootstrap, "bootstrap")
   permutations <- check_replicates(permutations, "permutations")
+  if (!is.character(ci) || !length(ci) || anyNA(ci)) {
+    stop_invalid_correlation(
+      "`ci` must be one of: percentile, basic, normal, or bca."
+    )
+  }
+  ci <- tryCatch(
+    match.arg(ci),
+    error = function(e) stop_invalid_correlation(
+      "`ci` must be one of: percentile, basic, normal, or bca."
+    )
+  )
   if (bootstrap == 0L && permutations == 0L) {
     stop_invalid_correlation("At least one resampling procedure must be requested.")
   }
@@ -221,16 +235,20 @@ resampled_correlation <- function(
   seed <- as.integer(seed)
   base_method <- method
   compute <- function(context) compute_resampled_correlation(
-    context, base_method, bootstrap, permutations, seed
+    context, base_method, bootstrap, permutations, seed, ci
   )
   output <- new_correlation_method(
     id = paste0(method$id, "_resampled"),
-    ci_method = if (bootstrap) "bootstrap_percentile" else method$ci_method,
+    ci_method = if (bootstrap) paste0("bootstrap_", ci) else method$ci_method,
     compute = compute, effect_measure = method$effect_measure,
     scale = method$scale, supports_partial = method$supports_partial,
     supports_strata = method$supports_strata, supports_interaction = FALSE,
-    required_packages = method$required_packages,
-    function_hash = digest::digest(list(method$function_hash, bootstrap, permutations, seed))
+    required_packages = unique(c(
+      method$required_packages, if (bootstrap) "boot" else character()
+    )),
+    function_hash = digest::digest(list(
+      method$function_hash, bootstrap, permutations, seed, ci
+    ))
   )
   output$base_method <- method
   output$supports_weights <- method$supports_weights
@@ -240,18 +258,19 @@ resampled_correlation <- function(
   output$bootstrap_replicates <- bootstrap
   output$permutation_replicates <- permutations
   output$resampling_seed <- seed
+  output$bootstrap_ci <- ci
   output
 }
 
 compute_resampled_correlation <- function(
-  context, method, bootstrap, permutations, seed
+  context, method, bootstrap, permutations, seed, ci_method
 ) {
   with_local_seed(seed, {
     observed <- method$compute(context)
-    bootstrap_values <- if (bootstrap) replicate(bootstrap, {
-      sampled <- resample_correlation_context(context)
-      tryCatch(method$compute(sampled)$estimate, error = function(e) NA_real_)
-    }) else numeric()
+    bootstrap_fit <- if (bootstrap) {
+      boot_correlation(context, method, bootstrap)
+    } else NULL
+    bootstrap_values <- if (bootstrap) as.numeric(bootstrap_fit$t) else numeric()
     permutation_values <- if (permutations) replicate(permutations, {
       permuted <- permute_correlation_context(context)
       tryCatch(method$compute(permuted)$estimate, error = function(e) NA_real_)
@@ -265,9 +284,8 @@ compute_resampled_correlation <- function(
       stop_invalid_correlation_output("No successful permutation replicates.")
     }
     if (bootstrap) {
-      alpha <- (1 - context$confidence_level) / 2
-      ci <- stats::quantile(
-        bootstrap_values, c(alpha, 1 - alpha), names = FALSE, type = 6
+      ci <- bootstrap_correlation_interval(
+        bootstrap_fit, context$confidence_level, ci_method
       )
       std_error <- stats::sd(bootstrap_values)
       se_scale <- "correlation"
@@ -290,18 +308,64 @@ compute_resampled_correlation <- function(
   })
 }
 
-resample_correlation_context <- function(context) {
+boot_correlation <- function(context, method, replicates) {
+  units <- if (is.null(context$id)) {
+    seq_along(context$x)
+  } else {
+    unique(context$id)
+  }
+  statistic <- function(data, indices) {
+    sampled <- resample_correlation_context(context, indices)
+    tryCatch(method$compute(sampled)$estimate, error = function(e) NA_real_)
+  }
+  boot::boot(data = units, statistic = statistic, R = replicates)
+}
+
+bootstrap_correlation_interval <- function(fit, confidence_level, method) {
+  boot_type <- switch(
+    method,
+    percentile = "perc",
+    basic = "basic",
+    normal = "norm",
+    bca = "bca"
+  )
+  interval <- tryCatch(
+    boot::boot.ci(fit, conf = confidence_level, type = boot_type),
+    error = function(e) e
+  )
+  if (inherits(interval, "error")) {
+    stop_invalid_correlation_output(paste0(
+      "Bootstrap `", method, "` confidence interval failed: ",
+      conditionMessage(interval)
+    ))
+  }
+  values <- switch(
+    method,
+    normal = interval$normal[1L, 2:3],
+    basic = interval$basic[1L, 4:5],
+    percentile = interval$percent[1L, 4:5],
+    bca = interval$bca[1L, 4:5]
+  )
+  if (length(values) != 2L || any(!is.finite(values))) {
+    stop_invalid_correlation_output(paste0(
+      "Bootstrap `", method, "` confidence interval is not finite."
+    ))
+  }
+  as.numeric(values)
+}
+
+resample_correlation_context <- function(context, indices = NULL) {
   sampled <- context
   n <- length(context$x)
   if (is.null(context$id)) {
-    index <- sample.int(n, n, replace = TRUE)
+    index <- if (is.null(indices)) sample.int(n, n, replace = TRUE) else indices
   } else {
     # Cluster bootstrap: resample whole subjects and relabel the draws so
     # that a subject drawn twice contributes two distinct clusters.
     subjects <- unique(context$id)
-    drawn <- subjects[
-      sample.int(length(subjects), length(subjects), replace = TRUE)
-    ]
+    drawn <- if (is.null(indices)) {
+      subjects[sample.int(length(subjects), length(subjects), replace = TRUE)]
+    } else subjects[indices]
     rows <- lapply(drawn, function(subject) which(context$id == subject))
     index <- unlist(rows, use.names = FALSE)
     sampled$id <- rep(seq_along(rows), lengths(rows))

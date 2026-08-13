@@ -171,3 +171,107 @@ test_that("approve_plan requires preflight and rejects invalid tasks", {
     class = "bq_error_unknown_analysis_id"
   )
 })
+
+test_that("analysis_plan builder accumulates regression blocks through pipes", {
+  data <- as_bq_data(tibble::tibble(
+    y1 = c(1, 2, 3, 4),
+    y2 = c(0, 1, 0, 1),
+    treatment = factor(c("A", "A", "B", "B")),
+    age = c(40, 50, 60, 70)
+  )) |>
+    set_outcome(y1, type = "continuous") |>
+    set_outcome(y2, type = "binary", event = 1) |>
+    set_predictor(treatment, type = "binary", reference = "A") |>
+    set_predictor(age, type = "continuous")
+
+  plan <- data |>
+    analysis_plan() |>
+    add_analysis(y1, treatment) |>
+    add_analysis(y2, treatment, covariates = age) |>
+    validate_plan()
+
+  expect_s3_class(plan, "analysis_plan")
+  expect_identical(plan$outcome, c("y1", "y2"))
+  expect_identical(plan$covariates, list(character(), "age"))
+  expect_true(all(plan$validated))
+})
+
+test_that("analysis_plan builder accumulates descriptive blocks", {
+  data <- as_bq_data(tibble::tibble(
+    age = c(40, 50, 60, 70),
+    response = c(0, 1, 0, 1),
+    arm = factor(c("A", "A", "B", "B"))
+  )) |>
+    set_outcome(age, type = "continuous") |>
+    set_outcome(response, type = "binary", event = 1) |>
+    set_role(arm, "group")
+
+  plan <- data |>
+    analysis_plan() |>
+    add_descriptives(age, groups = arm, overall = TRUE) |>
+    add_descriptives(response, groups = arm, overall = FALSE) |>
+    validate_plan()
+
+  expect_identical(plan$analysis_type, rep("descriptive", 2L))
+  expect_identical(plan$variable, c("age", "response"))
+  expect_identical(plan$overall, c(TRUE, FALSE))
+})
+
+test_that("analysis_plan builder rejects duplicate tasks", {
+  data <- as_bq_data(tibble::tibble(y = 1:4, x = 2:5)) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+
+  expect_error(
+    data |>
+      analysis_plan() |>
+      add_analysis(y, x) |>
+      add_analysis(y, x),
+    class = "bq_error_duplicate_analysis"
+  )
+})
+
+test_that("build_plan exposes an unvalidated accumulated plan", {
+  data <- as_bq_data(tibble::tibble(y = 1:4, x = 2:5)) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(x, type = "continuous")
+
+  plan <- data |>
+    analysis_plan() |>
+    add_analysis(y, x) |>
+    build_plan()
+
+  expect_s3_class(plan, "analysis_plan")
+  expect_false(any(plan$validated))
+  expect_error(
+    data |> analysis_plan() |> build_plan(),
+    class = "bq_error_empty_plan_builder"
+  )
+})
+
+test_that("analysis_plan builder executes mixed analysis blocks end to end", {
+  data <- as_bq_data(tibble::tibble(
+    y = c(1.1, 2.0, 2.9, 4.2, 4.8, 6.1, 7.0, 7.9),
+    z = c(1.4, 1.8, 3.2, 3.8, 5.1, 5.9, 7.2, 7.7),
+    treatment = factor(rep(c("A", "B"), each = 4L))
+  )) |>
+    set_outcome(y, type = "continuous") |>
+    set_predictor(treatment, type = "binary", reference = "A")
+
+  result <- data |>
+    analysis_plan() |>
+    add_descriptives(y) |>
+    add_analysis(y, treatment) |>
+    add_correlations(y, with = z) |>
+    validate_plan() |>
+    run_analysis(data)
+
+  expect_identical(
+    result$plan$analysis_type,
+    c("descriptive", "univariable_regression", "correlation")
+  )
+  expect_gt(nrow(descriptives(result)), 0L)
+  expect_gt(nrow(estimates(result)), 0L)
+  expect_identical(nrow(correlations(result)), 1L)
+  expect_equal(correlations(result)$estimate, stats::cor(data$y, data$z))
+})

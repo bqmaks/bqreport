@@ -8,7 +8,8 @@ resampled_correlation(
   method = pearson_correlation(),
   bootstrap = 999L,
   permutations = 999L,
-  seed
+  seed,
+  ci = c("percentile", "basic", "normal", "bca")
 )
 }
 \arguments{
@@ -19,6 +20,9 @@ resampled_correlation(
 \item{permutations}{Number of permutation replicates, or zero.}
 
 \item{seed}{Required integer seed used without changing global RNG state.}
+
+\item{ci}{Bootstrap confidence interval computed by \code{\link[boot:boot.ci]{boot::boot.ci()}}.
+Supported methods are \code{percentile}, \code{basic}, \code{normal}, and \code{bca}.}
 }
 \value{
 A resampling \code{correlation_method_spec}.

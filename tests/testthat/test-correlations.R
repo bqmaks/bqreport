@@ -474,6 +474,43 @@ test_that("resampling parameters are validated", {
     resampled_correlation(pearson_correlation(), bootstrap = 10),
     class = "bq_error_invalid_correlation"
   )
+  expect_error(
+    resampled_correlation(
+      pearson_correlation(), bootstrap = 99, permutations = 0,
+      seed = 1, ci = "studentized"
+    ),
+    class = "bq_error_invalid_correlation"
+  )
+})
+
+test_that("resampled correlations use boot and expose several CI methods", {
+  skip_if_not_installed("boot")
+  data <- as_bq_data(tibble::tibble(
+    x = 1:30,
+    y = c(2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16,
+      15, 18, 17, 20, 19, 22, 21, 24, 23, 26, 25, 28, 27, 30, 29)
+  ))
+  run <- function(ci) data |>
+    plan_correlations(x, with = y, method = resampled_correlation(
+      pearson_correlation(), bootstrap = 199, permutations = 0,
+      seed = 17, ci = ci
+    )) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+
+  outputs <- lapply(c("percentile", "basic", "normal", "bca"), run)
+
+  expect_identical(
+    vapply(outputs, function(x) x$ci_method[[1]], character(1)),
+    paste0("bootstrap_", c("percentile", "basic", "normal", "bca"))
+  )
+  expect_true(all(vapply(outputs, function(x) {
+    is.finite(x$conf_low[[1]]) && is.finite(x$conf_high[[1]])
+  }, logical(1))))
+  expect_true(all(vapply(outputs, function(x) {
+    x$bootstrap_successful[[1]] == 199L
+  }, logical(1))))
 })
 
 test_that("resampled weighted correlation resamples weights with observations", {

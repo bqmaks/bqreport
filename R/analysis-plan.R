@@ -381,7 +381,8 @@ contrast_ids_for <- function(data, predictor_id) {
 #' as missing only in the internal analysis view.
 #'
 #' @param plan An `analysis_plan`.
-#' @param data A `bq_data` object.
+#' @param data A `bq_data` object. May be omitted when `plan` is an
+#'   `analysis_plan_builder`.
 #'
 #' @return A validated `analysis_plan`.
 #' @examples
@@ -394,7 +395,17 @@ contrast_ids_for <- function(data, predictor_id) {
 #' plan <- plan_analysis(data, bmi, treatment) |> validate_plan(data)
 #' plan[, c("outcome", "predictor", "method", "status", "n_analyzed")]
 #' @export
-validate_plan <- function(plan, data) {
+validate_plan <- function(plan, data = NULL) {
+  if (inherits(plan, "analysis_plan_builder")) {
+    if (!is.null(data)) {
+      stop_plan(
+        "Do not supply `data` when validating an analysis_plan_builder.",
+        "bq_error_invalid_plan_builder"
+      )
+    }
+    data <- plan$data
+    plan <- build_plan(plan)
+  }
   if (!inherits(plan, "analysis_plan")) {
     stop_plan("`plan` must be an analysis_plan.", "bq_error_invalid_plan")
   }

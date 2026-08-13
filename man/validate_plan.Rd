@@ -4,12 +4,13 @@
 \alias{validate_plan}
 \title{Validate an analysis plan against data}
 \usage{
-validate_plan(plan, data)
+validate_plan(plan, data = NULL)
 }
 \arguments{
 \item{plan}{An \code{analysis_plan}.}
 
-\item{data}{A \code{bq_data} object.}
+\item{data}{A \code{bq_data} object. May be omitted when \code{plan} is an
+\code{analysis_plan_builder}.}
 }
 \value{
 A validated \code{analysis_plan}.
