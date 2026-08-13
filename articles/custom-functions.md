@@ -34,7 +34,7 @@ correlations(result)
 #> # A tibble: 1 × 43
 #>   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x
 #>   <chr>             <chr>                 <chr>         <chr>         <chr>     
-#> 1 analysis_a7ca63a… correlation_family_8… var_8d91008e… var_de521b49… x         
+#> 1 analysis_d9f9d33… correlation_family_b… var_be3e5a13… var_e3dcb99f… x         
 #> # ℹ 38 more variables: variable_y <chr>, stratum_label <chr>, strata <list>,
 #> #   correlation_interaction_id <chr>, interaction_test <lgl>,
 #> #   correlation_comparator <list>, correlation_comparator_id <chr>,
@@ -104,8 +104,8 @@ estimates(custom_result)
 #> # A tibble: 2 × 22
 #>   analysis_id                  outcome predictor stratum_label transformation_id
 #>   <chr>                        <chr>   <chr>     <chr>         <chr>            
-#> 1 analysis_0c053145-0fb7-4b2f… outcome exposed   NA            NA               
-#> 2 analysis_0c053145-0fb7-4b2f… outcome exposed   NA            NA               
+#> 1 analysis_96d0d78f-55f8-4617… outcome exposed   NA            NA               
+#> 2 analysis_96d0d78f-55f8-4617… outcome exposed   NA            NA               
 #> # ℹ 17 more variables: transformation_label <chr>, term <chr>, level <chr>,
 #> #   estimate <dbl>, std_error <dbl>, std_error_scale <chr>, conf_low <dbl>,
 #> #   conf_high <dbl>, statistic <dbl>, df <dbl>, p_value <dbl>,
@@ -156,8 +156,8 @@ attempts(fallback_result)
 #> # A tibble: 2 × 8
 #>   analysis_id      chain_id attempt member method status condition_class message
 #>   <chr>            <chr>      <int> <chr>  <chr>  <chr>  <chr>           <chr>  
-#> 1 analysis_0431eb… primary…       1 prima… prima… failed bq_error_numer… Numeri…
-#> 2 analysis_0431eb… primary…       2 poiss… custo… succe… NA              NA
+#> 1 analysis_17d86d… primary…       1 prima… prima… failed bq_error_numer… Numeri…
+#> 2 analysis_17d86d… primary…       2 poiss… custo… succe… NA              NA
 fallback_result$provenance[, c(
   "method_chain", "fallback_conditions", "executed_method", "fallback_used"
 )]
@@ -349,9 +349,9 @@ estimates(hc3_result)
 #> # A tibble: 3 × 22
 #>   analysis_id                  outcome predictor stratum_label transformation_id
 #>   <chr>                        <chr>   <chr>     <chr>         <chr>            
-#> 1 analysis_d6eea5eb-e597-4fc8… score   arm       NA            NA               
-#> 2 analysis_d6eea5eb-e597-4fc8… score   arm       NA            NA               
-#> 3 analysis_d6eea5eb-e597-4fc8… score   arm       NA            NA               
+#> 1 analysis_3596d18e-d148-4c9c… score   arm       NA            NA               
+#> 2 analysis_3596d18e-d148-4c9c… score   arm       NA            NA               
+#> 3 analysis_3596d18e-d148-4c9c… score   arm       NA            NA               
 #> # ℹ 17 more variables: transformation_label <chr>, term <chr>, level <chr>,
 #> #   estimate <dbl>, std_error <dbl>, std_error_scale <chr>, conf_low <dbl>,
 #> #   conf_high <dbl>, statistic <dbl>, df <dbl>, p_value <dbl>,
@@ -361,16 +361,16 @@ tests(hc3_result)
 #> # A tibble: 1 × 13
 #>   analysis_id   outcome predictor contrast numerator denominator test  statistic
 #>   <chr>         <chr>   <chr>     <chr>    <chr>     <chr>       <chr>     <dbl>
-#> 1 analysis_d6e… score   arm       NA       NA        NA          pred…      6.39
+#> 1 analysis_359… score   arm       NA       NA        NA          pred…      6.39
 #> # ℹ 5 more variables: df <dbl>, p_value <dbl>, p_adjusted <dbl>,
 #> #   adjust_method <chr>, method <chr>
 contrasts(hc3_result)
 #> # A tibble: 3 × 23
 #>   analysis_id       outcome predictor contrast_id contrast numerator denominator
 #>   <chr>             <chr>   <chr>     <chr>       <chr>    <chr>     <chr>      
-#> 1 analysis_d6eea5e… score   arm       contrast_0… Treatme… Treatmen… Control    
-#> 2 analysis_d6eea5e… score   arm       contrast_0… Treatme… Treatmen… Control    
-#> 3 analysis_d6eea5e… score   arm       contrast_0… Treatme… Treatmen… Treatment A
+#> 1 analysis_3596d18… score   arm       contrast_f… Treatme… Treatmen… Control    
+#> 2 analysis_3596d18… score   arm       contrast_f… Treatme… Treatmen… Control    
+#> 3 analysis_3596d18… score   arm       contrast_f… Treatme… Treatmen… Treatment A
 #> # ℹ 16 more variables: modifier <chr>, modifier_level <chr>,
 #> #   inner_contrast <chr>, outer_contrast <chr>, estimand <chr>,
 #> #   exponentiated <lgl>, estimate <dbl>, std_error <dbl>,

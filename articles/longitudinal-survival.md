@@ -43,12 +43,12 @@ estimates(result)
 #> # A tibble: 6 × 22
 #>   analysis_id                  outcome predictor stratum_label transformation_id
 #>   <chr>                        <chr>   <chr>     <chr>         <chr>            
-#> 1 analysis_7382ecd3-042a-43f2… score_… arm       NA            NA               
-#> 2 analysis_7382ecd3-042a-43f2… score_… arm       NA            NA               
-#> 3 analysis_7382ecd3-042a-43f2… score_… arm       NA            NA               
-#> 4 analysis_7382ecd3-042a-43f2… score_… arm       NA            NA               
-#> 5 analysis_7382ecd3-042a-43f2… score_… arm       NA            NA               
-#> 6 analysis_7382ecd3-042a-43f2… score_… arm       NA            NA               
+#> 1 analysis_fdbd87db-7e41-436f… score_… arm       NA            NA               
+#> 2 analysis_fdbd87db-7e41-436f… score_… arm       NA            NA               
+#> 3 analysis_fdbd87db-7e41-436f… score_… arm       NA            NA               
+#> 4 analysis_fdbd87db-7e41-436f… score_… arm       NA            NA               
+#> 5 analysis_fdbd87db-7e41-436f… score_… arm       NA            NA               
+#> 6 analysis_fdbd87db-7e41-436f… score_… arm       NA            NA               
 #> # ℹ 17 more variables: transformation_label <chr>, term <chr>, level <chr>,
 #> #   estimate <dbl>, std_error <dbl>, std_error_scale <chr>, conf_low <dbl>,
 #> #   conf_high <dbl>, statistic <dbl>, df <dbl>, p_value <dbl>,
@@ -58,12 +58,12 @@ contrasts(result)
 #> # A tibble: 6 × 23
 #>   analysis_id       outcome predictor contrast_id contrast numerator denominator
 #>   <chr>             <chr>   <chr>     <chr>       <chr>    <chr>     <chr>      
-#> 1 analysis_7382ecd… score_… arm       contrast_e… Control… Control@… Control@V0 
-#> 2 analysis_7382ecd… score_… arm       contrast_f… Control… Control@… Control@V0 
-#> 3 analysis_7382ecd… score_… arm       contrast_7… Treatme… Treatmen… Treatment@…
-#> 4 analysis_7382ecd… score_… arm       contrast_5… Treatme… Treatmen… Control ch…
-#> 5 analysis_7382ecd… score_… arm       contrast_7… Treatme… Treatmen… Treatment@…
-#> 6 analysis_7382ecd… score_… arm       contrast_2… Treatme… Treatmen… Control ch…
+#> 1 analysis_fdbd87d… score_… arm       contrast_9… Control… Control@… Control@V0 
+#> 2 analysis_fdbd87d… score_… arm       contrast_e… Control… Control@… Control@V0 
+#> 3 analysis_fdbd87d… score_… arm       contrast_b… Treatme… Treatmen… Treatment@…
+#> 4 analysis_fdbd87d… score_… arm       contrast_5… Treatme… Treatmen… Control ch…
+#> 5 analysis_fdbd87d… score_… arm       contrast_a… Treatme… Treatmen… Treatment@…
+#> 6 analysis_fdbd87d… score_… arm       contrast_7… Treatme… Treatmen… Control ch…
 #> # ℹ 16 more variables: modifier <chr>, modifier_level <chr>,
 #> #   inner_contrast <chr>, outer_contrast <chr>, estimand <chr>,
 #> #   exponentiated <lgl>, estimate <dbl>, std_error <dbl>,
@@ -105,26 +105,26 @@ survival_estimates(km)
 #> # A tibble: 20 × 18
 #>    analysis_id  outcome group group_level  time n_risk n_event n_censor estimate
 #>    <chr>        <chr>   <chr> <chr>       <dbl>  <int>   <int>    <int>    <dbl>
-#>  1 analysis_17… os      arm   Control         3      6       1        0    0.833
-#>  2 analysis_17… os      arm   Control         6      3       1        1    0.667
-#>  3 analysis_17… os      arm   Control         9      1       1        1    0.333
-#>  4 analysis_17… os      arm   Treatment       3      5       1        0    0.833
-#>  5 analysis_17… os      arm   Treatment       6      5       1        0    0.667
-#>  6 analysis_17… os      arm   Treatment       9      4       1        0    0.5  
-#>  7 analysis_17… os      arm   Control         3      6       1        0    0.167
-#>  8 analysis_17… os      arm   Control         6      3       1        1    0.333
-#>  9 analysis_17… os      arm   Control         9      1       1        1    0.667
-#> 10 analysis_17… os      arm   Treatment       3      5       1        0    0.167
-#> 11 analysis_17… os      arm   Treatment       6      5       1        0    0.333
-#> 12 analysis_17… os      arm   Treatment       9      4       1        0    0.5  
-#> 13 analysis_17… os      arm   Control        NA     NA      NA       NA    8    
-#> 14 analysis_17… os      arm   Treatment      NA     NA      NA       NA   11    
-#> 15 analysis_17… os      arm   Control        NA     NA      NA       NA    4    
-#> 16 analysis_17… os      arm   Control        NA     NA      NA       NA    8    
-#> 17 analysis_17… os      arm   Treatment      NA     NA      NA       NA    6    
-#> 18 analysis_17… os      arm   Treatment      NA     NA      NA       NA   11    
-#> 19 analysis_17… os      arm   Control        NA     NA      NA       NA    6.83 
-#> 20 analysis_17… os      arm   Treatment      NA     NA      NA       NA    7.33 
+#>  1 analysis_72… os      arm   Control         3      6       1        0    0.833
+#>  2 analysis_72… os      arm   Control         6      3       1        1    0.667
+#>  3 analysis_72… os      arm   Control         9      1       1        1    0.333
+#>  4 analysis_72… os      arm   Treatment       3      5       1        0    0.833
+#>  5 analysis_72… os      arm   Treatment       6      5       1        0    0.667
+#>  6 analysis_72… os      arm   Treatment       9      4       1        0    0.5  
+#>  7 analysis_72… os      arm   Control         3      6       1        0    0.167
+#>  8 analysis_72… os      arm   Control         6      3       1        1    0.333
+#>  9 analysis_72… os      arm   Control         9      1       1        1    0.667
+#> 10 analysis_72… os      arm   Treatment       3      5       1        0    0.167
+#> 11 analysis_72… os      arm   Treatment       6      5       1        0    0.333
+#> 12 analysis_72… os      arm   Treatment       9      4       1        0    0.5  
+#> 13 analysis_72… os      arm   Control        NA     NA      NA       NA    8    
+#> 14 analysis_72… os      arm   Treatment      NA     NA      NA       NA   11    
+#> 15 analysis_72… os      arm   Control        NA     NA      NA       NA    4    
+#> 16 analysis_72… os      arm   Control        NA     NA      NA       NA    8    
+#> 17 analysis_72… os      arm   Treatment      NA     NA      NA       NA    6    
+#> 18 analysis_72… os      arm   Treatment      NA     NA      NA       NA   11    
+#> 19 analysis_72… os      arm   Control        NA     NA      NA       NA    6.83 
+#> 20 analysis_72… os      arm   Treatment      NA     NA      NA       NA    7.33 
 #> # ℹ 9 more variables: std_error <dbl>, conf_low <dbl>, conf_high <dbl>,
 #> #   estimate_type <chr>, quantile_probability <dbl>, restriction_time <dbl>,
 #> #   scale <chr>, time_unit <chr>, method <chr>
@@ -138,8 +138,8 @@ estimates(cox)
 #> # A tibble: 2 × 22
 #>   analysis_id                  outcome predictor stratum_label transformation_id
 #>   <chr>                        <chr>   <chr>     <chr>         <chr>            
-#> 1 analysis_d4ce6696-695c-4827… os      arm       NA            NA               
-#> 2 analysis_d4ce6696-695c-4827… os      arm       NA            NA               
+#> 1 analysis_80cece5c-5ad1-44f7… os      arm       NA            NA               
+#> 2 analysis_80cece5c-5ad1-44f7… os      arm       NA            NA               
 #> # ℹ 17 more variables: transformation_label <chr>, term <chr>, level <chr>,
 #> #   estimate <dbl>, std_error <dbl>, std_error_scale <chr>, conf_low <dbl>,
 #> #   conf_high <dbl>, statistic <dbl>, df <dbl>, p_value <dbl>,
@@ -149,9 +149,9 @@ diagnostics(cox)
 #> # A tibble: 3 × 5
 #>   analysis_id                                   metric value status   message
 #>   <chr>                                         <chr>  <dbl> <chr>    <chr>  
-#> 1 analysis_d4ce6696-695c-4827-a77e-fbd5afe278ae arm    0.212 observed NA     
-#> 2 analysis_d4ce6696-695c-4827-a77e-fbd5afe278ae age    0.106 observed NA     
-#> 3 analysis_d4ce6696-695c-4827-a77e-fbd5afe278ae GLOBAL 0.224 observed NA
+#> 1 analysis_80cece5c-5ad1-44f7-8cb4-a5aaa81781b9 arm    0.212 observed NA     
+#> 2 analysis_80cece5c-5ad1-44f7-8cb4-a5aaa81781b9 age    0.106 observed NA     
+#> 3 analysis_80cece5c-5ad1-44f7-8cb4-a5aaa81781b9 GLOBAL 0.224 observed NA
 ```
 
 Competing-risk outcomes use

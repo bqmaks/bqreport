@@ -21,7 +21,7 @@ correlations(result)
 #> # A tibble: 1 × 43
 #>   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x
 #>   <chr>             <chr>                 <chr>         <chr>         <chr>     
-#> 1 analysis_88b1c21… correlation_family_b… var_df9698a3… var_2ad2961a… x         
+#> 1 analysis_384a811… correlation_family_3… var_1cb463cb… var_82370649… x         
 #> # ℹ 38 more variables: variable_y <chr>, stratum_label <chr>, strata <list>,
 #> #   correlation_interaction_id <chr>, interaction_test <lgl>,
 #> #   correlation_comparator <list>, correlation_comparator_id <chr>,
@@ -78,8 +78,8 @@ correlations(stratified)
 #> # A tibble: 2 × 43
 #>   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x
 #>   <chr>             <chr>                 <chr>         <chr>         <chr>     
-#> 1 analysis_314c6ba… correlation_family_6… var_df9698a3… var_2ad2961a… x         
-#> 2 analysis_445d49e… correlation_family_2… var_df9698a3… var_2ad2961a… x         
+#> 1 analysis_ef04f27… correlation_family_c… var_1cb463cb… var_82370649… x         
+#> 2 analysis_d5e25d9… correlation_family_3… var_1cb463cb… var_82370649… x         
 #> # ℹ 38 more variables: variable_y <chr>, stratum_label <chr>, strata <list>,
 #> #   correlation_interaction_id <chr>, interaction_test <lgl>,
 #> #   correlation_comparator <list>, correlation_comparator_id <chr>,

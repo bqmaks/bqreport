@@ -34,16 +34,16 @@ descriptives(result)
 #> # A tibble: 60 × 18
 #>    analysis_id     variable_id variable variable_type group_id group group_level
 #>    <chr>           <chr>       <chr>    <chr>         <chr>    <chr> <chr>      
-#>  1 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  2 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  3 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  4 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  5 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  6 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  7 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  8 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#>  9 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
-#> 10 analysis_7de95… var_1ee56c… age      continuous    var_e32… arm   NA         
+#>  1 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  2 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  3 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  4 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  5 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  6 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  7 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  8 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#>  9 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
+#> 10 analysis_7d59a… var_f85a4d… age      continuous    var_23d… arm   NA         
 #> # ℹ 50 more rows
 #> # ℹ 11 more variables: overall <lgl>, level <chr>, statistic <chr>,
 #> #   value <dbl>, numerator <int>, denominator <int>, statistic_method <chr>,
@@ -52,11 +52,11 @@ table_body(tbl_descriptive(result, locale = "en"))
 #> # A tibble: 5 × 11
 #>   analysis_id        variable_id variable variable_label unit  level template_id
 #>   <chr>              <chr>       <chr>    <chr>          <chr> <chr>       <int>
-#> 1 analysis_7de95469… var_1ee56c… age      age            NA    NA              1
-#> 2 analysis_7de95469… var_1ee56c… age      age            NA    NA              2
-#> 3 analysis_7de95469… var_1ee56c… age      age            NA    NA              3
-#> 4 analysis_7630c818… var_bc1b19… response response       NA    No              1
-#> 5 analysis_7630c818… var_bc1b19… response response       NA    Yes             1
+#> 1 analysis_7d59a027… var_f85a4d… age      age            NA    NA              1
+#> 2 analysis_7d59a027… var_f85a4d… age      age            NA    NA              2
+#> 3 analysis_7d59a027… var_f85a4d… age      age            NA    NA              3
+#> 4 analysis_d8b36990… var_7ff903… response response       NA    No              1
+#> 5 analysis_d8b36990… var_7ff903… response response       NA    Yes             1
 #> # ℹ 4 more variables: template <chr>, stat_1 <chr>, stat_2 <chr>, stat_3 <chr>
 ```
 
@@ -97,7 +97,7 @@ table_body(tbl_descriptive(custom_result))
 #> # A tibble: 1 × 11
 #>   analysis_id        variable_id variable variable_label unit  level template_id
 #>   <chr>              <chr>       <chr>    <chr>          <chr> <chr>       <int>
-#> 1 analysis_9854c98f… var_1ee56c… age      age            NA    NA              1
+#> 1 analysis_5435e42f… var_f85a4d… age      age            NA    NA              1
 #> # ℹ 4 more variables: template <chr>, stat_1 <chr>, stat_2 <chr>, stat_3 <chr>
 ```
 
