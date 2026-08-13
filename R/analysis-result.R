@@ -102,6 +102,9 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         model_list[[analysis_id]] <- output$model
         estimate_rows[[length(estimate_rows) + 1L]] <- output$estimates
         test_rows[[length(test_rows) + 1L]] <- output$tests
+        if (nrow(output$contrasts)) {
+          contrast_rows[[length(contrast_rows) + 1L]] <- output$contrasts
+        }
         diagnostic_rows[[length(diagnostic_rows) + 1L]] <- output$diagnostics
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
       }
@@ -209,7 +212,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       }
     )
     estimate_rows[[length(estimate_rows) + 1L]] <- post_fit$estimates
-    computed_contrasts <- compute_builtin_contrasts(post_fit$estimates, spec, data)
+    computed_contrasts <- compute_builtin_contrasts(fit, spec, data)
     if (nrow(computed_contrasts) > 0L) {
       contrast_rows[[length(contrast_rows) + 1L]] <- computed_contrasts
     }
@@ -322,6 +325,10 @@ validate_comparison_output <- function(x, spec, comparison) {
   }
   if (!"modifier" %in% names(x)) x$modifier <- rep(NA_character_, nrow(x))
   if (!"modifier_level" %in% names(x)) x$modifier_level <- rep(NA_character_, nrow(x))
+  if (!"std_error" %in% names(x)) x$std_error <- rep(NA_real_, nrow(x))
+  if (!"std_error_scale" %in% names(x)) {
+    x$std_error_scale <- rep(comparison$model_scale, nrow(x))
+  }
   prototype <- contrasts_prototype()
   missing <- setdiff(names(prototype), names(x))
   if (length(missing)) {
@@ -502,7 +509,15 @@ build_analysis_frame <- function(spec, data) {
       value, spec$transformation_specs[[1]][[covariate_id]],
       name, spec$analysis_id[[1]]
     )
-    frame[[name]] <- value
+    model_term <- spec$model_term_specs[[1]][[covariate_id]]
+    if (is.null(model_term)) {
+      frame[[name]] <- value
+    } else {
+      basis <- apply_model_term_spec(value, model_term)
+      for (column in seq_along(model_term$output_names)) {
+        frame[[model_term$output_names[[column]]]] <- basis[, column]
+      }
+    }
   }
   for (name in spec$effect_modifiers[[1]]) {
     original <- data[[name]]
@@ -680,6 +695,19 @@ normalize_coefficient_metadata <- function(fit, spec) {
     }
   }
 
+  for (i in seq_along(spec$covariates[[1]])) {
+    covariate_id <- spec$covariate_ids[[1]][[i]]
+    model_term <- spec$model_term_specs[[1]][[covariate_id]]
+    if (is.null(model_term)) next
+    for (j in seq_along(model_term$output_names)) {
+      row <- match(model_term$output_names[[j]], coefficient_names)
+      if (!is.na(row)) {
+        terms[[row]] <- spec$covariates[[1]][[i]]
+        levels[[row]] <- paste0("basis_", j)
+      }
+    }
+  }
+
   tibble::tibble(term = unname(terms), level = unname(levels))
 }
 
@@ -719,11 +747,43 @@ tidy_builtin_test <- function(fit, spec, frame) {
     p_value = unname(p_value),
     method = spec$method[[1]]
   )
-  if (length(spec$effect_modifiers[[1]]) == 0L) return(overall)
+  predictor_omnibus <- NULL
+  model_predictor <- stats::model.frame(fit)[[spec$predictor[[1]]]]
+  if (is.factor(model_predictor)) {
+    reduced_terms <- c(formula_covariates <- model_formula_covariates(
+      spec$covariate_ids[[1]], spec$covariates[[1]], spec$model_term_specs[[1]]
+    ), spec$effect_modifiers[[1]])
+    reduced_formula <- stats::reformulate(
+      reduced_terms, response = spec$outcome[[1]]
+    )
+    if (!inherits(fit, "glm")) {
+      reduced <- stats::lm(reduced_formula, data = frame, na.action = stats::na.omit)
+      comparison <- stats::anova(reduced, fit)
+      statistic <- comparison$F[[2]]; df <- comparison$Df[[2]]
+      p_value <- comparison$`Pr(>F)`[[2]]
+    } else {
+      reduced <- stats::glm(
+        reduced_formula, data = frame, family = stats::binomial("logit"),
+        na.action = stats::na.omit
+      )
+      comparison <- stats::anova(reduced, fit, test = "Chisq")
+      statistic <- comparison$Deviance[[2]]; df <- comparison$Df[[2]]
+      p_value <- comparison$`Pr(>Chi)`[[2]]
+    }
+    predictor_omnibus <- tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$predictor[[1]], test = "predictor_omnibus",
+      statistic = unname(statistic), df = as.numeric(df),
+      p_value = unname(p_value), method = spec$method[[1]]
+    )
+  }
+  formula_covariates <- model_formula_covariates(
+    spec$covariate_ids[[1]], spec$covariates[[1]], spec$model_term_specs[[1]]
+  )
   interaction_tests <- lapply(spec$effect_modifiers[[1]], function(modifier) {
     reduced_formula <- new_analysis_formula(
       spec$outcome[[1]], spec$predictor[[1]],
-      c(spec$covariates[[1]], modifier), character()
+      c(formula_covariates, modifier), character()
     )
     if (!inherits(fit, "glm")) {
       reduced <- stats::lm(reduced_formula, data = frame, na.action = stats::na.omit)
@@ -746,7 +806,41 @@ tidy_builtin_test <- function(fit, spec, frame) {
       p_value = unname(p_value), method = spec$method[[1]]
     )
   })
-  vctrs::vec_rbind(overall, !!!interaction_tests)
+  model_term_tests <- lapply(seq_along(spec$covariates[[1]]), function(i) {
+    covariate_id <- spec$covariate_ids[[1]][[i]]
+    term <- spec$model_term_specs[[1]][[covariate_id]]
+    if (is.null(term)) return(NULL)
+    reduced_covariates <- setdiff(formula_covariates, term$output_names)
+    reduced_formula <- new_analysis_formula(
+      spec$outcome[[1]], spec$predictor[[1]], reduced_covariates,
+      spec$effect_modifiers[[1]]
+    )
+    if (!inherits(fit, "glm")) {
+      reduced <- stats::lm(reduced_formula, data = frame, na.action = stats::na.omit)
+      comparison <- stats::anova(reduced, fit)
+      statistic <- comparison$F[[2]]
+      p_value <- comparison$`Pr(>F)`[[2]]
+      df <- comparison$Df[[2]]
+    } else {
+      reduced <- stats::glm(
+        reduced_formula, data = frame, family = stats::binomial("logit"),
+        na.action = stats::na.omit
+      )
+      comparison <- stats::anova(reduced, fit, test = "Chisq")
+      statistic <- comparison$Deviance[[2]]
+      p_value <- comparison$`Pr(>Chi)`[[2]]
+      df <- comparison$Df[[2]]
+    }
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$covariates[[1]][[i]], test = "model_term_omnibus",
+      statistic = unname(statistic), df = as.numeric(df),
+      p_value = unname(p_value), method = spec$method[[1]]
+    )
+  })
+  vctrs::vec_rbind(
+    overall, predictor_omnibus, !!!interaction_tests, !!!model_term_tests
+  )
 }
 
 diagnose_builtin <- function(fit, spec) {
@@ -776,6 +870,12 @@ diagnose_builtin <- function(fit, spec) {
 provenance_row <- function(spec) {
   transformations <- spec$transformation_specs[[1]]
   transformations <- transformations[!vapply(transformations, is.null, logical(1))]
+  model_terms <- if ("model_term_specs" %in% names(spec)) {
+    spec$model_term_specs[[1]]
+  } else {
+    list()
+  }
+  model_terms <- model_terms[!vapply(model_terms, is.null, logical(1))]
   descriptive_functions <- if (
     "descriptive_functions" %in% names(spec)
   ) spec$descriptive_functions[[1]] else list()
@@ -796,6 +896,9 @@ provenance_row <- function(spec) {
     transformation_ids = list(vapply(transformations, `[[`, character(1), "id")),
     transformation_hashes = list(vapply(transformations, `[[`, character(1), "function_hash")),
     transformation_parameters = list(lapply(transformations, `[[`, "parameters")),
+    model_term_ids = list(vapply(model_terms, `[[`, character(1), "id")),
+    model_term_parameters = list(lapply(model_terms, `[[`, "resolved_parameters")),
+    model_term_output_names = list(lapply(model_terms, `[[`, "output_names")),
     descriptive_function_ids = list(vapply(
       descriptive_functions, `[[`, character(1), "id"
     )),
@@ -853,7 +956,8 @@ contrasts_prototype <- function() {
     analysis_id = character(), outcome = character(), predictor = character(),
       contrast_id = character(), contrast = character(), numerator = character(), denominator = character(),
     modifier = character(), modifier_level = character(),
-    estimate = double(), conf_low = double(), conf_high = double(),
+    estimate = double(), std_error = double(), std_error_scale = character(),
+    conf_low = double(), conf_high = double(),
     p_value = double(), p_adjusted = double(), adjust_method = character(),
     effect_measure = character(), scale = character()
   )
@@ -862,7 +966,9 @@ contrasts_prototype <- function() {
 tests_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), outcome = character(), predictor = character(),
+    contrast = character(), numerator = character(), denominator = character(),
     test = character(), statistic = double(), df = double(), p_value = double(),
+    p_adjusted = double(), adjust_method = character(),
     method = character()
   )
 }
@@ -890,7 +996,9 @@ provenance_prototype <- function() {
     function_id = character(), function_hash = character(), r_version = character(),
     required_packages = list(), package_versions = list()
     , transformation_ids = list(), transformation_hashes = list(),
-    transformation_parameters = list(), descriptive_function_ids = list(),
+    transformation_parameters = list(), model_term_ids = list(),
+    model_term_parameters = list(), model_term_output_names = list(),
+    descriptive_function_ids = list(),
     descriptive_function_hashes = list(), comparison_method = character(),
     comparison_estimand = character(), comparison_scale = character(),
     comparison_ci_method = character(), comparison_function_hash = character()

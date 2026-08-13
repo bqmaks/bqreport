@@ -69,6 +69,7 @@ new_variable_registry <- function(x) {
     cluster_type = rep(NA_character_, n),
     event_value = rep(list(NULL), n),
     transformation = rep(list(NULL), n),
+    model_term = rep(list(NULL), n),
     missing_policy = rep("complete_case", n),
     source = ifelse(analytical_type == "unknown", "default", "inferred"),
     locked = rep(FALSE, n),
@@ -192,7 +193,7 @@ validate_dictionary <- function(metadata, data_names) {
   metadata <- tibble::as_tibble(metadata)
   protected <- c(
     "var_id", "role", "type", "storage_type", "distribution", "reference", "coding", "weight_type", "cluster_type",
-    "event_value", "transformation", "missing_policy", "source", "locked",
+    "event_value", "transformation", "model_term", "missing_policy", "source", "locked",
     "status"
   )
 

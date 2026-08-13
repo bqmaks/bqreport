@@ -502,7 +502,7 @@ test_that("descriptive comparisons estimate a binary risk difference", {
   expect_true(is.finite(test$p_value))
 })
 
-test_that("comparison preflight requires two groups and explicit references", {
+test_that("comparison preflight requires groups and explicit references", {
   no_reference <- as_bq_data(tibble::tibble(
     value = 1:4, arm = c("A", "A", "B", "B")
   )) |>
@@ -524,8 +524,57 @@ test_that("comparison preflight requires two groups and explicit references", {
   plan <- three_groups |>
     plan_descriptives(value, groups = arm, comparisons = TRUE) |>
     validate_plan(three_groups)
-  expect_identical(plan$status, "invalid")
-  expect_match(plan$reason, "exactly two", ignore.case = TRUE)
+  expect_identical(plan$status, "ready")
+})
+
+test_that("descriptive comparisons support multiple groups and target pairs", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 4, 5, 8, 9),
+    arm = factor(rep(c("A", "B", "C"), each = 2))
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A") |>
+    set_descriptive_statistics(value, "{mean} ({sd})")
+
+  result <- data |>
+    plan_descriptives(
+      value, groups = arm, comparisons = TRUE,
+      contrasts = all_pairwise(), adjust = "holm"
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_setequal(
+    paste(contrasts(result)$numerator, contrasts(result)$denominator),
+    c("B A", "C A", "C B")
+  )
+  expect_true(all(contrasts(result)$adjust_method == "holm"))
+  expect_true("one_way_anova" %in% tests(result)$test)
+})
+
+test_that("descriptive means can be compared with the global group mean", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2, 4, 5, 8, 9),
+    arm = factor(rep(c("A", "B", "C"), each = 2))
+  )) |>
+    set_predictor(value, type = "continuous") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+
+  result <- data |>
+    plan_descriptives(
+      value, groups = arm, comparisons = mean_difference(),
+      contrasts = against_global_mean(exponentiate = FALSE), adjust = "holm"
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  output <- contrasts(result)
+
+  expect_identical(output$numerator, c("A", "B", "C"))
+  expect_true(all(output$denominator == ".global_mean"))
+  expect_equal(output$estimate, c(-10 / 3, -1 / 3, 11 / 3))
+  expect_true(all(is.finite(output$std_error)))
+  expect_true(all(output$std_error_scale == "identity"))
+  expect_true(all(output$conf_low < output$conf_high))
 })
 
 test_that("binary risk difference requires an explicit event", {

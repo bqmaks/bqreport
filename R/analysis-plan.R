@@ -149,6 +149,10 @@ analysis_plan_row <- function(
   transformed_specs <- c(list(predictor_spec), if (is.null(covariate_specs)) list() else split(covariate_specs, seq_len(nrow(covariate_specs))))
   transformation_specs <- lapply(transformed_specs, function(x) x$transformation[[1]])
   names(transformation_specs) <- vapply(transformed_specs, function(x) x$var_id[[1]], character(1))
+  model_term_specs <- lapply(transformed_specs, function(x) {
+    if (!"model_term" %in% names(x)) NULL else x$model_term[[1]]
+  })
+  names(model_term_specs) <- vapply(transformed_specs, function(x) x$var_id[[1]], character(1))
   modifier_names <- if (is.null(modifier_specs)) character() else modifier_specs$name
   weight_id <- if (is.null(weight_spec)) NA_character_ else weight_spec$var_id[[1]]
   weight_name <- if (is.null(weight_spec)) NA_character_ else weight_spec$name[[1]]
@@ -179,6 +183,12 @@ analysis_plan_row <- function(
     method_packages <- method$required_packages
   }
   method_exponentiate <- if (is.null(method)) FALSE else method$exponentiate
+  model_term_packages <- unique(unlist(lapply(
+    model_term_specs, function(term) {
+      if (is.null(term)) character() else term$required_packages
+    }
+  ), use.names = FALSE))
+  method_packages <- unique(c(method_packages, model_term_packages))
   method_model_scale <- if (is.null(method)) NA_character_ else method$model_scale
   method_output_scale <- if (is.null(method)) NA_character_ else method$scale
   method_spec_object <- method
@@ -197,6 +207,7 @@ analysis_plan_row <- function(
     covariates = list(covariate_names),
     effect_modifiers = list(modifier_names),
     transformation_specs = list(transformation_specs),
+    model_term_specs = list(model_term_specs),
     weight = weight_name,
     cluster = cluster_name,
     strata = list(stratum_spec$names),
@@ -511,6 +522,47 @@ validate_plan <- function(plan, data) {
     out$n_missing_outcome[[i]] <- sum(missing_outcome)
     out$n_missing_predictor[[i]] <- sum(missing_predictor)
 
+    current_model_terms <- out$model_term_specs[[i]]
+    predictor_term <- current_model_terms[[out$predictor_id[[i]]]]
+    if (!is.null(predictor_term)) {
+      issues <- c(
+        issues,
+        "Nonlinear model terms are currently supported only for adjustment covariates, not the primary predictor."
+      )
+    }
+    for (j in seq_along(covariate_names)) {
+      covariate_id <- out$covariate_ids[[i]][[j]]
+      term <- current_model_terms[[covariate_id]]
+      if (is.null(term)) next
+      value <- analysis_vector(analysis_data[[covariate_names[[j]]]])
+      value[special_missing_mask(analysis_data[[covariate_names[[j]]]])] <- NA
+      value <- tryCatch(
+        apply_transformation_spec(
+          value, out$transformation_specs[[i]][[covariate_id]],
+          covariate_names[[j]], out$analysis_id[[i]]
+        ),
+        error = function(condition) condition
+      )
+      resolved <- if (inherits(value, "error")) value else tryCatch(
+        resolve_model_term_spec(
+          term, value[analyzed], covariate_names[[j]], out$analysis_id[[i]]
+        ),
+        error = function(condition) condition
+      )
+      if (inherits(resolved, "error")) {
+        issues <- c(issues, conditionMessage(resolved))
+      } else {
+        current_model_terms[[covariate_id]] <- resolved
+      }
+    }
+    out$model_term_specs[[i]] <- current_model_terms
+    formula_covariates <- model_formula_covariates(
+      out$covariate_ids[[i]], covariate_names, current_model_terms
+    )
+    out$formula[[i]] <- new_analysis_formula(
+      outcome_name, predictor_name, formula_covariates, modifier_names
+    )
+
     outcome_values <- unclass_for_validation(outcome)[analyzed]
     predictor_values <- unclass_for_validation(predictor)[analyzed]
     for (modifier_name in modifier_names) {
@@ -577,6 +629,28 @@ validate_plan <- function(plan, data) {
         issues <- c(issues, "Categorical predictor has no configured reference value.")
       } else if (!reference %in% predictor_values) {
         issues <- c(issues, "Configured reference value is absent from the analyzed predictor.")
+      }
+      registered_comparisons <- contrasts(data)
+      if (nrow(registered_comparisons) == 0L) {
+        registered_comparisons <- tibble::tibble(reference = list())
+      } else {
+        registered_comparisons <- registered_comparisons[
+          registered_comparisons$contrast_id %in% out$contrast_ids[[i]] &
+            registered_comparisons$comparison_type == "against_reference",
+          , drop = FALSE
+        ]
+      }
+      comparison_references <- unlist(
+        registered_comparisons$reference, use.names = FALSE
+      )
+      missing_comparison_references <- comparison_references[
+        !as.character(comparison_references) %in% as.character(predictor_values)
+      ]
+      if (length(missing_comparison_references)) {
+        issues <- c(issues, paste0(
+          "Comparison references are absent from the analyzed predictor: ",
+          paste(unique(missing_comparison_references), collapse = ", "), "."
+        ))
       }
     }
 

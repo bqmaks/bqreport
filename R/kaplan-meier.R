@@ -13,6 +13,8 @@
 #' @param estimates One or both of `survival` and `cumulative_risk`.
 #'   Cumulative risk is the single-event complement `1 - S(t)`; it is neither
 #'   cumulative hazard nor a competing-risks cumulative incidence function.
+#' @param comparisons Optional pairwise log-rank contrast specification.
+#' @param adjust Multiplicity adjustment accepted by [stats::p.adjust()].
 #'
 #' @return An `analysis_plan` tibble.
 #' @export
@@ -24,10 +26,20 @@ plan_kaplan_meier <- function(
   confidence_level = 0.95,
   quantiles = NULL,
   rmst_tau = NULL,
-  estimates = "survival"
+  estimates = "survival",
+  comparisons = NULL,
+  adjust = "none"
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
+  if (!is.null(comparisons) && (!inherits(comparisons, "contrast_spec") ||
+      !comparisons$type %in% c("against_reference", "all_pairwise", "consecutive"))) {
+    stop_invalid_survival_plan("`comparisons` must specify supported target group pairs.")
+  }
+  if (!is.character(adjust) || length(adjust) != 1L ||
+      !adjust %in% stats::p.adjust.methods) {
+    stop_invalid_survival_plan("`adjust` is not supported.")
+  }
   if (!is.null(times)) {
     valid_times <- is.numeric(times) && length(times) > 0L && !anyNA(times) &&
       all(is.finite(times)) && all(times > 0) && !anyDuplicated(times)
@@ -68,6 +80,9 @@ plan_kaplan_meier <- function(
   group_selection <- tidyselect::eval_select(rlang::enquo(groups), .data)
   if (length(group_selection) > 1L) {
     stop_invalid_survival_plan("Select at most one grouping variable.")
+  }
+  if (!is.null(comparisons) && length(group_selection) == 0L) {
+    stop_invalid_survival_plan("Pairwise log-rank comparisons require a grouping variable.")
   }
   outcome_registry <- resolve_outcomes(.data)
   survival_registry <- outcome_registry[outcome_registry$type == "survival", , drop = FALSE]
@@ -119,6 +134,8 @@ plan_kaplan_meier <- function(
     row$quantile_probabilities <- list(quantiles)
     row$rmst_tau <- if (is.null(rmst_tau)) NA_real_ else rmst_tau
     row$survival_estimands <- list(estimates)
+    row$pairwise_comparison_spec <- list(comparisons)
+    row$pairwise_adjust_method <- adjust
     row$predictor_id <- NA_character_
     row$predictor <- NA_character_
     row$formula <- list(NULL)
@@ -150,6 +167,13 @@ validate_kaplan_meier_task <- function(plan, i, data, registry) {
         complete <- complete & !special_missing_mask(group)
         if (n_distinct_values(analysis_vector(group)[complete]) < 2L) {
           issues <- c(issues, "Grouping variable has no variation in analyzed data.")
+        }
+        comparison_spec <- plan$pairwise_comparison_spec[[i]]
+        if (!is.null(comparison_spec) && comparison_spec$type == "against_reference") {
+          observed <- as.character(analysis_vector(group)[complete])
+          if (!as.character(comparison_spec$reference) %in% observed) {
+            issues <- c(issues, "Pairwise log-rank reference is not observed.")
+          }
         }
       }
     }
@@ -250,6 +274,37 @@ execute_kaplan_meier <- function(spec, data) {
       method = "log_rank"
     )
   } else tests_prototype()
+  pairwise_spec <- spec$pairwise_comparison_spec[[1]]
+  if (grouped && !is.null(pairwise_spec)) {
+    levels <- levels(frame$..bq_group)
+    reference <- if (pairwise_spec$type == "against_reference") {
+      pairwise_spec$reference
+    } else NULL
+    pairs <- contrast_level_pairs(levels, pairwise_spec$type, reference)
+    pairwise_tests <- lapply(seq_len(nrow(pairs)), function(i) {
+      keep <- frame$..bq_group %in% c(pairs$numerator[[i]], pairs$denominator[[i]])
+      pair_frame <- frame[keep, , drop = FALSE]
+      pair_frame$..bq_group <- droplevels(pair_frame$..bq_group)
+      difference <- survival::survdiff(
+        formula, data = pair_frame, rho = 0, na.action = stats::na.omit
+      )
+      tibble::tibble(
+        analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+        predictor = spec$group[[1]],
+        contrast = paste0(pairs$numerator[[i]], " - ", pairs$denominator[[i]]),
+        numerator = pairs$numerator[[i]], denominator = pairs$denominator[[i]],
+        test = "pairwise_log_rank", statistic = unname(difference$chisq),
+        df = 1, p_value = stats::pchisq(difference$chisq, 1, lower.tail = FALSE),
+        p_adjusted = NA_real_, adjust_method = spec$pairwise_adjust_method[[1]],
+        method = "log_rank"
+      )
+    })
+    pairwise_tests <- vctrs::vec_rbind(!!!pairwise_tests)
+    pairwise_tests$p_adjusted <- stats::p.adjust(
+      pairwise_tests$p_value, method = spec$pairwise_adjust_method[[1]]
+    )
+    tests <- vctrs::vec_rbind(tests, pairwise_tests)
+  }
   list(model = fit, estimates = estimates, tests = tests)
 }
 

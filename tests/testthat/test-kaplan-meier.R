@@ -110,6 +110,31 @@ test_that("KM preflight validates explicit times and grouping", {
   expect_match(plan$reason, "variation")
 })
 
+test_that("KM pairwise log-rank tests honor target comparisons", {
+  skip_if_not_installed("survival")
+  data <- as_bq_data(tibble::tibble(
+    time = rep(1:12, 3), event = rep(c(1, 1, 0), 12),
+    arm = factor(rep(c("A", "B", "C"), each = 12))
+  )) |>
+    set_predictor(arm, type = "nominal", reference = "A") |>
+    add_survival_outcome(os, time, event, 1, "months")
+
+  result <- data |>
+    plan_kaplan_meier(
+      os, groups = arm, comparisons = consecutive_comparisons(),
+      adjust = "holm"
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  pairwise <- tests(result)
+  pairwise <- pairwise[pairwise$test == "pairwise_log_rank", ]
+
+  expect_identical(
+    paste(pairwise$numerator, pairwise$denominator), c("B A", "C B")
+  )
+  expect_true(all(pairwise$adjust_method == "holm"))
+})
+
 test_that("KM with no events retains an estimable all-surviving curve", {
   skip_if_not_installed("survival")
   data <- as_bq_data(tibble::tibble(

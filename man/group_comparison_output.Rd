@@ -12,7 +12,9 @@ group_comparison_output(
   statistic_method,
   statistic = NA_real_,
   df = NA_real_,
-  test = NA_character_
+  test = NA_character_,
+  std_error = NA_real_,
+  std_error_scale = NA_character_
 )
 }
 \arguments{
@@ -23,6 +25,10 @@ group_comparison_output(
 \item{statistic, df}{Optional test statistic and degrees of freedom.}
 
 \item{test}{Optional test name; omit it when no separate test is returned.}
+
+\item{std_error}{Optional standard error on \code{std_error_scale}.}
+
+\item{std_error_scale}{Scale on which the standard error is defined.}
 }
 \value{
 A \code{group_comparison_output}.

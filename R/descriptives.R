@@ -12,6 +12,9 @@
 #' @param confidence_level Confidence level reserved for model-based providers.
 #' @param functions A list of explicit `descriptive_function` providers.
 #' @param comparisons Whether to estimate an effect between two groups.
+#' @param contrasts Target group comparisons. Supports [against_reference()],
+#'   [all_pairwise()], and [consecutive_comparisons()].
+#' @param adjust Multiplicity adjustment accepted by [stats::p.adjust()].
 #'
 #' @return An `analysis_plan` tibble.
 #' @export
@@ -22,7 +25,9 @@ plan_descriptives <- function(
   overall = TRUE,
   confidence_level = 0.95,
   functions = list(),
-  comparisons = FALSE
+  comparisons = FALSE,
+  contrasts = NULL,
+  adjust = "none"
 ) {
   check_bq_data(.data)
   check_confidence_level(confidence_level)
@@ -38,6 +43,17 @@ plan_descriptives <- function(
     stop_descriptive_plan(
       "`comparisons` must be TRUE, FALSE, or a group_comparison_spec."
     )
+  }
+  if (!is.null(contrasts) && !inherits(contrasts, "contrast_spec")) {
+    stop_descriptive_plan("`contrasts` must be a contrast_spec.")
+  }
+  if (!is.null(contrasts) && !contrasts$type %in%
+      c("against_reference", "all_pairwise", "consecutive", "against_global_mean")) {
+    stop_descriptive_plan("This contrast specification is not supported for descriptives.")
+  }
+  if (!is.character(adjust) || length(adjust) != 1L ||
+      !adjust %in% stats::p.adjust.methods) {
+    stop_descriptive_plan("`adjust` is not supported.")
   }
   variable_selection <- tidyselect::eval_select(rlang::enquo(variables), .data)
   group_selection <- tidyselect::eval_select(rlang::enquo(groups), .data)
@@ -72,7 +88,7 @@ plan_descriptives <- function(
     ]
     descriptive_plan_row(
       variable_spec, group_spec, overall, confidence_level, functions,
-      comparisons
+      comparisons, contrasts, adjust
     )
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -84,7 +100,9 @@ descriptive_plan_row <- function(
   overall,
   confidence_level,
   functions,
-  comparisons
+  comparisons,
+  contrasts,
+  adjust
 ) {
   row <- analysis_plan_row(
     outcome_spec = variable_spec,
@@ -127,6 +145,8 @@ descriptive_plan_row <- function(
   row$comparison_ci_method <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$ci_method
   row$comparison_function_hash <- if (is.null(comparison_spec)) NA_character_ else comparison_spec$function_hash
   row$comparison_object <- list(comparison_spec)
+  row$descriptive_contrast_spec <- list(contrasts)
+  row$comparison_adjust_method <- adjust
   row$outcome_id <- variable_spec$var_id[[1]]
   row$predictor_id <- NA_character_
   row$outcome <- variable_spec$name[[1]]
@@ -287,13 +307,28 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
       analysis_vector(group_values)[!special_missing_mask(group_values)]
     ))
     reference <- registry$reference[[group_row]]
-    if (length(observed_groups) != 2L) {
-      issues <- c(issues, "Group comparisons require exactly two observed groups.")
+    if (length(observed_groups) < 2L) {
+      issues <- c(issues, "Group comparisons require at least two observed groups.")
     }
-    if (is.null(reference)) {
+    target_spec <- plan$descriptive_contrast_spec[[i]]
+    target_type <- if (is.null(target_spec)) "against_reference" else target_spec$type
+    target_reference <- if (!is.null(target_spec) &&
+      target_type == "against_reference") target_spec$reference else reference
+    if (target_type == "against_reference" && is.null(target_reference)) {
       issues <- c(issues, "The grouping variable has no configured reference value.")
-    } else if (!as.character(reference) %in% observed_groups) {
+    } else if (target_type == "against_reference" &&
+      !as.character(target_reference) %in% observed_groups) {
       issues <- c(issues, "The configured group reference is not observed.")
+    }
+    if (target_type == "against_global_mean" &&
+        !registry$type[[variable_row]] %in% c("continuous", "count")) {
+      issues <- c(issues,
+        "Global mean contrasts currently require a continuous or count variable.")
+    }
+    if (target_type == "against_global_mean" &&
+        isTRUE(target_spec$exponentiate)) {
+      issues <- c(issues,
+        "Descriptive global mean differences cannot be exponentiated.")
     }
     if (is.null(comparison_spec)) {
       issues <- c(issues, paste0(
@@ -325,8 +360,7 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
       plan$required_packages[i] <- list(unique(c(
         plan$required_packages[[i]], comparison_packages
       )))
-      if (isTRUE(comparison_spec$requires_positive_cells) &&
-          length(observed_groups) == 2L && !is.null(reference)) {
+      if (isTRUE(comparison_spec$requires_positive_cells)) {
         variable_values <- data[[registry$name[[variable_row]]]]
         complete <- !special_missing_mask(variable_values) &
           !special_missing_mask(group_values)
@@ -335,7 +369,7 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
           as.character(analysis_vector(group_values)[complete]),
           analysis_vector(variable_values)[complete] == event
         )
-        if (length(table_values) < 4L || any(table_values == 0L)) {
+        if (ncol(table_values) < 2L || any(table_values == 0L)) {
           issues <- c(issues,
             "Ratio comparison has a zero cell; no continuity correction is applied.")
         }
@@ -446,45 +480,110 @@ compute_descriptive_comparison <- function(spec, data) {
   complete <- !special_missing_mask(values) & !special_missing_mask(groups)
   values <- analysis_vector(values)[complete]
   groups <- as.character(analysis_vector(groups)[complete])
-  reference <- as.character(registry$reference[[group_row]])
-  numerator_group <- setdiff(unique(groups), reference)
-  if (length(numerator_group) != 1L) {
-    stop_descriptive_plan(
-      "Comparison groups changed after complete-case filtering."
+  group_original <- data[[registry$name[[group_row]]]]
+  group_levels <- if (is.factor(group_original)) {
+    levels(group_original)[levels(group_original) %in% unique(groups)]
+  } else unique(groups)
+  target_spec <- spec$descriptive_contrast_spec[[1]]
+  target_type <- if (is.null(target_spec)) "against_reference" else target_spec$type
+  reference <- if (!is.null(target_spec) && target_type == "against_reference") {
+    target_spec$reference
+  } else registry$reference[[group_row]]
+  pairs <- contrast_level_pairs(group_levels, target_type, reference)
+  comparison_spec <- spec$comparison_object[[1]]
+  if (target_type == "against_global_mean") {
+    if (!comparison_spec$id %in% c("welch_mean_difference", "hedges_g")) {
+      stop_descriptive_plan(
+        "Global mean contrasts require a mean-based comparison specification."
+      )
+    }
+    counts <- vapply(group_levels, function(level) sum(groups == level), numeric(1))
+    weights <- if (identical(target_spec$weights, "observed")) {
+      counts / sum(counts)
+    } else rep(1 / length(group_levels), length(group_levels))
+    means <- vapply(group_levels, function(level) mean(values[groups == level]), numeric(1))
+    variances <- vapply(group_levels, function(level) {
+      stats::var(values[groups == level]) / sum(groups == level)
+    }, numeric(1))
+    global_mean <- sum(weights * means)
+    critical <- stats::qnorm((1 + spec$confidence_level[[1]]) / 2)
+    rows <- lapply(seq_along(group_levels), function(i) {
+      coefficients <- -weights
+      coefficients[[i]] <- coefficients[[i]] + 1
+      estimate <- means[[i]] - global_mean
+      standard_error <- sqrt(sum(coefficients^2 * variances))
+      statistic <- estimate / standard_error
+      p_value <- 2 * stats::pnorm(abs(statistic), lower.tail = FALSE)
+      descriptive_contrast_row(
+        spec, group_levels[[i]], ".global_mean", estimate,
+        estimate - critical * standard_error,
+        estimate + critical * standard_error, p_value,
+        "mean_difference", "identity", standard_error, "identity"
+      )
+    })
+    contrast_rows <- vctrs::vec_rbind(!!!rows)
+    contrast_rows$adjust_method <- spec$comparison_adjust_method[[1]]
+    contrast_rows$p_adjusted <- stats::p.adjust(
+      contrast_rows$p_value, method = spec$comparison_adjust_method[[1]]
+    )
+    omnibus <- stats::oneway.test(values ~ factor(groups), var.equal = FALSE)
+    return(list(
+      contrasts = contrast_rows,
+      tests = descriptive_test_row(
+        spec, "one_way_anova", unname(omnibus$statistic),
+        unname(omnibus$parameter[[1]]), omnibus$p.value
+      )
+    ))
+  }
+  outputs <- lapply(seq_len(nrow(pairs)), function(i) {
+    numerator_group <- pairs$numerator[[i]]
+    denominator_group <- pairs$denominator[[i]]
+    if (comparison_spec$id == "welch_mean_difference") {
+      return(welch_mean_difference_result(spec, values, groups, numerator_group, denominator_group))
+    }
+    if (comparison_spec$id == "hedges_g") {
+      return(hedges_g_result(spec, values, groups, numerator_group, denominator_group))
+    }
+    if (comparison_spec$id == "wald_risk_difference") {
+      return(wald_risk_difference_result(
+        spec, values, groups, numerator_group, denominator_group,
+        registry$event_value[[variable_row]]
+      ))
+    }
+    if (comparison_spec$id %in% c("log_wald_risk_ratio", "log_wald_odds_ratio")) {
+      return(binary_ratio_result(
+        spec, values, groups, numerator_group, denominator_group,
+        registry$event_value[[variable_row]], comparison_spec$id
+      ))
+    }
+    if (is.function(comparison_spec$compute)) {
+      return(custom_group_comparison_result(
+        spec, values, groups, numerator_group, denominator_group, comparison_spec
+      ))
+    }
+    stop_descriptive_plan("Unknown descriptive comparison method.")
+  })
+  contrast_rows <- vctrs::vec_rbind(!!!lapply(outputs, `[[`, "contrasts"))
+  contrast_rows$adjust_method <- spec$comparison_adjust_method[[1]]
+  contrast_rows$p_adjusted <- stats::p.adjust(
+    contrast_rows$p_value, method = spec$comparison_adjust_method[[1]]
+  )
+  if (length(group_levels) == 2L) {
+    test_rows <- vctrs::vec_rbind(!!!lapply(outputs, `[[`, "tests"))
+  } else if (spec$variable_type[[1]] %in% c("continuous", "count")) {
+    omnibus <- stats::oneway.test(values ~ factor(groups), var.equal = FALSE)
+    test_rows <- descriptive_test_row(
+      spec, "one_way_anova", unname(omnibus$statistic),
+      unname(omnibus$parameter[[1]]), omnibus$p.value
+    )
+  } else {
+    omnibus <- suppressWarnings(stats::chisq.test(table(groups, values)))
+    test_rows <- descriptive_test_row(
+      spec, "pearson_chi_squared", unname(omnibus$statistic),
+      unname(omnibus$parameter), omnibus$p.value
     )
   }
-  numerator_group <- numerator_group[[1]]
-  comparison_spec <- spec$comparison_object[[1]]
-  if (comparison_spec$id == "welch_mean_difference") {
-    return(welch_mean_difference_result(
-      spec, values, groups, numerator_group, reference
-    ))
-  }
-  if (comparison_spec$id == "hedges_g") {
-    return(hedges_g_result(
-      spec, values, groups, numerator_group, reference
-    ))
-  }
-  if (comparison_spec$id == "wald_risk_difference") {
-    return(wald_risk_difference_result(
-      spec, values, groups, numerator_group, reference,
-      registry$event_value[[variable_row]]
-    ))
-  }
-  if (comparison_spec$id %in% c(
-    "log_wald_risk_ratio", "log_wald_odds_ratio"
-  )) {
-    return(binary_ratio_result(
-      spec, values, groups, numerator_group, reference,
-      registry$event_value[[variable_row]], comparison_spec$id
-    ))
-  }
-  if (is.function(comparison_spec$compute)) {
-    return(custom_group_comparison_result(
-      spec, values, groups, numerator_group, reference, comparison_spec
-    ))
-  }
-  stop_descriptive_plan("Unknown descriptive comparison method.")
+  list(contrasts = contrast_rows, tests = test_rows)
 }
 
 hedges_g_result <- function(spec, values, groups, numerator_group, reference) {
@@ -507,7 +606,8 @@ hedges_g_result <- function(spec, values, groups, numerator_group, reference) {
       spec, numerator_group, reference, estimate,
       estimate - critical * standard_error,
       estimate + critical * standard_error,
-      NA_real_, "standardized_mean_difference", "standard_deviation"
+      NA_real_, "standardized_mean_difference", "standard_deviation",
+      standard_error, "standard_deviation"
     ),
     tests = tests_prototype()
   )
@@ -527,7 +627,9 @@ welch_mean_difference_result <- function(
       spec, numerator_group, reference,
       mean(numerator_values) - mean(reference_values),
       test$conf.int[[1]], test$conf.int[[2]], test$p.value,
-      "mean_difference", "identity"
+      "mean_difference", "identity",
+      abs((mean(numerator_values) - mean(reference_values)) /
+        unname(test$statistic)), "identity"
     ),
     tests = descriptive_test_row(
       spec, "welch_t_test", unname(test$statistic),
@@ -562,7 +664,8 @@ wald_risk_difference_result <- function(
       spec, numerator_group, reference, estimate,
       estimate - critical * standard_error,
       estimate + critical * standard_error,
-      group_test$p.value, "risk_difference", "probability_difference"
+      group_test$p.value, "risk_difference", "probability_difference",
+      standard_error, "probability_difference"
     ),
     tests = descriptive_test_row(
       spec, "pearson_chi_squared", unname(group_test$statistic),
@@ -598,7 +701,8 @@ binary_ratio_result <- function(
       spec, numerator_group, reference, estimate,
       exp(log(estimate) - critical * standard_error),
       exp(log(estimate) + critical * standard_error),
-      group_test$p.value, measure, "ratio"
+      group_test$p.value, measure, "ratio", standard_error,
+      if (measure == "risk_ratio") "log_risk_ratio" else "log_odds_ratio"
     ),
     tests = descriptive_test_row(
       spec, "pearson_chi_squared", unname(group_test$statistic),
@@ -628,7 +732,7 @@ custom_group_comparison_result <- function(
   contrast <- descriptive_contrast_row(
     spec, numerator_group, reference, output$estimate, output$conf_low,
     output$conf_high, output$p_value, comparison_spec$effect_measure,
-    comparison_spec$scale
+    comparison_spec$scale, output$std_error, output$std_error_scale
   )
   test <- if (is.na(output$test)) tests_prototype() else {
     descriptive_test_row(
@@ -640,7 +744,7 @@ custom_group_comparison_result <- function(
 
 descriptive_contrast_row <- function(
   spec, numerator, denominator, estimate, conf_low, conf_high, p_value,
-  effect_measure, scale
+  effect_measure, scale, std_error = NA_real_, std_error_scale = scale
 ) {
   tibble::tibble(
     analysis_id = spec$analysis_id[[1]], outcome = spec$variable[[1]],
@@ -648,7 +752,8 @@ descriptive_contrast_row <- function(
     contrast = paste0(numerator, " vs ", denominator),
     numerator = numerator, denominator = denominator,
     modifier = NA_character_, modifier_level = NA_character_,
-    estimate = as.numeric(estimate), conf_low = as.numeric(conf_low),
+    estimate = as.numeric(estimate), std_error = as.numeric(std_error),
+    std_error_scale = std_error_scale, conf_low = as.numeric(conf_low),
     conf_high = as.numeric(conf_high), p_value = as.numeric(p_value),
     p_adjusted = as.numeric(p_value), adjust_method = "none",
     effect_measure = effect_measure, scale = scale

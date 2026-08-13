@@ -11,7 +11,9 @@ plan_descriptives(
   overall = TRUE,
   confidence_level = 0.95,
   functions = list(),
-  comparisons = FALSE
+  comparisons = FALSE,
+  contrasts = NULL,
+  adjust = "none"
 )
 }
 \arguments{
@@ -28,6 +30,11 @@ plan_descriptives(
 \item{functions}{A list of explicit \code{descriptive_function} providers.}
 
 \item{comparisons}{Whether to estimate an effect between two groups.}
+
+\item{contrasts}{Target group comparisons. Supports \code{\link[=against_reference]{against_reference()}},
+\code{\link[=all_pairwise]{all_pairwise()}}, and \code{\link[=consecutive_comparisons]{consecutive_comparisons()}}.}
+
+\item{adjust}{Multiplicity adjustment accepted by \code{\link[stats:p.adjust]{stats::p.adjust()}}.}
 }
 \value{
 An \code{analysis_plan} tibble.

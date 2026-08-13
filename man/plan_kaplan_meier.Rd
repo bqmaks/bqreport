@@ -12,7 +12,9 @@ plan_kaplan_meier(
   confidence_level = 0.95,
   quantiles = NULL,
   rmst_tau = NULL,
-  estimates = "survival"
+  estimates = "survival",
+  comparisons = NULL,
+  adjust = "none"
 )
 }
 \arguments{
@@ -36,6 +38,10 @@ survival time. RMST is not computed unless this estimand is explicit.}
 \item{estimates}{One or both of \code{survival} and \code{cumulative_risk}.
 Cumulative risk is the single-event complement \code{1 - S(t)}; it is neither
 cumulative hazard nor a competing-risks cumulative incidence function.}
+
+\item{comparisons}{Optional pairwise log-rank contrast specification.}
+
+\item{adjust}{Multiplicity adjustment accepted by \code{\link[stats:p.adjust]{stats::p.adjust()}}.}
 }
 \value{
 An \code{analysis_plan} tibble.

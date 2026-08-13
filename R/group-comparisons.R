@@ -111,6 +111,8 @@ group_comparison_function <- function(
 #' Construct custom group comparison output
 #'
 #' @param estimate,conf_low,conf_high,p_value Numeric scalar results.
+#' @param std_error Optional standard error on `std_error_scale`.
+#' @param std_error_scale Scale on which the standard error is defined.
 #' @param statistic_method Non-empty method identifier.
 #' @param statistic,df Optional test statistic and degrees of freedom.
 #' @param test Optional test name; omit it when no separate test is returned.
@@ -119,7 +121,8 @@ group_comparison_function <- function(
 #' @export
 group_comparison_output <- function(
   estimate, conf_low, conf_high, p_value, statistic_method,
-  statistic = NA_real_, df = NA_real_, test = NA_character_
+  statistic = NA_real_, df = NA_real_, test = NA_character_,
+  std_error = NA_real_, std_error_scale = NA_character_
 ) {
   numeric_values <- c(estimate, conf_low, conf_high, p_value, statistic, df)
   if (!is.numeric(numeric_values) || length(numeric_values) != 6L) {
@@ -136,7 +139,8 @@ group_comparison_output <- function(
     estimate = as.numeric(estimate), conf_low = as.numeric(conf_low),
     conf_high = as.numeric(conf_high), p_value = as.numeric(p_value),
     statistic_method = statistic_method, statistic = as.numeric(statistic),
-    df = as.numeric(df), test = test
+    df = as.numeric(df), test = test, std_error = as.numeric(std_error),
+    std_error_scale = std_error_scale
   ), class = "group_comparison_output")
 }
 

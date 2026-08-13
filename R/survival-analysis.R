@@ -20,6 +20,7 @@ cox_model <- function(ties = c("efron", "breslow", "exact")) {
 #' @param .data A `bq_data` object.
 #' @param outcomes Composite survival outcomes selected with tidyselect syntax.
 #' @param predictors Predictor columns selected with tidyselect syntax.
+#' @param covariates Optional adjustment covariates selected with tidyselect.
 #' @param confidence_level Confidence level.
 #' @param method A concrete Cox method specification.
 #'
@@ -29,6 +30,7 @@ plan_survival <- function(
   .data,
   outcomes = tidyselect::everything(),
   predictors = all_predictors(),
+  covariates = tidyselect::any_of(character()),
   confidence_level = 0.95,
   method = cox_model()
 ) {
@@ -49,6 +51,9 @@ plan_survival <- function(
   )
   predictor_selection <- tidyselect::eval_select(
     rlang::enquo(predictors), .data
+  )
+  covariate_selection <- tidyselect::eval_select(
+    rlang::enquo(covariates), .data
   )
   if (length(outcome_selection) == 0L || length(predictor_selection) == 0L) {
     return(empty_analysis_plan())
@@ -75,7 +80,11 @@ plan_survival <- function(
       reason = if (outcome_spec$status[[1]] == "valid" &&
         predictor_spec$status[[1]] == "valid") NA_character_ else
         "Outcome or predictor metadata require review.",
-      confidence_level = confidence_level
+      confidence_level = confidence_level,
+      contrast_ids = contrast_ids_for(.data, predictor_spec$var_id[[1]]),
+      covariate_specs = variable_registry[
+        match(names(covariate_selection), variable_registry$name), , drop = FALSE
+      ]
     )
     row$analysis_type <- "survival_regression"
     row$survival_outcome_id <- outcome_spec$outcome_id
@@ -98,11 +107,15 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
     plan$survival_outcome_id[[i]], outcome_registry$outcome_id
   )
   predictor_row <- match(plan$predictor_id[[i]], registry$var_id)
+  covariate_rows <- match(plan$covariate_ids[[i]], registry$var_id)
   if (is.na(outcome_row) || outcome_registry$status[[outcome_row]] != "valid") {
     issues <- c(issues, "The survival outcome or one of its components is absent.")
   }
   if (is.na(predictor_row)) {
     issues <- c(issues, "The predictor referenced by stable id is absent.")
+  }
+  if (anyNA(covariate_rows)) {
+    issues <- c(issues, "A covariate referenced by stable id is absent.")
   }
   if (!is.na(outcome_row) && !is.na(predictor_row)) {
     outcome <- outcome_registry[outcome_row, , drop = FALSE]
@@ -112,11 +125,16 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
     plan$event_value[i] <- outcome$event_value
     plan$time_unit[[i]] <- outcome$time_unit[[1]]
     plan$predictor[[i]] <- registry$name[[predictor_row]]
+    covariate_names <- registry$name[covariate_rows[!is.na(covariate_rows)]]
+    plan$covariates[[i]] <- covariate_names
     time <- data[[outcome$time[[1]]]]
     event <- data[[outcome$event[[1]]]]
     predictor <- data[[registry$name[[predictor_row]]]]
     complete <- !special_missing_mask(time) & !special_missing_mask(event) &
       !special_missing_mask(predictor)
+    for (name in covariate_names) {
+      complete <- complete & !special_missing_mask(data[[name]])
+    }
     time_values <- analysis_vector(time)[complete]
     event_values <- analysis_vector(event)[complete]
     predictor_values <- analysis_vector(predictor)[complete]
@@ -143,6 +161,52 @@ validate_survival_plan_task <- function(plan, i, data, registry) {
         issues <- c(issues, "Categorical predictor has no observed configured reference.")
       }
     }
+    current_model_terms <- plan$model_term_specs[[i]]
+    if (!is.null(current_model_terms[[plan$predictor_id[[i]]]])) {
+      issues <- c(
+        issues,
+        "Nonlinear model terms are currently supported only for adjustment covariates, not the primary predictor."
+      )
+    }
+    for (j in seq_along(covariate_names)) {
+      covariate_id <- plan$covariate_ids[[i]][[j]]
+      value <- analysis_vector(data[[covariate_names[[j]]]])
+      value[special_missing_mask(data[[covariate_names[[j]]]])] <- NA
+      transformed <- tryCatch(
+        apply_transformation_spec(
+          value, plan$transformation_specs[[i]][[covariate_id]],
+          covariate_names[[j]], plan$analysis_id[[i]]
+        ),
+        error = function(condition) condition
+      )
+      if (inherits(transformed, "error")) {
+        issues <- c(issues, conditionMessage(transformed))
+        next
+      }
+      term <- current_model_terms[[covariate_id]]
+      if (!is.null(term)) {
+        resolved <- tryCatch(
+          resolve_model_term_spec(
+            term, transformed[complete], covariate_names[[j]],
+            plan$analysis_id[[i]]
+          ),
+          error = function(condition) condition
+        )
+        if (inherits(resolved, "error")) {
+          issues <- c(issues, conditionMessage(resolved))
+        } else {
+          current_model_terms[[covariate_id]] <- resolved
+        }
+      }
+    }
+    plan$model_term_specs[[i]] <- current_model_terms
+    formula_covariates <- model_formula_covariates(
+      plan$covariate_ids[[i]], covariate_names, current_model_terms
+    )
+    plan$formula[[i]] <- stats::reformulate(
+      c(plan$predictor[[i]], formula_covariates),
+      response = "survival::Surv(..bq_time, ..bq_event)"
+    )
   }
   missing_packages <- plan$required_packages[[i]][
     !vapply(plan$required_packages[[i]], requireNamespace, logical(1), quietly = TRUE)
@@ -172,6 +236,10 @@ execute_cox_analysis <- function(spec, data) {
   time[special_missing_mask(data[[outcome$time[[1]]]])] <- NA
   event[special_missing_mask(event_original)] <- NA
   predictor[special_missing_mask(predictor_original)] <- NA
+  predictor <- apply_transformation_spec(
+    predictor, spec$transformation_specs[[1]][[spec$predictor_id[[1]]]],
+    predictor_name, spec$analysis_id[[1]]
+  )
   predictor_spec <- registry[match(spec$predictor_id[[1]], registry$var_id), , drop = FALSE]
   if (predictor_spec$type[[1]] %in% c("binary", "nominal", "ordinal")) {
     predictor <- stats::relevel(
@@ -184,13 +252,30 @@ execute_cox_analysis <- function(spec, data) {
     predictor = predictor
   )
   names(frame)[[3]] <- predictor_name
-  formula <- stats::reformulate(
-    predictor_name,
-    response = "survival::Surv(..bq_time, ..bq_event)"
-  )
+  for (i in seq_along(spec$covariates[[1]])) {
+    name <- spec$covariates[[1]][[i]]
+    covariate_id <- spec$covariate_ids[[1]][[i]]
+    original <- data[[name]]
+    value <- analysis_vector(original)
+    value[special_missing_mask(original)] <- NA
+    value <- apply_transformation_spec(
+      value, spec$transformation_specs[[1]][[covariate_id]],
+      name, spec$analysis_id[[1]]
+    )
+    term <- spec$model_term_specs[[1]][[covariate_id]]
+    if (is.null(term)) {
+      frame[[name]] <- value
+    } else {
+      basis <- apply_model_term_spec(value, term)
+      for (column in seq_along(term$output_names)) {
+        frame[[term$output_names[[column]]]] <- basis[, column]
+      }
+    }
+  }
+  formula <- spec$formula[[1]]
   fit <- survival::coxph(
     formula, data = frame, ties = spec$ties[[1]], na.action = stats::na.omit,
-    x = TRUE
+    x = TRUE, model = TRUE
   )
   summary_fit <- summary(fit)
   beta <- stats::coef(fit)
@@ -218,6 +303,55 @@ execute_cox_analysis <- function(spec, data) {
     p_value = unname(summary_fit$logtest[[3]]),
     method = "cox_proportional_hazards"
   )
+  formula_covariates <- model_formula_covariates(
+    spec$covariate_ids[[1]], spec$covariates[[1]], spec$model_term_specs[[1]]
+  )
+  if (is.factor(frame[[predictor_name]])) {
+    reduced_formula <- if (length(formula_covariates)) {
+      stats::reformulate(
+        formula_covariates,
+        response = "survival::Surv(..bq_time, ..bq_event)"
+      )
+    } else {
+      stats::as.formula("survival::Surv(..bq_time, ..bq_event) ~ 1")
+    }
+    reduced <- survival::coxph(
+      reduced_formula, data = frame, ties = spec$ties[[1]],
+      na.action = stats::na.omit
+    )
+    comparison <- stats::anova(reduced, fit, test = "Chisq")
+    tests <- vctrs::vec_rbind(tests, tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$predictor[[1]], test = "predictor_omnibus",
+      statistic = unname(comparison$Chisq[[2]]),
+      df = unname(as.numeric(comparison$Df[[2]])),
+      p_value = unname(comparison$`Pr(>|Chi|)`[[2]]),
+      method = "cox_proportional_hazards"
+    ))
+  }
+  term_tests <- lapply(seq_along(spec$covariates[[1]]), function(i) {
+    covariate_id <- spec$covariate_ids[[1]][[i]]
+    term <- spec$model_term_specs[[1]][[covariate_id]]
+    if (is.null(term)) return(NULL)
+    reduced_formula <- stats::reformulate(
+      c(predictor_name, setdiff(formula_covariates, term$output_names)),
+      response = "survival::Surv(..bq_time, ..bq_event)"
+    )
+    reduced <- survival::coxph(
+      reduced_formula, data = frame, ties = spec$ties[[1]],
+      na.action = stats::na.omit
+    )
+    comparison <- stats::anova(reduced, fit, test = "Chisq")
+    tibble::tibble(
+      analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
+      predictor = spec$covariates[[1]][[i]], test = "model_term_omnibus",
+      statistic = unname(comparison$Chisq[[2]]),
+      df = unname(as.numeric(comparison$Df[[2]])),
+      p_value = unname(comparison$`Pr(>|Chi|)`[[2]]),
+      method = "cox_proportional_hazards"
+    )
+  })
+  tests <- vctrs::vec_rbind(tests, !!!term_tests)
   ph <- survival::cox.zph(fit)
   ph_table <- as.data.frame(ph$table)
   diagnostics <- tibble::tibble(
@@ -225,5 +359,9 @@ execute_cox_analysis <- function(spec, data) {
     value = as.numeric(ph_table[, "p"]), status = "observed",
     message = NA_character_
   )
-  list(model = fit, estimates = estimates, tests = tests, diagnostics = diagnostics)
+  model_contrasts <- compute_builtin_contrasts(fit, spec, data)
+  list(
+    model = fit, estimates = estimates, tests = tests,
+    contrasts = model_contrasts, diagnostics = diagnostics
+  )
 }
