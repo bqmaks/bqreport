@@ -336,6 +336,10 @@ validate_plan <- function(plan, data) {
   out <- tibble::as_tibble(plan)
 
   for (i in seq_len(nrow(out))) {
+    if (identical(out$analysis_type[[i]], "survival_regression")) {
+      out <- validate_survival_plan_task(out, i, data, registry)
+      next
+    }
     if (identical(out$analysis_type[[i]], "descriptive")) {
       out <- validate_descriptive_plan_task(out, i, data, registry)
       next
