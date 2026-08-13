@@ -4,7 +4,7 @@
 \alias{set_outcome}
 \title{Define outcome variables}
 \usage{
-set_outcome(.data, .cols, type = NULL, event = NULL)
+set_outcome(.data, .cols, type = NULL, event = NULL, reference = NULL)
 }
 \arguments{
 \item{.data}{A \code{bq_data} object.}
@@ -15,6 +15,8 @@ set_outcome(.data, .cols, type = NULL, event = NULL)
 inferred or configured type is retained.}
 
 \item{event}{An optional event value for binary outcomes.}
+
+\item{reference}{Optional reference category for ordinal or nominal outcomes.}
 }
 \value{
 \code{.data} with updated variable metadata.

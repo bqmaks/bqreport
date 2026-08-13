@@ -92,10 +92,11 @@ stop_invalid_descriptive_statistics <- function(message) {
 #' @param type An optional analytical variable type. If omitted, the current
 #'   inferred or configured type is retained.
 #' @param event An optional event value for binary outcomes.
+#' @param reference Optional reference category for ordinal or nominal outcomes.
 #'
 #' @return `.data` with updated variable metadata.
 #' @export
-set_outcome <- function(.data, .cols, type = NULL, event = NULL) {
+set_outcome <- function(.data, .cols, type = NULL, event = NULL, reference = NULL) {
   check_bq_data(.data)
   type <- check_optional_variable_type(type)
   selected <- tidyselect::eval_select(rlang::enquo(.cols), .data)
@@ -113,6 +114,13 @@ set_outcome <- function(.data, .cols, type = NULL, event = NULL) {
   if (!is.null(event)) {
     check_scalar_setting(event, "event", "bq_error_invalid_outcome")
   }
+  if (!is.null(reference) && any(!resolved_types %in% c("ordinal", "nominal"))) {
+    stop_variable_setting(
+      "`reference` can only be set for ordinal or nominal outcomes.",
+      "bq_error_invalid_outcome"
+    )
+  }
+  if (!is.null(reference)) check_scalar_setting(reference, "reference", "bq_error_invalid_outcome")
 
   .data <- add_role_by_name(.data, selected_names, "outcome")
   .data <- set_explicit_types(.data, selected_names, type)
@@ -120,6 +128,9 @@ set_outcome <- function(.data, .cols, type = NULL, event = NULL) {
   rows <- match(selected_names, registry$name)
   if (!is.null(event)) {
     for (row in rows) registry$event_value[[row]] <- event
+  }
+  if (!is.null(reference)) {
+    for (row in rows) registry$reference[[row]] <- reference
   }
   attr(.data, "variable_registry") <- registry
   .data

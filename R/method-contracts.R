@@ -107,6 +107,149 @@ run_negative_binomial <- function(context) {
   )
 }
 
+#' Construct a proportional-odds ordinal logistic specification
+#'
+#' @inheritParams linear_model
+#' @return A concrete custom `method_spec` using the optional `MASS` backend.
+#' @export
+ordinal_logistic_model <- function(ci_method = "wald", exponentiate = TRUE) {
+  check_exponentiate(exponentiate)
+  analysis_function(
+    id = "ordinal_logistic_model",
+    effect_measure = if (exponentiate) "proportional_odds_ratio" else "log_odds",
+    scale = if (exponentiate) "ratio" else "link", model_scale = "link",
+    exponentiate = exponentiate, required_packages = "MASS",
+    run = run_ordinal_logistic
+  )
+}
+
+run_ordinal_logistic <- function(context) {
+  args <- list(
+    formula = context$formula, data = context$model_frame,
+    Hess = TRUE, method = "logistic", na.action = stats::na.omit
+  )
+  if (!is.null(context$weights)) args$weights <- context$weights
+  fit <- do.call(MASS::polr, args)
+  covariance <- stats::vcov(fit)
+  values <- stats::coef(fit)
+  standard_error <- sqrt(diag(covariance))[names(values)]
+  coefficient_names <- names(stats::coef(fit))
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  null_args <- args
+  null_args$formula <- stats::reformulate(character(), response = context$outcome_spec$name[[1]])
+  null_fit <- do.call(MASS::polr, null_args)
+  statistic <- 2 * (stats::logLik(fit) - stats::logLik(null_fit))
+  degrees <- attr(stats::logLik(fit), "df") - attr(stats::logLik(null_fit), "df")
+  analysis_output(
+    model = fit,
+    estimates = tibble::tibble(
+      analysis_id = context$analysis_id, outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]],
+      term = coefficient_names, level = NA_character_,
+      estimate = unname(values), std_error = unname(standard_error),
+      std_error_scale = "log_odds", conf_low = unname(values - critical * standard_error),
+      conf_high = unname(values + critical * standard_error),
+      statistic = unname(values / standard_error), df = NA_real_,
+      p_value = 2 * stats::pnorm(abs(values / standard_error), lower.tail = FALSE),
+      effect_measure = "proportional_odds_ratio",
+      scale = "link", n = as.integer(stats::nobs(fit)), n_events = NA_integer_,
+      method = "ordinal_logistic_model", variance = "model_based"
+    ),
+    tests = tibble::tibble(
+      analysis_id = context$analysis_id, outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]], contrast = NA_character_,
+      numerator = NA_character_, denominator = NA_character_, test = "likelihood_ratio",
+      statistic = as.numeric(statistic), df = as.numeric(degrees),
+      p_value = stats::pchisq(statistic, degrees, lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = "none", method = "ordinal_logistic_model"
+    ),
+    diagnostics = tibble::tibble(
+      analysis_id = context$analysis_id,
+      metric = c(
+        "convergence_code", "outcome_levels",
+        paste0("threshold_", names(fit$zeta))
+      ),
+      value = c(
+        fit$convergence, nlevels(stats::model.response(stats::model.frame(fit))),
+        unname(fit$zeta)
+      ),
+      status = "observed", message = NA_character_
+    )
+  )
+}
+
+#' Construct a baseline-category multinomial logistic specification
+#'
+#' @inheritParams linear_model
+#' @return A concrete custom `method_spec` using the optional `nnet` backend.
+#' @export
+multinomial_logistic_model <- function(ci_method = "wald", exponentiate = TRUE) {
+  check_exponentiate(exponentiate)
+  analysis_function(
+    id = "multinomial_logistic_model",
+    effect_measure = if (exponentiate) "multinomial_odds_ratio" else "log_odds",
+    scale = if (exponentiate) "ratio" else "link", model_scale = "link",
+    exponentiate = exponentiate, required_packages = "nnet",
+    run = run_multinomial_logistic
+  )
+}
+
+run_multinomial_logistic <- function(context) {
+  args <- list(
+    formula = context$formula, data = context$model_frame,
+    trace = FALSE, Hess = TRUE, na.action = stats::na.omit
+  )
+  if (!is.null(context$weights)) args$weights <- context$weights
+  fit <- do.call(nnet::multinom, args)
+  fit_summary <- summary(fit)
+  coefficients <- as.matrix(fit_summary$coefficients)
+  standard_errors <- as.matrix(fit_summary$standard.errors)
+  if (is.null(rownames(coefficients))) {
+    coefficients <- matrix(coefficients, nrow = 1L,
+      dimnames = list(fit$lev[[2]], names(stats::coef(fit))))
+    standard_errors <- matrix(standard_errors, nrow = 1L,
+      dimnames = dimnames(coefficients))
+  }
+  beta <- as.numeric(t(coefficients))
+  se <- as.numeric(t(standard_errors))
+  critical <- stats::qnorm((1 + context$confidence_level) / 2)
+  null_args <- args
+  null_args$formula <- stats::reformulate(character(), response = context$outcome_spec$name[[1]])
+  null_fit <- do.call(nnet::multinom, null_args)
+  statistic <- 2 * (stats::logLik(fit) - stats::logLik(null_fit))
+  degrees <- attr(stats::logLik(fit), "df") - attr(stats::logLik(null_fit), "df")
+  analysis_output(
+    model = fit,
+    estimates = tibble::tibble(
+      analysis_id = context$analysis_id, outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]],
+      term = rep(colnames(coefficients), times = nrow(coefficients)),
+      level = rep(rownames(coefficients), each = ncol(coefficients)),
+      estimate = beta, std_error = se, std_error_scale = "log_odds",
+      conf_low = beta - critical * se, conf_high = beta + critical * se,
+      statistic = beta / se, df = NA_real_,
+      p_value = 2 * stats::pnorm(abs(beta / se), lower.tail = FALSE),
+      effect_measure = "multinomial_odds_ratio", scale = "link",
+      n = as.integer(length(fit$weights)), n_events = NA_integer_,
+      method = "multinomial_logistic_model", variance = "model_based"
+    ),
+    tests = tibble::tibble(
+      analysis_id = context$analysis_id, outcome = context$outcome_spec$name[[1]],
+      predictor = context$predictor_spec$name[[1]], contrast = NA_character_,
+      numerator = NA_character_, denominator = NA_character_, test = "likelihood_ratio",
+      statistic = as.numeric(statistic), df = as.numeric(degrees),
+      p_value = stats::pchisq(statistic, degrees, lower.tail = FALSE),
+      p_adjusted = NA_real_, adjust_method = "none", method = "multinomial_logistic_model"
+    ),
+    diagnostics = tibble::tibble(
+      analysis_id = context$analysis_id,
+      metric = c("convergence_code", "effective_df", "aic"),
+      value = c(fit$convergence, fit$edf, stats::AIC(fit)),
+      status = "observed", message = NA_character_
+    )
+  )
+}
+
 #' Construct Firth penalized logistic regression
 #'
 #' @param exponentiate Whether coefficients and confidence limits are returned

@@ -626,6 +626,13 @@ build_analysis_frame <- function(spec, data) {
     event <- outcome_spec$event_value[[1]]
     outcome <- ifelse(is.na(outcome), NA_integer_, as.integer(outcome == event))
   }
+  if (outcome_spec$type[[1]] == "nominal") {
+    outcome <- factor(outcome)
+    reference <- outcome_spec$reference[[1]]
+    if (!is.null(reference)) {
+      outcome <- stats::relevel(outcome, ref = as.character(reference))
+    }
+  }
   if (predictor_spec$type[[1]] %in% c("binary", "nominal")) {
     predictor <- factor(predictor)
     predictor <- stats::relevel(

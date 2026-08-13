@@ -276,6 +276,16 @@ default_method_spec <- function(outcome_type) {
     method$selection_reason <- "System default for a count outcome."
     return(method)
   }
+  if (identical(outcome_type, "ordinal")) {
+    method <- ordinal_logistic_model()
+    method$selection_reason <- "System default for an ordinal outcome."
+    return(method)
+  }
+  if (identical(outcome_type, "nominal")) {
+    method <- multinomial_logistic_model()
+    method$selection_reason <- "System default for a nominal outcome."
+    return(method)
+  }
   NULL
 }
 
@@ -462,6 +472,13 @@ validate_plan <- function(plan, data) {
               count_values != floor(count_values))) {
         issues <- c(issues, "Count outcome must contain non-negative integer values.")
       }
+    }
+    if (identical(outcome_spec$type[[1]], "ordinal") && !is.ordered(outcome)) {
+      issues <- c(issues, "Ordinal outcome must be an ordered factor.")
+    }
+    if (identical(outcome_spec$type[[1]], "nominal") &&
+        (!is.factor(outcome) || is.ordered(outcome) || nlevels(outcome) < 3L)) {
+      issues <- c(issues, "Nominal outcome must be an unordered factor with at least three levels.")
     }
     transformed_names <- c(predictor_name, covariate_names)
     transformed_ids <- c(out$predictor_id[[i]], out$covariate_ids[[i]])
