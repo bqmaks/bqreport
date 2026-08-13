@@ -89,20 +89,37 @@ resolve_outcomes <- function(x) {
   )
   if (nrow(registry) == 0L) return(registry)
   variables_registry <- variables(x)
-  time_rows <- match(registry$time_var_id, variables_registry$var_id)
-  event_rows <- match(registry$event_var_id, variables_registry$var_id)
-  registry$time <- variables_registry$name[time_rows]
-  registry$event <- variables_registry$name[event_rows]
-  missing_time <- is.na(time_rows)
-  missing_event <- is.na(event_rows)
-  invalid <- missing_time | missing_event
-  registry$status[invalid] <- "invalid"
-  registry$reason[missing_time & !missing_event] <-
-    "The survival time component is absent from the data."
-  registry$reason[!missing_time & missing_event] <-
-    "The survival event component is absent from the data."
-  registry$reason[missing_time & missing_event] <-
-    "The survival time and event components are absent from the data."
+  if ("time_var_id" %in% names(registry)) {
+    survival_rows <- registry$type == "survival"
+    time_rows <- match(registry$time_var_id, variables_registry$var_id)
+    event_rows <- match(registry$event_var_id, variables_registry$var_id)
+    registry$time <- variables_registry$name[time_rows]
+    registry$event <- variables_registry$name[event_rows]
+    missing_time <- survival_rows & is.na(time_rows)
+    missing_event <- survival_rows & is.na(event_rows)
+    invalid <- missing_time | missing_event
+    registry$status[invalid] <- "invalid"
+    registry$reason[missing_time & !missing_event] <-
+      "The survival time component is absent from the data."
+    registry$reason[!missing_time & missing_event] <-
+      "The survival event component is absent from the data."
+    registry$reason[missing_time & missing_event] <-
+      "The survival time and event components are absent from the data."
+  }
+  if ("value_var_ids" %in% names(registry)) {
+    longitudinal_rows <- which(registry$type == "longitudinal")
+    registry$values <- rep(list(character()), nrow(registry))
+    for (row in longitudinal_rows) {
+      ids <- registry$value_var_ids[[row]]
+      source_rows <- match(ids, variables_registry$var_id)
+      registry$values[[row]] <- variables_registry$name[source_rows]
+      if (anyNA(source_rows)) {
+        registry$status[[row]] <- "invalid"
+        registry$reason[[row]] <-
+          "One or more repeated source columns are absent from the data."
+      }
+    }
+  }
   registry
 }
 

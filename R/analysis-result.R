@@ -33,6 +33,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   contrast_rows <- list()
   descriptive_rows <- list()
   survival_rows <- list()
+  omnibus_effect_rows <- list()
 
   for (i in seq_len(nrow(plan))) {
     spec <- plan[i, , drop = FALSE]
@@ -81,6 +82,10 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
           }
           if (nrow(comparison$tests)) {
             test_rows[[length(test_rows) + 1L]] <- comparison$tests
+          }
+          if (nrow(comparison$omnibus_effects)) {
+            omnibus_effect_rows[[length(omnibus_effect_rows) + 1L]] <-
+              comparison$omnibus_effects
           }
         }
         provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
@@ -260,6 +265,9 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       tests = bind_component(test_rows, tests_prototype()),
       descriptives = bind_component(descriptive_rows, descriptives_prototype()),
       survival_estimates = bind_component(survival_rows, survival_estimates_prototype()),
+      omnibus_effects = bind_component(
+        omnibus_effect_rows, omnibus_effects_prototype()
+      ),
       diagnostics = bind_component(diagnostic_rows, diagnostics_prototype()),
       issues = bind_component(issue_rows, issues_prototype()),
       provenance = bind_component(provenance_rows, provenance_prototype())
@@ -980,6 +988,16 @@ diagnostics_prototype <- function() {
   )
 }
 
+omnibus_effects_prototype <- function() {
+  tibble::tibble(
+    analysis_id = character(), outcome = character(), predictor = character(),
+    estimate = double(), std_error = double(), std_error_scale = character(),
+    conf_low = double(), conf_high = double(), confidence_level = double(),
+    effect_measure = character(), scale = character(), n = integer(),
+    n_groups = integer(), method = character(), ci_method = character()
+  )
+}
+
 issues_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), stage = character(), severity = character(),
@@ -1085,4 +1103,11 @@ descriptives <- function(x) {
 survival_estimates <- function(x) {
   check_analysis_result(x)
   x$survival_estimates
+}
+
+#' @rdname estimates
+#' @export
+omnibus_effects <- function(x) {
+  check_analysis_result(x)
+  x$omnibus_effects
 }

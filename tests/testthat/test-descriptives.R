@@ -550,6 +550,38 @@ test_that("descriptive comparisons support multiple groups and target pairs", {
   )
   expect_true(all(contrasts(result)$adjust_method == "holm"))
   expect_true("one_way_anova" %in% tests(result)$test)
+  effect <- omnibus_effects(result)
+  expect_identical(effect$effect_measure, "eta_squared")
+  group_means <- tapply(data$value, data$arm, mean)
+  grand_mean <- mean(data$value)
+  ss_between <- sum(table(data$arm) * (group_means - grand_mean)^2)
+  ss_total <- sum((data$value - grand_mean)^2)
+  expect_equal(effect$estimate, unname(ss_between / ss_total))
+  expect_true(effect$conf_low <= effect$estimate)
+  expect_true(effect$estimate <= effect$conf_high)
+})
+
+test_that("categorical multi-group comparisons return Cramer's V", {
+  data <- as_bq_data(tibble::tibble(
+    response = factor(c("No", "No", "Yes", "No", "Yes", "Yes", "Yes", "Yes", "No")),
+    arm = factor(rep(c("A", "B", "C"), each = 3))
+  )) |>
+    set_outcome(response, type = "binary", event = "Yes") |>
+    set_predictor(arm, type = "nominal", reference = "A")
+  result <- data |>
+    plan_descriptives(
+      response, groups = arm, comparisons = TRUE,
+      contrasts = all_pairwise()
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  effect <- omnibus_effects(result)
+  chi <- suppressWarnings(stats::chisq.test(table(data$arm, data$response)))
+  expected <- sqrt(unname(chi$statistic) / nrow(data))
+
+  expect_identical(effect$effect_measure, "cramers_v")
+  expect_equal(effect$estimate, expected)
+  expect_identical(effect$scale, "zero_to_one")
 })
 
 test_that("descriptive means can be compared with the global group mean", {

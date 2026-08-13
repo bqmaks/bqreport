@@ -470,7 +470,10 @@ compute_descriptive_functions <- function(spec, values, population, type) {
 
 compute_descriptive_comparison <- function(spec, data) {
   if (!isTRUE(spec$comparisons[[1]])) {
-    return(list(contrasts = contrasts_prototype(), tests = tests_prototype()))
+    return(list(
+      contrasts = contrasts_prototype(), tests = tests_prototype(),
+      omnibus_effects = omnibus_effects_prototype()
+    ))
   }
   registry <- variables(data)
   variable_row <- match(spec$variable_id[[1]], registry$var_id)
@@ -532,7 +535,8 @@ compute_descriptive_comparison <- function(spec, data) {
       tests = descriptive_test_row(
         spec, "one_way_anova", unname(omnibus$statistic),
         unname(omnibus$parameter[[1]]), omnibus$p.value
-      )
+      ),
+      omnibus_effects = compute_omnibus_group_effect(spec, values, groups)
     ))
   }
   outputs <- lapply(seq_len(nrow(pairs)), function(i) {
@@ -583,7 +587,81 @@ compute_descriptive_comparison <- function(spec, data) {
       unname(omnibus$parameter), omnibus$p.value
     )
   }
-  list(contrasts = contrast_rows, tests = test_rows)
+  list(
+    contrasts = contrast_rows, tests = test_rows,
+    omnibus_effects = compute_omnibus_group_effect(spec, values, groups)
+  )
+}
+
+compute_omnibus_group_effect <- function(spec, values, groups) {
+  n <- length(values)
+  n_groups <- length(unique(groups))
+  if (spec$variable_type[[1]] %in% c("continuous", "count")) {
+    group_factor <- factor(groups)
+    means <- tapply(values, group_factor, mean)
+    counts <- table(group_factor)
+    grand_mean <- mean(values)
+    ss_between <- sum(counts * (means - grand_mean)^2)
+    ss_total <- sum((values - grand_mean)^2)
+    estimate <- if (ss_total > 0) ss_between / ss_total else NA_real_
+    fit <- stats::lm(values ~ group_factor)
+    table <- stats::anova(fit)
+    statistic <- table$`F value`[[1]]
+    bounds <- noncentral_parameter_interval(
+      statistic, table$Df[[1]], table$Df[[2]],
+      spec$confidence_level[[1]], distribution = "f"
+    )
+    ci <- bounds / (bounds + n)
+    measure <- "eta_squared"
+    method <- "one_way_anova_ss"
+    ci_method <- "noncentral_f"
+  } else {
+    contingency <- table(groups, values)
+    test <- suppressWarnings(stats::chisq.test(contingency, correct = FALSE))
+    dimension <- min(nrow(contingency) - 1L, ncol(contingency) - 1L)
+    estimate <- if (dimension > 0L) {
+      sqrt(unname(test$statistic) / (n * dimension))
+    } else NA_real_
+    bounds <- noncentral_parameter_interval(
+      unname(test$statistic), unname(test$parameter), NA_real_,
+      spec$confidence_level[[1]], distribution = "chisq"
+    )
+    ci <- if (dimension > 0L) sqrt(bounds / (n * dimension)) else c(NA_real_, NA_real_)
+    ci <- pmin(ci, 1)
+    measure <- "cramers_v"
+    method <- "pearson_chi_squared"
+    ci_method <- "noncentral_chi_squared"
+  }
+  tibble::tibble(
+    analysis_id = spec$analysis_id[[1]], outcome = spec$variable[[1]],
+    predictor = spec$group[[1]], estimate = as.numeric(estimate),
+    std_error = NA_real_, std_error_scale = NA_character_,
+    conf_low = as.numeric(ci[[1]]), conf_high = as.numeric(ci[[2]]),
+    confidence_level = spec$confidence_level[[1]],
+    effect_measure = measure, scale = "zero_to_one", n = as.integer(n),
+    n_groups = as.integer(n_groups), method = method, ci_method = ci_method
+  )
+}
+
+noncentral_parameter_interval <- function(
+  statistic, df1, df2, confidence_level, distribution = c("f", "chisq")
+) {
+  distribution <- match.arg(distribution)
+  alpha <- 1 - confidence_level
+  cdf <- function(ncp) {
+    if (distribution == "f") {
+      stats::pf(statistic, df1, df2, ncp = ncp)
+    } else stats::pchisq(statistic, df1, ncp = ncp)
+  }
+  solve <- function(target) {
+    at_zero <- cdf(0)
+    if (at_zero <= target) return(0)
+    upper <- 1
+    while (cdf(upper) > target && upper < 1e7) upper <- upper * 2
+    if (upper >= 1e7 && cdf(upper) > target) return(Inf)
+    stats::uniroot(function(ncp) cdf(ncp) - target, c(0, upper))$root
+  }
+  c(solve(1 - alpha / 2), solve(alpha / 2))
 }
 
 hedges_g_result <- function(spec, values, groups, numerator_group, reference) {

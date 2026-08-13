@@ -8,6 +8,7 @@
 \alias{models}
 \alias{descriptives}
 \alias{survival_estimates}
+\alias{omnibus_effects}
 \title{Access analysis result components}
 \usage{
 estimates(x)
@@ -23,6 +24,8 @@ models(x)
 descriptives(x)
 
 survival_estimates(x)
+
+omnibus_effects(x)
 }
 \arguments{
 \item{x}{An \code{analysis_result}.}
