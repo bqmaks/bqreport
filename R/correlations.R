@@ -33,6 +33,7 @@ new_correlation_method <- function(id, ci_method) {
 #'   `variables` are compiled.
 #' @param method A correlation method specification.
 #' @param adjust_for Optional numeric covariates for partial correlation.
+#' @param strata Optional variables defining independent correlation strata.
 #' @param missing Pairwise or common complete-case analysis.
 #' @param confidence_level Confidence level.
 #' @param adjust Multiplicity adjustment accepted by [stats::p.adjust()].
@@ -41,6 +42,7 @@ new_correlation_method <- function(id, ci_method) {
 plan_correlations <- function(
   .data, variables = where_continuous(), with = NULL,
   adjust_for = tidyselect::any_of(character()),
+  strata = tidyselect::any_of(character()),
   method = pearson_correlation(), missing = c("pairwise", "complete"),
   confidence_level = 0.95, adjust = "none"
 ) {
@@ -60,6 +62,9 @@ plan_correlations <- function(
     names(tidyselect::eval_select(with_quo, .data))
   adjustment_names <- names(tidyselect::eval_select(
     rlang::enquo(adjust_for), .data
+  ))
+  strata_names <- names(tidyselect::eval_select(
+    rlang::enquo(strata), .data
   ))
   if (length(adjustment_names) && method$id == "kendall") {
     stop_invalid_correlation(
@@ -89,13 +94,23 @@ plan_correlations <- function(
   selected_names <- unique(c(left, right, adjustment_names))
   selected_ids <- registry$var_id[match(selected_names, registry$name)]
   adjustment_ids <- registry$var_id[match(adjustment_names, registry$name)]
-  family_id <- paste0("correlation_family_", uuid::UUIDgenerate())
-  rows <- lapply(seq_len(ncol(pairs)), function(i) {
+  stratum_specs <- compile_stratum_specs(.data, strata_names, registry)
+  task_index <- expand.grid(
+    pair = seq_len(ncol(pairs)), stratum = seq_along(stratum_specs),
+    KEEP.OUT.ATTRS = FALSE
+  )
+  family_ids <- paste0(
+    "correlation_family_", uuid::UUIDgenerate(n = length(stratum_specs))
+  )
+  rows <- lapply(seq_len(nrow(task_index)), function(task) {
+    i <- task_index$pair[[task]]
+    stratum_i <- task_index$stratum[[task]]
+    stratum_spec <- stratum_specs[[stratum_i]]
     x_spec <- registry[match(pairs[1, i], registry$name), , drop = FALSE]
     y_spec <- registry[match(pairs[2, i], registry$name), , drop = FALSE]
     row <- analysis_plan_row(
       x_spec, y_spec, method = NULL, status = "ready", reason = NA_character_,
-      confidence_level = confidence_level
+      confidence_level = confidence_level, stratum_spec = stratum_spec
     )
     row$analysis_type <- "correlation"
     row$variable_x_id <- x_spec$var_id[[1]]
@@ -110,7 +125,7 @@ plan_correlations <- function(
     })
     names(transformations) <- transformation_ids
     row$transformation_specs <- list(transformations)
-    row$correlation_family_id <- family_id
+    row$correlation_family_id <- family_ids[[stratum_i]]
     row$correlation_variable_ids <- list(selected_ids)
     row$adjustment_ids <- list(adjustment_ids)
     row$adjustment_variables <- list(adjustment_names)
@@ -138,14 +153,26 @@ validate_correlation_task <- function(plan, i, data, registry) {
   x_row <- match(plan$variable_x_id[[i]], registry$var_id)
   y_row <- match(plan$variable_y_id[[i]], registry$var_id)
   issues <- character()
+  stratum_rows <- match(plan$stratum_ids[[i]], registry$var_id)
+  if (anyNA(stratum_rows)) {
+    issues <- c(issues, "A correlation stratification variable is absent.")
+    analysis_data <- data[0, , drop = FALSE]
+  } else {
+    current_strata <- registry$name[stratum_rows]
+    plan$strata[[i]] <- current_strata
+    names(plan$stratum_values[[i]]) <- current_strata
+    analysis_data <- data[stratum_mask(
+      data, current_strata, plan$stratum_values[[i]]
+    ), , drop = FALSE]
+  }
   if (is.na(x_row) || is.na(y_row)) {
     issues <- c(issues, "A correlation variable referenced by stable id is absent.")
   } else {
     plan$variable_x[[i]] <- registry$name[[x_row]]
     plan$variable_y[[i]] <- registry$name[[y_row]]
-    x <- correlation_analysis_vector(data, plan[i, , drop = FALSE],
+    x <- correlation_analysis_vector(analysis_data, plan[i, , drop = FALSE],
       registry$name[[x_row]], plan$variable_x_id[[i]])
-    y <- correlation_analysis_vector(data, plan[i, , drop = FALSE],
+    y <- correlation_analysis_vector(analysis_data, plan[i, , drop = FALSE],
       registry$name[[y_row]], plan$variable_y_id[[i]])
     if (inherits(x, "error")) issues <- c(issues, conditionMessage(x))
     if (inherits(y, "error")) issues <- c(issues, conditionMessage(y))
@@ -156,7 +183,7 @@ validate_correlation_task <- function(plan, i, data, registry) {
           "An adjustment variable referenced by stable id is absent."
         ))
         correlation_analysis_vector(
-          data, plan[i, , drop = FALSE], registry$name[[row]], id
+          analysis_data, plan[i, , drop = FALSE], registry$name[[row]], id
         )
       })
       adjustment_errors <- vapply(adjustment_values, inherits, logical(1), "error")
@@ -165,10 +192,12 @@ validate_correlation_task <- function(plan, i, data, registry) {
           adjustment_values[adjustment_errors], conditionMessage, character(1)
         ))
       }
-      mask <- correlation_complete_mask(plan[i, , drop = FALSE], data, x, y)
+      mask <- correlation_complete_mask(
+        plan[i, , drop = FALSE], analysis_data, x, y
+      )
       n <- sum(mask)
-      plan$n_total[[i]] <- nrow(data)
-      plan$n_eligible[[i]] <- nrow(data)
+      plan$n_total[[i]] <- nrow(analysis_data)
+      plan$n_eligible[[i]] <- nrow(analysis_data)
       plan$n_analyzed[[i]] <- n
       plan$n_missing_outcome[[i]] <- sum(is.na(x))
       plan$n_missing_predictor[[i]] <- sum(is.na(y))
@@ -239,6 +268,9 @@ correlation_complete_mask <- function(spec, data, x, y) {
 }
 
 execute_correlation <- function(spec, data) {
+  data <- data[stratum_mask(
+    data, spec$strata[[1]], spec$stratum_values[[1]]
+  ), , drop = FALSE]
   registry <- variables(data)
   x <- correlation_analysis_vector(
     data, spec, spec$variable_x[[1]], spec$variable_x_id[[1]]
@@ -301,6 +333,7 @@ execute_correlation <- function(spec, data) {
     correlation_family_id = spec$correlation_family_id[[1]],
     variable_x_id = spec$variable_x_id[[1]], variable_y_id = spec$variable_y_id[[1]],
     variable_x = spec$variable_x[[1]], variable_y = spec$variable_y[[1]],
+    stratum_label = spec$stratum_label[[1]],
     transformation_x = transformation_id_for(spec, spec$variable_x_id[[1]]),
     transformation_y = transformation_id_for(spec, spec$variable_y_id[[1]]),
     adjustment_variables = list(spec$adjustment_variables[[1]]),
@@ -325,6 +358,7 @@ correlations_prototype <- function() {
     analysis_id = character(), correlation_family_id = character(),
     variable_x_id = character(), variable_y_id = character(),
     variable_x = character(), variable_y = character(),
+    stratum_label = character(),
     transformation_x = character(), transformation_y = character(),
     adjustment_variables = list(), n_adjustment = integer(), estimand = character(),
     estimate = double(), std_error = double(), std_error_scale = character(),

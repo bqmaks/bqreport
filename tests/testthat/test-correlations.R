@@ -149,3 +149,50 @@ test_that("partial correlation preflight validates method and residual df", {
   expect_identical(plan$status, "invalid")
   expect_match(plan$reason, "degrees of freedom|complete", ignore.case = TRUE)
 })
+
+test_that("correlations compile and execute independently by strata", {
+  data <- as_bq_data(tibble::tibble(
+    x = rep(1:6, 2),
+    y = c(1:6, 6:1),
+    arm = rep(c("A", "B"), each = 6)
+  ))
+  plan <- plan_correlations(data, x, with = y, strata = arm, adjust = "holm")
+
+  expect_equal(nrow(plan), 2L)
+  expect_setequal(plan$stratum_label, c("arm=A", "arm=B"))
+  expect_length(unique(plan$correlation_family_id), 2L)
+
+  result <- plan |> validate_plan(data) |> run_analysis(data)
+  output <- correlations(result)
+  expect_setequal(output$stratum_label, c("arm=A", "arm=B"))
+  expect_equal(output$estimate[output$stratum_label == "arm=A"], 1)
+  expect_equal(output$estimate[output$stratum_label == "arm=B"], -1)
+  expect_true(all(output$n == 6L))
+  expect_true(all(output$p_adjusted == output$p_value))
+})
+
+test_that("correlation strata use stable ids after rename", {
+  data <- as_bq_data(tibble::tibble(
+    x = 1:8, y = 2:9, site = rep(c("A", "B"), each = 4)
+  ))
+  plan <- plan_correlations(data, x, with = y, strata = site)
+  renamed <- dplyr::rename(data, centre = site)
+  validated <- validate_plan(plan, renamed)
+
+  expect_true(all(validated$status == "ready"))
+  expect_true(all(validated$strata[[1]] == "centre"))
+})
+
+test_that("correlation strata with insufficient observations fail locally", {
+  data <- as_bq_data(tibble::tibble(
+    x = 1:7, y = 2:8, arm = c(rep("A", 4), rep("B", 3))
+  ))
+  plan <- plan_correlations(data, x, with = y, strata = arm) |>
+    validate_plan(data)
+
+  expect_identical(plan$status[plan$stratum_label == "arm=A"], "ready")
+  expect_identical(plan$status[plan$stratum_label == "arm=B"], "invalid")
+  expect_match(
+    plan$reason[plan$stratum_label == "arm=B"], "complete", ignore.case = TRUE
+  )
+})
