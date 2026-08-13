@@ -3,6 +3,88 @@ valid_variable_types <- c(
   "datetime", "identifier", "unknown"
 )
 
+#' Configure descriptive statistic display templates
+#'
+#' Templates are stored as metadata and are not evaluated at configuration
+#' time. Each template represents one display row. Placeholders such as
+#' `"{mean} ({sd})"` refer to unrounded statistics that will be supplied by the
+#' descriptive analysis and formatted only by the presentation layer.
+#' Model-based fields use the same contract, for example
+#' `"{estimate} ({conf.low}; {conf.high})"`. Requesting such fields does not
+#' store fitted values in variable metadata: a descriptive analysis plan must
+#' declare and run the model that supplies them. For categorical variables,
+#' `{n}` is the level count, `{N}` is the non-missing denominator in the
+#' corresponding population, and `{p}` is the unrounded proportion `n / N`.
+#' Quantitative templates may additionally request `{mad}`, `{skewness}`, and
+#' `{kurtosis}`. Skewness uses the adjusted Fisher--Pearson coefficient;
+#' kurtosis is bias-corrected excess kurtosis, equal to zero for the reference
+#' normal distribution.
+#'
+#' @param .data A `bq_data` object.
+#' @param .cols Columns selected using tidyselect syntax.
+#' @param templates A non-empty character vector of templates, or `NULL` to
+#'   clear the configured templates. Each template must contain at least one
+#'   simple `{statistic}` placeholder. Placeholder names may consist of
+#'   identifier components separated by dots, as in `{conf.low}`.
+#'
+#' @return `.data` with updated variable metadata.
+#' @export
+set_descriptive_statistics <- function(.data, .cols, templates) {
+  check_bq_data(.data)
+  if (!is.null(templates)) {
+    templates <- validate_descriptive_templates(templates)
+  }
+
+  selected <- tidyselect::eval_select(rlang::enquo(.cols), .data)
+  registry <- attr(.data, "variable_registry", exact = TRUE)
+  rows <- match(names(selected), registry$name)
+  for (row in rows) {
+    registry$descriptive_templates[row] <- list(templates)
+  }
+  attr(.data, "variable_registry") <- registry
+  .data
+}
+
+validate_descriptive_templates <- function(templates) {
+  valid <- is.character(templates) && length(templates) > 0L &&
+    !anyNA(templates) && all(nzchar(trimws(templates)))
+  if (!valid) {
+    stop_invalid_descriptive_statistics(
+      "`templates` must be a non-empty character vector without missing or empty values."
+    )
+  }
+
+  placeholder_pattern <- paste0(
+    "\\{[A-Za-z][A-Za-z0-9_]*",
+    "(?:\\.[A-Za-z][A-Za-z0-9_]*)*\\}"
+  )
+  without_placeholders <- gsub(placeholder_pattern, "", templates, perl = TRUE)
+  has_placeholder <- grepl(placeholder_pattern, templates, perl = TRUE)
+  balanced <- !grepl("[{}]", without_placeholders)
+  if (any(!has_placeholder | !balanced)) {
+    stop_invalid_descriptive_statistics(
+      paste0(
+        "Each template must contain only balanced, simple placeholders such as ",
+        "`{mean}`, `{sd}`, or `{conf.low}`."
+      )
+    )
+  }
+
+  templates
+}
+
+stop_invalid_descriptive_statistics <- function(message) {
+  condition <- structure(
+    list(message = message, call = sys.call(-1L)),
+    class = c(
+      "bq_error_invalid_descriptive_statistics",
+      "error",
+      "condition"
+    )
+  )
+  stop(condition)
+}
+
 #' Define outcome variables
 #'
 #' @param .data A `bq_data` object.

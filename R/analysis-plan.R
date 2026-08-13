@@ -336,6 +336,10 @@ validate_plan <- function(plan, data) {
   out <- tibble::as_tibble(plan)
 
   for (i in seq_len(nrow(out))) {
+    if (identical(out$analysis_type[[i]], "descriptive")) {
+      out <- validate_descriptive_plan_task(out, i, data, registry)
+      next
+    }
     out$validated[[i]] <- TRUE
     outcome_row <- match(out$outcome_id[[i]], registry$var_id)
     predictor_row <- match(out$predictor_id[[i]], registry$var_id)

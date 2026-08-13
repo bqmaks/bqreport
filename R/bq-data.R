@@ -58,6 +58,7 @@ new_variable_registry <- function(x) {
     label = unname(vapply(x, variable_label, character(1))),
     unit = rep(NA_character_, n),
     digits = rep(NA_integer_, n),
+    descriptive_templates = rep(list(NULL), n),
     role = rep(list("auxiliary"), n),
     type = analytical_type,
     storage_type = unname(vapply(x, storage_type, character(1))),
@@ -83,7 +84,9 @@ new_variable_registry <- function(x) {
 #'
 #' @param .data A `bq_data` object.
 #' @param metadata A data frame with a required `name` column and optional
-#'   `label`, `unit`, and `digits` columns. Labelled metadata can be supplied as
+#'   `label`, `unit`, and `digits` columns. Descriptive-statistic display
+#'   templates can be supplied as a `descriptive_templates` list-column whose
+#'   elements are character vectors. Labelled metadata can be supplied as
 #'   list-columns named `value_labels`, `na_values`, and `na_range`. Additional,
 #'   non-reserved columns are preserved in the variable registry. Missing
 #'   property values leave the current metadata unchanged.
@@ -229,6 +232,24 @@ validate_dictionary <- function(metadata, data_names) {
       stop_invalid_dictionary("`metadata$digits` must contain non-negative whole numbers or missing values.")
     }
     metadata$digits <- as.integer(digits)
+  }
+  if ("descriptive_templates" %in% names(metadata)) {
+    if (!is.list(metadata$descriptive_templates)) {
+      stop_invalid_dictionary(
+        "`metadata$descriptive_templates` must be a list-column."
+      )
+    }
+    for (templates in metadata$descriptive_templates) {
+      if (is.null(templates)) {
+        next
+      }
+      tryCatch(
+        validate_descriptive_templates(templates),
+        bq_error_invalid_descriptive_statistics = function(error) {
+          stop_invalid_dictionary(conditionMessage(error))
+        }
+      )
+    }
   }
   validate_labelled_dictionary(metadata)
   metadata

@@ -57,6 +57,43 @@ test_that("as_bq_data applies variable metadata without changing data", {
   expect_identical(registry$source, c("dictionary", "dictionary"))
 })
 
+test_that("dictionary accepts descriptive statistic template vectors", {
+  x <- tibble::tibble(age = c(40, 50), response = c(0, 1))
+  metadata <- tibble::tibble(
+    name = c("age", "response"),
+    descriptive_templates = list(
+      c("{mean} ({sd})", "{median} ({q1}; {q3})"),
+      "{n} ({p}%)"
+    )
+  )
+
+  out <- as_bq_data(x, metadata)
+
+  expect_identical(
+    variables(out)$descriptive_templates,
+    metadata$descriptive_templates
+  )
+})
+
+test_that("dictionary validates descriptive statistic templates", {
+  x <- as_bq_data(tibble::tibble(age = 1:3))
+
+  expect_error(
+    apply_dictionary(
+      x,
+      tibble::tibble(name = "age", descriptive_templates = "{mean}")
+    ),
+    class = "bq_error_invalid_dictionary"
+  )
+  expect_error(
+    apply_dictionary(
+      x,
+      tibble::tibble(name = "age", descriptive_templates = list(character()))
+    ),
+    class = "bq_error_invalid_dictionary"
+  )
+})
+
 test_that("apply_dictionary updates only supplied non-missing properties", {
   x <- as_bq_data(tibble::tibble(age = 1:3, group = letters[1:3]))
   metadata <- tibble::tibble(

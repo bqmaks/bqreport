@@ -31,6 +31,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
   issue_rows <- list()
   provenance_rows <- list()
   contrast_rows <- list()
+  descriptive_rows <- list()
 
   for (i in seq_len(nrow(plan))) {
     spec <- plan[i, , drop = FALSE]
@@ -49,6 +50,23 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
           spec$reason[[1]]
         }
       )
+      next
+    }
+
+    if (identical(spec$analysis_type[[1]], "descriptive")) {
+      computed <- tryCatch(
+        compute_observed_descriptives(spec, data),
+        error = function(condition) condition
+      )
+      if (inherits(computed, "error")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "compute", "error", class(computed)[[1]],
+          conditionMessage(computed)
+        )
+      } else {
+        descriptive_rows[[length(descriptive_rows) + 1L]] <- computed
+        provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
+      }
       next
     }
 
@@ -180,7 +198,7 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       estimates = bind_component(estimate_rows, estimates_prototype()),
       contrasts = bind_component(contrast_rows, contrasts_prototype()),
       tests = bind_component(test_rows, tests_prototype()),
-      descriptives = descriptives_prototype(),
+      descriptives = bind_component(descriptive_rows, descriptives_prototype()),
       diagnostics = bind_component(diagnostic_rows, diagnostics_prototype()),
       issues = bind_component(issue_rows, issues_prototype()),
       provenance = bind_component(provenance_rows, provenance_prototype())
@@ -755,8 +773,6 @@ tests_prototype <- function() {
   )
 }
 
-descriptives_prototype <- function() tibble::tibble(analysis_id = character())
-
 diagnostics_prototype <- function() {
   tibble::tibble(
     analysis_id = character(), metric = character(), value = double(),
@@ -850,4 +866,11 @@ issues <- function(x) {
 models <- function(x) {
   check_analysis_result(x)
   x$models
+}
+
+#' @rdname estimates
+#' @export
+descriptives <- function(x) {
+  check_analysis_result(x)
+  x$descriptives
 }

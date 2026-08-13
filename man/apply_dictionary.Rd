@@ -10,7 +10,9 @@ apply_dictionary(.data, metadata)
 \item{.data}{A \code{bq_data} object.}
 
 \item{metadata}{A data frame with a required \code{name} column and optional
-\code{label}, \code{unit}, and \code{digits} columns. Labelled metadata can be supplied as
+\code{label}, \code{unit}, and \code{digits} columns. Descriptive-statistic display
+templates can be supplied as a \code{descriptive_templates} list-column whose
+elements are character vectors. Labelled metadata can be supplied as
 list-columns named \code{value_labels}, \code{na_values}, and \code{na_range}. Additional,
 non-reserved columns are preserved in the variable registry. Missing
 property values leave the current metadata unchanged.}
