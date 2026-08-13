@@ -44,24 +44,7 @@
 
 <div id="контекст-для-следующей-сессии" class="section level1">
 
-<p>Обновлено: 2026-08-13 (Europe/Moscow).</p>
-<div class="section level2">
-<h2 id="изменения-сессии-2026-08-13-вечер">Изменения сессии 2026-08-13 (вечер)<a class="anchor" aria-label="anchor" href="#%D0%B8%D0%B7%D0%BC%D0%B5%D0%BD%D0%B5%D0%BD%D0%B8%D1%8F-%D1%81%D0%B5%D1%81%D1%81%D0%B8%D0%B8-2026-08-13-%D0%B2%D0%B5%D1%87%D0%B5%D1%80"></a></h2>
-<p>Пакет прошёл внешнюю ревизию; все найденные проблемы исправлены:</p>
-<ul><li>
-<strong>Баг resampling</strong>: <code><a href="reference/resampled_correlation.html">resampled_correlation()</a></code> теперь ресемплирует веса вместе с наблюдениями; для методов с subject id — cluster bootstrap по субъектам и перестановки только внутри субъекта (<code>R/correlation-methods.R</code>: <code>resample_correlation_context()</code>, <code>permute_correlation_context()</code>).</li>
-<li>
-<strong>Spearman CI</strong>: SE Bonett–Wright <code>sqrt((1 + r^2/2)/(n - k - 3))</code>, <code>ci_method = "fisher_z_bonett_wright"</code>.</li>
-<li>
-<strong>Point-estimate-only методы</strong> (<code><a href="reference/biweight_correlation.html">biweight_correlation()</a></code>): статус <code>review</code> при валидации; запуск после <code><a href="reference/approve_plan.html">approve_plan()</a></code> или через <code><a href="reference/resampled_correlation.html">resampled_correlation()</a></code>. Ревизия учитывает <code>approved</code> при повторной валидации внутри <code><a href="reference/run_analysis.html">run_analysis()</a></code>.</li>
-<li>
-<strong>Минимум наблюдений</strong> для resampled-методов берётся от base method.</li>
-<li>
-<strong>Детерминированные id</strong>: все идентификаторы — digest содержимого (<code>R/ids.R</code>, <code>bq_id()</code>); <code>uuid</code> удалён из Imports. Одинаковый вход даёт идентичные планы/результаты между запусками (<code>tests/testthat/test-reproducible-ids.R</code>). <code>var_id</code> = <code>var_&lt;имя&gt;</code> с детерминированной суффиксацией при повторном использовании имени.</li>
-<li>
-<strong>Файлы разрезаны</strong>: <code>correlations.R</code> → <code>correlation-methods/plan/ execute/interactions.R</code>; <code>analysis-result.R</code> → <code>+ engines-builtin.R</code>, <code>engines-custom.R</code>, <code>result-components.R</code>, <code>result-accessors.R</code>.</li>
-<li>Примеры <code>@examples</code> у ключевых экспортов; <code>NEWS.md</code>; реальный автор в <code>DESCRIPTION</code>; workflow <code>.github/workflows/R-CMD-check.yaml</code>; AGENTS.md синхронизирован (Imports, стиль ошибок, инвариант №13 об id).</li>
-</ul></div>
+<p>Обновлено: 2026-08-13, вечер (Europe/Moscow). Рабочее дерево чистое, <code>main</code> синхронизирован с <code>origin/main</code>, CI зелёный.</p>
 <div class="section level2">
 <h2 id="быстрый-старт">Быстрый старт<a class="anchor" aria-label="anchor" href="#%D0%B1%D1%8B%D1%81%D1%82%D1%80%D1%8B%D0%B9-%D1%81%D1%82%D0%B0%D1%80%D1%82"></a></h2>
 <ol style="list-style-type: decimal"><li>Полностью прочитать <code>AGENTS.md</code>.</li>
@@ -69,12 +52,19 @@
 <li>Текущая ветка: <code>main</code>, remote: <code>origin</code> (<code>bqmaks/bqreport</code>).</li>
 <li>Перед изменением публичного API сначала добавлять тест.</li>
 <li>Перед публикацией запускать <code>devtools::test()</code> и <code>R CMD check --no-manual</code>.</li>
-</ol><p>На момент handoff рабочее дерево было чистым до обновления этого файла. Последние опубликованные коммиты:</p>
-<pre class="text"><code>88ee3c4 Document package installation
+</ol><p>Последние опубликованные коммиты:</p>
+<pre class="text"><code>339ff4c Fix correlation resampling and make identifiers deterministic
+d7061c3 Update session handoff
+88ee3c4 Document package installation
 8af8e98 Add explicit custom method fallback chains
-9b3ea21 Add vignettes and pkgdown site
-fb968ae Add categorical plot colors
-1e402b4 Add reporting tables and plots</code></pre>
+9b3ea21 Add vignettes and pkgdown site</code></pre>
+</div>
+<div class="section level2">
+<h2 id="состояние-верификации-commit-339ff4c">Состояние верификации (commit 339ff4c)<a class="anchor" aria-label="anchor" href="#%D1%81%D0%BE%D1%81%D1%82%D0%BE%D1%8F%D0%BD%D0%B8%D0%B5-%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D0%B8-commit-339ff4c"></a></h2>
+<pre class="text"><code>devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
+devtools::run_examples(): OK
+R CMD check --no-manual: Status: OK (локально)
+GitHub Actions: R-CMD-check (release + oldrel-1) success, pkgdown success</code></pre>
 </div>
 <div class="section level2">
 <h2 id="архитектура">Архитектура<a class="anchor" aria-label="anchor" href="#%D0%B0%D1%80%D1%85%D0%B8%D1%82%D0%B5%D0%BA%D1%82%D1%83%D1%80%D0%B0"></a></h2>
@@ -86,7 +76,44 @@ fb968ae Add categorical plot colors
   -&gt; analysis_result
   -&gt; tidy data / tables / plots</code></pre>
 <p>Источники истины — <code>bq_data</code> и <code>analysis_plan</code>. Вычисления, диагностика и представление разделены. Все численные результаты хранятся без округления.</p>
+<p>Все идентификаторы детерминированы (<code>R/ids.R</code>, <code>bq_id()</code> — digest содержимого): одинаковый вход компилируется в идентичные планы и результаты между запусками. <code>var_id</code> = <code>var_&lt;имя столбца&gt;</code> с детерминированной суффиксацией, если освобождённое имя переиспользуется (<code>uniquify_fresh_ids()</code> в <code>dplyr_reconstruct</code>). Специализированные планировщики неймспейсят <code>analysis_id</code> через <code>refine_analysis_id()</code>. Случайные id (uuid) запрещены — инвариант №13 в AGENTS.md.</p>
+<div class="section level3">
+<h3 id="карта-файлов-после-разрезания-339ff4c">Карта файлов (после разрезания 339ff4c)<a class="anchor" aria-label="anchor" href="#%D0%BA%D0%B0%D1%80%D1%82%D0%B0-%D1%84%D0%B0%D0%B9%D0%BB%D0%BE%D0%B2-%D0%BF%D0%BE%D1%81%D0%BB%D0%B5-%D1%80%D0%B0%D0%B7%D1%80%D0%B5%D0%B7%D0%B0%D0%BD%D0%B8%D1%8F-339ff4c"></a></h3>
+<ul><li>
+<code>R/analysis-plan.R</code> — plan_analysis, analysis_plan_row, validate_plan, approve_plan.</li>
+<li>
+<code>R/analysis-result.R</code> — только run_analysis (диспетчер по analysis_type).</li>
+<li>
+<code>R/engines-builtin.R</code> — analysis frame, fit builtin engines, tidy extraction, диагностика.</li>
+<li>
+<code>R/engines-custom.R</code> — custom engines, method chains, контрактная валидация вывода.</li>
+<li>
+<code>R/result-components.R</code> — прототипы компонентов, provenance_row, issue_row, engine conditions.</li>
+<li>
+<code>R/result-accessors.R</code> — estimates()/contrasts()/tests()/issues() и пр.</li>
+<li>
+<code>R/correlation-methods.R</code> — конструкторы методов, correlation_output, comparator, resampling (<code>resample_correlation_context()</code> — cluster bootstrap; <code>permute_correlation_context()</code> — within-subject permutation).</li>
+<li>
+<code>R/correlation-plan.R</code> — plan_correlations, preflight.</li>
+<li>
+<code>R/correlation-execute.R</code> — execute_correlation, встроенные оценщики.</li>
+<li>
+<code>R/correlation-interactions.R</code> — interaction tests, Fisher z comparator.</li>
+<li>
+<code>R/ids.R</code> — bq_id, refine_analysis_id, uniquify_fresh_ids.</li>
+</ul></div>
 </div>
+<div class="section level2">
+<h2 id="ключевые-решения-прошлой-сессии-2026-08-13-вечер">Ключевые решения прошлой сессии (2026-08-13, вечер)<a class="anchor" aria-label="anchor" href="#%D0%BA%D0%BB%D1%8E%D1%87%D0%B5%D0%B2%D1%8B%D0%B5-%D1%80%D0%B5%D1%88%D0%B5%D0%BD%D0%B8%D1%8F-%D0%BF%D1%80%D0%BE%D1%88%D0%BB%D0%BE%D0%B9-%D1%81%D0%B5%D1%81%D1%81%D0%B8%D0%B8-2026-08-13-%D0%B2%D0%B5%D1%87%D0%B5%D1%80"></a></h2>
+<ul><li>
+<code><a href="reference/resampled_correlation.html">resampled_correlation()</a></code>: bootstrap ресемплирует веса вместе с наблюдениями; для методов с subject id — cluster bootstrap целыми субъектами, перестановки только внутри субъекта.</li>
+<li>Spearman CI: SE Bonett–Wright <code>sqrt((1 + r^2/2)/(n - k - 3))</code>, <code>ci_method = "fisher_z_bonett_wright"</code>.</li>
+<li>Методы без inference (<code><a href="reference/biweight_correlation.html">biweight_correlation()</a></code>, <code>provides_inference = FALSE</code>) валидируются в статус <code>review</code>; запуск после <code><a href="reference/approve_plan.html">approve_plan()</a></code> или через <code><a href="reference/resampled_correlation.html">resampled_correlation()</a></code>. При re-validation внутри <code><a href="reference/run_analysis.html">run_analysis()</a></code> учитывается <code>plan$approved</code>.</li>
+<li>Минимум наблюдений resampled-метода берётся от base method id.</li>
+<li>Kendall CI — грубая нормальная аппроксимация; задокументировано, рекомендован resampling.</li>
+<li>
+<code>@examples</code> у ключевых экспортов; NEWS.md ведётся; автор в DESCRIPTION реальный; добавлен workflow <code>.github/workflows/R-CMD-check.yaml</code>.</li>
+</ul></div>
 <div class="section level2">
 <h2 id="реализованные-подсистемы">Реализованные подсистемы<a class="anchor" aria-label="anchor" href="#%D1%80%D0%B5%D0%B0%D0%BB%D0%B8%D0%B7%D0%BE%D0%B2%D0%B0%D0%BD%D0%BD%D1%8B%D0%B5-%D0%BF%D0%BE%D0%B4%D1%81%D0%B8%D1%81%D1%82%D0%B5%D0%BC%D1%8B"></a></h2>
 <ul><li>
@@ -99,7 +126,6 @@ fb968ae Add categorical plot colors
 <li>Longitudinal long/wide design, LMM/GLMM/GEE, group × time and contrasts.</li>
 <li>Correlations: Pearson/Spearman/Kendall and extended methods, partial, weighted/repeated/resampled workflows, strata interactions and contrasts-of-contrasts.</li>
 <li>Reporting tables/plots, categorical colors as vector/named vector/function, <code>ru</code>/<code>en</code> groundwork, vignettes and pkgdown configuration.</li>
-<li>README contains GitHub installation via <code>pak</code>, <code>remotes</code>, and local <code>devtools::install()</code>.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="пользовательские-функции">Пользовательские функции<a class="anchor" aria-label="anchor" href="#%D0%BF%D0%BE%D0%BB%D1%8C%D0%B7%D0%BE%D0%B2%D0%B0%D1%82%D0%B5%D0%BB%D1%8C%D1%81%D0%BA%D0%B8%D0%B5-%D1%84%D1%83%D0%BD%D0%BA%D1%86%D0%B8%D0%B8"></a></h2>
@@ -113,47 +139,14 @@ fb968ae Add categorical plot colors
 <li>Malformed output is a typed error and is never repaired heuristically.</li>
 </ul><div class="section level3">
 <h3 id="explicit-runtime-method-chains">Explicit runtime method chains<a class="anchor" aria-label="anchor" href="#explicit-runtime-method-chains"></a></h3>
-<p>Commit <code>8af8e98</code> added:</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="reference/analysis_method_chain.html">analysis_method_chain</a></span><span class="op">(</span><span class="va">id</span>, <span class="va">methods</span>, <span class="va">advance_on</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="reference/analysis_function.html">analysis_function</a></span><span class="op">(</span></span>
-<span>  <span class="va">id</span>, <span class="va">run</span>, <span class="va">effect_measure</span>, <span class="va">scale</span>,</span>
-<span>  fallback <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="va">...</span><span class="op">)</span>,</span>
-<span>  advance_on <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bq_error_convergence"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>Properties:</p>
-<ul><li>only declared condition classes allow advancement;</li>
-<li>all members must have identical effect measure, scale, model scale and exponentiation policy;</li>
-<li>
-<code>bq_error_invalid_engine_output</code> and contract errors never advance;</li>
-<li>
-<code>attempts(result)</code> contains every attempted method;</li>
-<li>plan stores <code>method_chain</code>, <code>fallback_conditions</code>, <code>executed_method</code>;</li>
-<li>provenance stores declared chain, actual method and <code>fallback_used</code>;</li>
-<li>failed attempts also appear in <code><a href="reference/estimates.html">issues()</a></code>.</li>
-</ul><p>Current limitation: runtime chains accept custom <code><a href="reference/analysis_function.html">analysis_function()</a></code> / <code><a href="reference/analysis_method.html">analysis_method()</a></code> members only. Built-in engines are not chain members yet.</p>
+<p><code>analysis_method_chain(id, methods, advance_on)</code> и <code>fallback</code>/<code>advance_on</code> у <code><a href="reference/analysis_function.html">analysis_function()</a></code>: продвижение только по объявленным condition classes; члены цепочки обязаны иметь идентичные effect measure/scale/ exponentiation; <code>attempts(result)</code> хранит каждую попытку; provenance — declared chain, actual method, <code>fallback_used</code>.</p>
+<p>Ограничение: членами runtime chain могут быть только пользовательские <code><a href="reference/analysis_function.html">analysis_function()</a></code>/<code><a href="reference/analysis_method.html">analysis_method()</a></code>; встроенные engines — ещё нет.</p>
 </div>
 </div>
 <div class="section level2">
 <h2 id="документация">Документация<a class="anchor" aria-label="anchor" href="#%D0%B4%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82%D0%B0%D1%86%D0%B8%D1%8F"></a></h2>
 <p>Pkgdown site: <a href="https://bqmaks.github.io/bqreport/" class="uri">https://bqmaks.github.io/bqreport/</a></p>
-<p>Main vignettes:</p>
-<ul><li><code>vignettes/get-started.Rmd</code></li>
-<li><code>vignettes/descriptive-analysis.Rmd</code></li>
-<li><code>vignettes/models-and-contrasts.Rmd</code></li>
-<li><code>vignettes/correlation-analysis.Rmd</code></li>
-<li><code>vignettes/longitudinal-survival.Rmd</code></li>
-<li><code>vignettes/custom-functions.Rmd</code></li>
-<li><code>vignettes/examples-gallery.Rmd</code></li>
-</ul><p><code>custom-functions.Rmd</code> now contains an executable three-group custom HC3 linear model showing <code><a href="reference/analysis_method.html">analysis_method()</a></code>, estimates, omnibus test, custom pairwise contrasts, Holm adjustment and standard reporting.</p>
-</div>
-<div class="section level2">
-<h2 id="последняя-верификация">Последняя верификация<a class="anchor" aria-label="anchor" href="#%D0%BF%D0%BE%D1%81%D0%BB%D0%B5%D0%B4%D0%BD%D1%8F%D1%8F-%D0%B2%D0%B5%D1%80%D0%B8%D1%84%D0%B8%D0%BA%D0%B0%D1%86%D0%B8%D1%8F"></a></h2>
-<p>После правок сессии 2026-08-13 (вечер):</p>
-<pre class="text"><code>devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
-devtools::run_examples(): OK
-R CMD check --no-manual: Status: OK</code></pre>
+<p>Виньетки: <code>get-started</code>, <code>descriptive-analysis</code>, <code>models-and-contrasts</code>, <code>correlation-analysis</code>, <code>longitudinal-survival</code>, <code>custom-functions</code> (включает исполняемый three-group custom HC3 workflow), <code>examples-gallery</code>.</p>
 </div>
 <div class="section level2">
 <h2 id="важный-незакрытый-пробел">Важный незакрытый пробел<a class="anchor" aria-label="anchor" href="#%D0%B2%D0%B0%D0%B6%D0%BD%D1%8B%D0%B9-%D0%BD%D0%B5%D0%B7%D0%B0%D0%BA%D1%80%D1%8B%D1%82%D1%8B%D0%B9-%D0%BF%D1%80%D0%BE%D0%B1%D0%B5%D0%BB"></a></h2>
@@ -174,13 +167,18 @@ R CMD check --no-manual: Status: OK</code></pre>
 <li>Добавить Holm/другие <code>p.adjust</code> методы и non-estimable diagnostics.</li>
 <li>Обновить three-group vignette полным исполняемым workflow, включая пользовательские функции на descriptive/selector/model/contrast этапах.</li>
 <li>После тестов обновить pkgdown и опубликовать.</li>
-</ol></div>
+</ol><p>Мелкие кандидаты в бэклог:</p>
+<ul><li>coverage workflow (covr локально не установлен; воркфлоу не добавлен, чтобы не публиковать непроверенный YAML);</li>
+<li>
+<code><a href="reference/set_comparisons.html">set_comparisons()</a></code> дважды для одного predictor сейчас дописывает дубликат в contrast registry — рассмотреть replace-семантику;</li>
+<li>встроенные engines как члены <code>analysis_method_chain</code>.</li>
+</ul></div>
 <div class="section level2">
 <h2 id="githubокружение">GitHub/окружение<a class="anchor" aria-label="anchor" href="#github%D0%BE%D0%BA%D1%80%D1%83%D0%B6%D0%B5%D0%BD%D0%B8%D0%B5"></a></h2>
-<ul><li>SSH push в <code>origin/main</code> работает.</li>
-<li>
-<code>gh auth status</code> сообщал о недействительном CLI token; это не блокировало обычный <code>git push</code> по SSH.</li>
+<ul><li>SSH push в <code>origin/main</code> работает; <code>gh</code> CLI тоже работает (<code>gh run list</code> показывает статусы Actions).</li>
+<li>CI: <code>.github/workflows/R-CMD-check.yaml</code> (ubuntu, release + oldrel-1) и <code>pkgdown.yaml</code> (деплой на gh-pages).</li>
 <li>Не добавлять build/check artifacts: <code>/*.tar.gz</code>, <code>/*.Rcheck/</code> и <code>docs/</code> исключены через <code>.gitignore</code>.</li>
+<li>При правках публичного API: NEWS.md обновлять в том же коммите.</li>
 </ul></div>
 </div>
 
