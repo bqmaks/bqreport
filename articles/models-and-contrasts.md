@@ -24,10 +24,10 @@ estimates(result)
 #> # A tibble: 4 × 22
 #>   analysis_id                  outcome predictor stratum_label transformation_id
 #>   <chr>                        <chr>   <chr>     <chr>         <chr>            
-#> 1 analysis_54520c53-0d7d-41f3… score   arm       NA            NA               
-#> 2 analysis_54520c53-0d7d-41f3… score   arm       NA            NA               
-#> 3 analysis_54520c53-0d7d-41f3… score   arm       NA            NA               
-#> 4 analysis_54520c53-0d7d-41f3… score   arm       NA            NA               
+#> 1 analysis_aba68623-2c72-4ac1… score   arm       NA            NA               
+#> 2 analysis_aba68623-2c72-4ac1… score   arm       NA            NA               
+#> 3 analysis_aba68623-2c72-4ac1… score   arm       NA            NA               
+#> 4 analysis_aba68623-2c72-4ac1… score   arm       NA            NA               
 #> # ℹ 17 more variables: transformation_label <chr>, term <chr>, level <chr>,
 #> #   estimate <dbl>, std_error <dbl>, std_error_scale <chr>, conf_low <dbl>,
 #> #   conf_high <dbl>, statistic <dbl>, df <dbl>, p_value <dbl>,
@@ -37,8 +37,8 @@ contrasts(result)
 #> # A tibble: 2 × 19
 #>   analysis_id       outcome predictor contrast_id contrast numerator denominator
 #>   <chr>             <chr>   <chr>     <chr>       <chr>    <chr>     <chr>      
-#> 1 analysis_54520c5… score   arm       contrast_9… Low - C… Low       Control    
-#> 2 analysis_54520c5… score   arm       contrast_9… High - … High      Control    
+#> 1 analysis_aba6862… score   arm       contrast_a… Low - C… Low       Control    
+#> 2 analysis_aba6862… score   arm       contrast_a… High - … High      Control    
 #> # ℹ 12 more variables: modifier <chr>, modifier_level <chr>, estimate <dbl>,
 #> #   std_error <dbl>, std_error_scale <chr>, conf_low <dbl>, conf_high <dbl>,
 #> #   p_value <dbl>, p_adjusted <dbl>, adjust_method <chr>, effect_measure <chr>,

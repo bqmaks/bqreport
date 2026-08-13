@@ -13,6 +13,8 @@ diagnostics(x)
 
 issues(x)
 
+attempts(x)
+
 models(x)
 
 descriptives(x)

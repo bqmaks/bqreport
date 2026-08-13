@@ -12,7 +12,9 @@ analysis_function(
   scale,
   required_packages = character(),
   exponentiate = FALSE,
-  model_scale = scale
+  model_scale = scale,
+  fallback = NULL,
+  advance_on = character()
 )
 ```
 
@@ -47,6 +49,16 @@ analysis_function(
 - model_scale:
 
   Scale returned by the custom callbacks before optional exponentiation.
+
+- fallback:
+
+  Optional named list of additional custom methods attempted
+  sequentially after an explicitly allowed failure of `run`.
+
+- advance_on:
+
+  Condition classes that permit advancing to the next declared method.
+  Contract violations never permit advancement.
 
 ## Value
 

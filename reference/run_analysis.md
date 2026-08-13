@@ -2,7 +2,9 @@
 
 Only validated tasks with status `ready` are executed. Other tasks are
 retained in the result plan and represented in the issues component.
-Engine failures never trigger a fallback method.
+Engine failures never trigger an undeclared fallback method. Explicit
+[`analysis_method_chain()`](https://bqmaks.github.io/bqreport/reference/analysis_method_chain.md)
+objects retain every runtime attempt.
 
 ## Usage
 

@@ -104,7 +104,7 @@ value.</p>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 43</span></span></span>
 <span><span class="co">#&gt;   analysis_id       correlation_family_id variable_x_id variable_y_id variable_x</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>             <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                 <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_f456ce1… correlation_family_2… var_f3a0b123… var_23147973… x         </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_a7ca63a… correlation_family_8… var_8d91008e… var_de521b49… x         </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 38 more variables: variable_y &lt;chr&gt;, stratum_label &lt;chr&gt;, strata &lt;list&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   correlation_interaction_id &lt;chr&gt;, interaction_test &lt;lgl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   correlation_comparator &lt;list&gt;, correlation_comparator_id &lt;chr&gt;,</span></span></span>
@@ -171,8 +171,8 @@ and robust interpretation declared in advance.</p>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 22</span></span></span>
 <span><span class="co">#&gt;   analysis_id                  outcome predictor stratum_label transformation_id</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_966a43c3-22e2-4bd9… outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_966a43c3-22e2-4bd9… outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_0c053145-0fb7-4b2f… outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_0c053145-0fb7-4b2f… outcome exposed   <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 17 more variables: transformation_label &lt;chr&gt;, term &lt;chr&gt;, level &lt;chr&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   estimate &lt;dbl&gt;, std_error &lt;dbl&gt;, std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   conf_high &lt;dbl&gt;, statistic &lt;dbl&gt;, df &lt;dbl&gt;, p_value &lt;dbl&gt;,</span></span></span>
@@ -188,10 +188,270 @@ and robust interpretation declared in advance.</p>
 missing columns or silently switch engines.</p>
 </div>
 <div class="section level2">
+<h2 id="an-explicit-fallback-chain">An explicit fallback chain<a class="anchor" aria-label="anchor" href="#an-explicit-fallback-chain"></a>
+</h2>
+<p>A runtime fallback is available only as an inspectable chain. Each
+next method must have the same estimand and output scale, and is
+attempted only for a condition class listed in
+<code>advance_on</code>.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">primary_rr</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/analysis_function.html">analysis_function</a></span><span class="op">(</span></span>
+<span>  id <span class="op">=</span> <span class="st">"primary_rr"</span>,</span>
+<span>  effect_measure <span class="op">=</span> <span class="st">"risk_ratio"</span>,</span>
+<span>  scale <span class="op">=</span> <span class="st">"ratio"</span>,</span>
+<span>  run <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">context</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="kw"><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/structure.html" class="external-link">structure</a></span><span class="op">(</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>message <span class="op">=</span> <span class="st">"Numerical method did not converge"</span>, call <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span>,</span>
+<span>      class <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"bq_error_numerical_failure"</span>, <span class="st">"error"</span>, <span class="st">"condition"</span><span class="op">)</span></span>
+<span>    <span class="op">)</span><span class="op">)</span></span>
+<span>  <span class="op">}</span>,</span>
+<span>  fallback <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>poisson_rr <span class="op">=</span> <span class="va">custom_rr</span><span class="op">)</span>,</span>
+<span>  advance_on <span class="op">=</span> <span class="st">"bq_error_numerical_failure"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">fallback_result</span> <span class="op">&lt;-</span> <span class="va">binary</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/plan_analysis.html">plan_analysis</a></span><span class="op">(</span></span>
+<span>    <span class="va">outcome</span>, <span class="va">exposed</span>,</span>
+<span>    rules <span class="op">=</span> <span class="fu"><a href="../reference/analysis_rules.html">analysis_rules</a></span><span class="op">(</span><span class="fu"><a href="../reference/where_type.html">where_binary</a></span><span class="op">(</span><span class="op">)</span> <span class="op">~</span> <span class="va">primary_rr</span><span class="op">)</span></span>
+<span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/validate_plan.html">validate_plan</a></span><span class="op">(</span><span class="va">binary</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/run_analysis.html">run_analysis</a></span><span class="op">(</span><span class="va">binary</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/estimates.html">attempts</a></span><span class="op">(</span><span class="va">fallback_result</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 8</span></span></span>
+<span><span class="co">#&gt;   analysis_id      chain_id attempt member method status condition_class message</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;int&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>           <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_0431eb… primary…       1 prima… prima… failed bq_error_numer… Numeri…</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_0431eb… primary…       2 poiss… custo… succe… <span style="color: #BB0000;">NA</span>              <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="va">fallback_result</span><span class="op">$</span><span class="va">provenance</span><span class="op">[</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>  <span class="st">"method_chain"</span>, <span class="st">"fallback_conditions"</span>, <span class="st">"executed_method"</span>, <span class="st">"fallback_used"</span></span>
+<span><span class="op">)</span><span class="op">]</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 4</span></span></span>
+<span><span class="co">#&gt;   method_chain fallback_conditions executed_method      fallback_used</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;list&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;list&gt;</span>              <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                <span style="color: #949494; font-style: italic;">&lt;lgl&gt;</span>        </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> <span style="color: #949494;">&lt;chr [2]&gt;</span>    <span style="color: #949494;">&lt;chr [1]&gt;</span>           custom_relative_risk TRUE</span></span></code></pre></div>
+<p><code>bq_error_invalid_engine_output</code> and other contract
+violations never advance the chain. They indicate an implementation bug
+rather than an expected statistical failure.</p>
+</div>
+<div class="section level2">
+<h2 id="a-custom-model-in-a-three-group-workflow">A custom model in a three-group workflow<a class="anchor" aria-label="anchor" href="#a-custom-model-in-a-three-group-workflow"></a>
+</h2>
+<p>The next model keeps the ordinary least-squares estimand but replaces
+the model-based covariance matrix with HC3 robust standard errors.
+Because the method returns the stable estimates schema, it can be used
+by the same planner and reporting layer as built-in models.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">hc3_linear_model</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/analysis_method.html">analysis_method</a></span><span class="op">(</span></span>
+<span>  id <span class="op">=</span> <span class="st">"hc3_linear_model"</span>,</span>
+<span>  effect_measure <span class="op">=</span> <span class="st">"mean_difference"</span>,</span>
+<span>  scale <span class="op">=</span> <span class="st">"identity"</span>,</span>
+<span>  required_packages <span class="op">=</span> <span class="st">"sandwich"</span>,</span>
+<span></span>
+<span>  fit <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">context</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/lm.html" class="external-link">lm</a></span><span class="op">(</span></span>
+<span>      <span class="va">context</span><span class="op">$</span><span class="va">formula</span>,</span>
+<span>      data <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">model_frame</span>,</span>
+<span>      na.action <span class="op">=</span> <span class="fu">stats</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/r/stats/na.fail.html" class="external-link">na.omit</a></span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">}</span>,</span>
+<span></span>
+<span>  tidy_estimates <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span>, <span class="va">context</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">beta</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span>    <span class="va">covariance</span> <span class="op">&lt;-</span> <span class="fu">sandwich</span><span class="fu">::</span><span class="fu"><a href="https://zeileis.codeberg.page/sandwich/reference/vcovHC.html" class="external-link">vcovHC</a></span><span class="op">(</span><span class="va">fit</span>, type <span class="op">=</span> <span class="st">"HC3"</span><span class="op">)</span></span>
+<span>    <span class="va">standard_error</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span><span class="va">covariance</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="va">degrees</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/df.residual.html" class="external-link">df.residual</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span>    <span class="va">critical</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/TDist.html" class="external-link">qt</a></span><span class="op">(</span></span>
+<span>      <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">context</span><span class="op">$</span><span class="va">confidence_level</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span>,</span>
+<span>      df <span class="op">=</span> <span class="va">degrees</span></span>
+<span>    <span class="op">)</span></span>
+<span>    <span class="va">statistic</span> <span class="op">&lt;-</span> <span class="va">beta</span> <span class="op">/</span> <span class="va">standard_error</span></span>
+<span></span>
+<span>    <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html" class="external-link">tibble</a></span><span class="op">(</span></span>
+<span>      analysis_id <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">analysis_id</span>,</span>
+<span>      outcome <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">outcome_spec</span><span class="op">$</span><span class="va">name</span>,</span>
+<span>      predictor <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">predictor_spec</span><span class="op">$</span><span class="va">name</span>,</span>
+<span>      term <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/names.html" class="external-link">names</a></span><span class="op">(</span><span class="va">beta</span><span class="op">)</span>,</span>
+<span>      level <span class="op">=</span> <span class="cn">NA_character_</span>,</span>
+<span>      estimate <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">beta</span><span class="op">)</span>,</span>
+<span>      std_error <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">standard_error</span><span class="op">)</span>,</span>
+<span>      std_error_scale <span class="op">=</span> <span class="st">"identity"</span>,</span>
+<span>      conf_low <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">beta</span> <span class="op">-</span> <span class="va">critical</span> <span class="op">*</span> <span class="va">standard_error</span><span class="op">)</span>,</span>
+<span>      conf_high <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">beta</span> <span class="op">+</span> <span class="va">critical</span> <span class="op">*</span> <span class="va">standard_error</span><span class="op">)</span>,</span>
+<span>      statistic <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">statistic</span><span class="op">)</span>,</span>
+<span>      df <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="va">degrees</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">beta</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>      p_value <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span></span>
+<span>        <span class="fl">2</span> <span class="op">*</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/TDist.html" class="external-link">pt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">statistic</span><span class="op">)</span>, df <span class="op">=</span> <span class="va">degrees</span>, lower.tail <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span>      <span class="op">)</span>,</span>
+<span>      effect_measure <span class="op">=</span> <span class="st">"mean_difference"</span>,</span>
+<span>      scale <span class="op">=</span> <span class="st">"identity"</span>,</span>
+<span>      n <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/integer.html" class="external-link">as.integer</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/nobs.html" class="external-link">nobs</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span>, <span class="fu"><a href="https://rdrr.io/r/base/length.html" class="external-link">length</a></span><span class="op">(</span><span class="va">beta</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>      n_events <span class="op">=</span> <span class="cn">NA_integer_</span>,</span>
+<span>      method <span class="op">=</span> <span class="st">"hc3_linear_model"</span>,</span>
+<span>      variance <span class="op">=</span> <span class="st">"HC3"</span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">}</span>,</span>
+<span></span>
+<span>  tidy_tests <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span>, <span class="va">context</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">omnibus</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/anova.html" class="external-link">anova</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span>    <span class="va">predictor_row</span> <span class="op">&lt;-</span> <span class="fl">1L</span></span>
+<span></span>
+<span>    <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html" class="external-link">tibble</a></span><span class="op">(</span></span>
+<span>      analysis_id <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">analysis_id</span>,</span>
+<span>      outcome <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">outcome_spec</span><span class="op">$</span><span class="va">name</span>,</span>
+<span>      predictor <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">predictor_spec</span><span class="op">$</span><span class="va">name</span>,</span>
+<span>      contrast <span class="op">=</span> <span class="cn">NA_character_</span>,</span>
+<span>      numerator <span class="op">=</span> <span class="cn">NA_character_</span>,</span>
+<span>      denominator <span class="op">=</span> <span class="cn">NA_character_</span>,</span>
+<span>      test <span class="op">=</span> <span class="st">"predictor_omnibus"</span>,</span>
+<span>      statistic <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">omnibus</span><span class="op">$</span><span class="va">`F value`</span><span class="op">[[</span><span class="va">predictor_row</span><span class="op">]</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>      df <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">omnibus</span><span class="op">$</span><span class="va">Df</span><span class="op">[[</span><span class="va">predictor_row</span><span class="op">]</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>      p_value <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/unname.html" class="external-link">unname</a></span><span class="op">(</span><span class="va">omnibus</span><span class="op">$</span><span class="va">`Pr(&gt;F)`</span><span class="op">[[</span><span class="va">predictor_row</span><span class="op">]</span><span class="op">]</span><span class="op">)</span>,</span>
+<span>      p_adjusted <span class="op">=</span> <span class="cn">NA_real_</span>,</span>
+<span>      adjust_method <span class="op">=</span> <span class="st">"none"</span>,</span>
+<span>      method <span class="op">=</span> <span class="st">"hc3_linear_model"</span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">}</span>,</span>
+<span></span>
+<span>  compute_contrasts <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">fit</span>, <span class="va">context</span><span class="op">)</span> <span class="op">{</span></span>
+<span>    <span class="va">group_name</span> <span class="op">&lt;-</span> <span class="va">context</span><span class="op">$</span><span class="va">predictor_spec</span><span class="op">$</span><span class="va">name</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span></span>
+<span>    <span class="va">group_levels</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/levels.html" class="external-link">levels</a></span><span class="op">(</span><span class="va">context</span><span class="op">$</span><span class="va">model_frame</span><span class="op">[[</span><span class="va">group_name</span><span class="op">]</span><span class="op">]</span><span class="op">)</span></span>
+<span>    <span class="va">pairs</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu">utils</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/utils/combn.html" class="external-link">combn</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_along</a></span><span class="op">(</span><span class="va">group_levels</span><span class="op">)</span>, <span class="fl">2L</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span>    <span class="va">reference_grid</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/setNames.html" class="external-link">setNames</a></span><span class="op">(</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="va">group_levels</span>, levels <span class="op">=</span> <span class="va">group_levels</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>      <span class="va">group_name</span></span>
+<span>    <span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span><span class="op">)</span></span>
+<span>    <span class="va">design</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/model.matrix.html" class="external-link">model.matrix</a></span><span class="op">(</span></span>
+<span>      <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/delete.response.html" class="external-link">delete.response</a></span><span class="op">(</span><span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/terms.html" class="external-link">terms</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>      <span class="va">reference_grid</span></span>
+<span>    <span class="op">)</span></span>
+<span></span>
+<span>    <span class="va">beta</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/coef.html" class="external-link">coef</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span>    <span class="va">covariance</span> <span class="op">&lt;-</span> <span class="fu">sandwich</span><span class="fu">::</span><span class="fu"><a href="https://zeileis.codeberg.page/sandwich/reference/vcovHC.html" class="external-link">vcovHC</a></span><span class="op">(</span><span class="va">fit</span>, type <span class="op">=</span> <span class="st">"HC3"</span><span class="op">)</span></span>
+<span>    <span class="va">degrees</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/df.residual.html" class="external-link">df.residual</a></span><span class="op">(</span><span class="va">fit</span><span class="op">)</span></span>
+<span>    <span class="va">critical</span> <span class="op">&lt;-</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/TDist.html" class="external-link">qt</a></span><span class="op">(</span></span>
+<span>      <span class="op">(</span><span class="fl">1</span> <span class="op">+</span> <span class="va">context</span><span class="op">$</span><span class="va">confidence_level</span><span class="op">)</span> <span class="op">/</span> <span class="fl">2</span>,</span>
+<span>      df <span class="op">=</span> <span class="va">degrees</span></span>
+<span>    <span class="op">)</span></span>
+<span></span>
+<span>    <span class="va">contrast_matrix</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply</a></span><span class="op">(</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq_len</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">nrow</a></span><span class="op">(</span><span class="va">pairs</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>      <span class="kw">function</span><span class="op">(</span><span class="va">i</span><span class="op">)</span> <span class="va">design</span><span class="op">[</span><span class="va">pairs</span><span class="op">[</span><span class="va">i</span>, <span class="fl">2L</span><span class="op">]</span>, <span class="op">]</span> <span class="op">-</span> <span class="va">design</span><span class="op">[</span><span class="va">pairs</span><span class="op">[</span><span class="va">i</span>, <span class="fl">1L</span><span class="op">]</span>, <span class="op">]</span>,</span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">numeric</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/nrow.html" class="external-link">ncol</a></span><span class="op">(</span><span class="va">design</span><span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="va">estimate</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/numeric.html" class="external-link">as.numeric</a></span><span class="op">(</span><span class="va">contrast_matrix</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">beta</span><span class="op">)</span></span>
+<span>    <span class="va">standard_error</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">sqrt</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/diag.html" class="external-link">diag</a></span><span class="op">(</span></span>
+<span>      <span class="va">contrast_matrix</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="va">covariance</span> <span class="op"><a href="https://rdrr.io/r/base/matmult.html" class="external-link">%*%</a></span> <span class="fu"><a href="https://rdrr.io/r/base/t.html" class="external-link">t</a></span><span class="op">(</span><span class="va">contrast_matrix</span><span class="op">)</span></span>
+<span>    <span class="op">)</span><span class="op">)</span></span>
+<span>    <span class="va">statistic</span> <span class="op">&lt;-</span> <span class="va">estimate</span> <span class="op">/</span> <span class="va">standard_error</span></span>
+<span>    <span class="va">p_value</span> <span class="op">&lt;-</span> <span class="fl">2</span> <span class="op">*</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/TDist.html" class="external-link">pt</a></span><span class="op">(</span></span>
+<span>      <span class="fu"><a href="https://rdrr.io/r/base/MathFun.html" class="external-link">abs</a></span><span class="op">(</span><span class="va">statistic</span><span class="op">)</span>, df <span class="op">=</span> <span class="va">degrees</span>, lower.tail <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>    <span class="op">)</span></span>
+<span>    <span class="va">comparison</span> <span class="op">&lt;-</span> <span class="va">context</span><span class="op">$</span><span class="va">contrast_specs</span><span class="op">[</span><span class="fl">1</span>, , drop <span class="op">=</span> <span class="cn">FALSE</span><span class="op">]</span></span>
+<span>    <span class="va">adjust</span> <span class="op">&lt;-</span> <span class="va">comparison</span><span class="op">$</span><span class="va">adjust_method</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span></span>
+<span>    <span class="va">numerator</span> <span class="op">&lt;-</span> <span class="va">group_levels</span><span class="op">[</span><span class="va">pairs</span><span class="op">[</span>, <span class="fl">2L</span><span class="op">]</span><span class="op">]</span></span>
+<span>    <span class="va">denominator</span> <span class="op">&lt;-</span> <span class="va">group_levels</span><span class="op">[</span><span class="va">pairs</span><span class="op">[</span>, <span class="fl">1L</span><span class="op">]</span><span class="op">]</span></span>
+<span></span>
+<span>    <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html" class="external-link">tibble</a></span><span class="op">(</span></span>
+<span>      analysis_id <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">analysis_id</span>,</span>
+<span>      outcome <span class="op">=</span> <span class="va">context</span><span class="op">$</span><span class="va">outcome_spec</span><span class="op">$</span><span class="va">name</span>,</span>
+<span>      predictor <span class="op">=</span> <span class="va">group_name</span>,</span>
+<span>      contrast_id <span class="op">=</span> <span class="va">comparison</span><span class="op">$</span><span class="va">contrast_id</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span>,</span>
+<span>      contrast <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span><span class="va">numerator</span>, <span class="st">"vs"</span>, <span class="va">denominator</span><span class="op">)</span>,</span>
+<span>      numerator <span class="op">=</span> <span class="va">numerator</span>,</span>
+<span>      denominator <span class="op">=</span> <span class="va">denominator</span>,</span>
+<span>      estimate <span class="op">=</span> <span class="va">estimate</span>,</span>
+<span>      std_error <span class="op">=</span> <span class="va">standard_error</span>,</span>
+<span>      std_error_scale <span class="op">=</span> <span class="st">"identity"</span>,</span>
+<span>      conf_low <span class="op">=</span> <span class="va">estimate</span> <span class="op">-</span> <span class="va">critical</span> <span class="op">*</span> <span class="va">standard_error</span>,</span>
+<span>      conf_high <span class="op">=</span> <span class="va">estimate</span> <span class="op">+</span> <span class="va">critical</span> <span class="op">*</span> <span class="va">standard_error</span>,</span>
+<span>      p_value <span class="op">=</span> <span class="va">p_value</span>,</span>
+<span>      p_adjusted <span class="op">=</span> <span class="fu">stats</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/stats/p.adjust.html" class="external-link">p.adjust</a></span><span class="op">(</span><span class="va">p_value</span>, method <span class="op">=</span> <span class="va">adjust</span><span class="op">)</span>,</span>
+<span>      adjust_method <span class="op">=</span> <span class="va">adjust</span>,</span>
+<span>      effect_measure <span class="op">=</span> <span class="st">"mean_difference"</span>,</span>
+<span>      scale <span class="op">=</span> <span class="st">"identity"</span></span>
+<span>    <span class="op">)</span></span>
+<span>  <span class="op">}</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>The model is then registered through an ordinary analysis rule.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">three_groups</span> <span class="op">&lt;-</span> <span class="fu">tibble</span><span class="fu">::</span><span class="fu"><a href="https://tibble.tidyverse.org/reference/tibble.html" class="external-link">tibble</a></span><span class="op">(</span></span>
+<span>  arm <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span></span>
+<span>    <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Control"</span>, <span class="st">"Treatment A"</span>, <span class="st">"Treatment B"</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">8</span><span class="op">)</span>,</span>
+<span>    levels <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Control"</span>, <span class="st">"Treatment A"</span>, <span class="st">"Treatment B"</span><span class="op">)</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  score <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    <span class="fl">42</span>, <span class="fl">45</span>, <span class="fl">48</span>, <span class="fl">50</span>, <span class="fl">51</span>, <span class="fl">53</span>, <span class="fl">54</span>, <span class="fl">57</span>,</span>
+<span>    <span class="fl">47</span>, <span class="fl">49</span>, <span class="fl">52</span>, <span class="fl">55</span>, <span class="fl">57</span>, <span class="fl">58</span>, <span class="fl">61</span>, <span class="fl">64</span>,</span>
+<span>    <span class="fl">51</span>, <span class="fl">54</span>, <span class="fl">56</span>, <span class="fl">59</span>, <span class="fl">62</span>, <span class="fl">64</span>, <span class="fl">67</span>, <span class="fl">70</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/as_bq_data.html">as_bq_data</a></span><span class="op">(</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/set_outcome.html">set_outcome</a></span><span class="op">(</span><span class="va">score</span>, type <span class="op">=</span> <span class="st">"continuous"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/set_predictor.html">set_predictor</a></span><span class="op">(</span><span class="va">arm</span>, type <span class="op">=</span> <span class="st">"nominal"</span>, reference <span class="op">=</span> <span class="st">"Control"</span><span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/set_comparisons.html">set_comparisons</a></span><span class="op">(</span><span class="va">arm</span>, <span class="fu"><a href="../reference/all_pairwise.html">all_pairwise</a></span><span class="op">(</span><span class="op">)</span>, adjust <span class="op">=</span> <span class="st">"holm"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">hc3_plan</span> <span class="op">&lt;-</span> <span class="va">three_groups</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/plan_analysis.html">plan_analysis</a></span><span class="op">(</span></span>
+<span>    outcomes <span class="op">=</span> <span class="va">score</span>,</span>
+<span>    predictors <span class="op">=</span> <span class="va">arm</span>,</span>
+<span>    rules <span class="op">=</span> <span class="fu"><a href="../reference/analysis_rules.html">analysis_rules</a></span><span class="op">(</span><span class="fu"><a href="../reference/where_type.html">where_continuous</a></span><span class="op">(</span><span class="op">)</span> <span class="op">~</span> <span class="va">hc3_linear_model</span><span class="op">)</span></span>
+<span>  <span class="op">)</span> <span class="op">|&gt;</span></span>
+<span>  <span class="fu"><a href="../reference/validate_plan.html">validate_plan</a></span><span class="op">(</span><span class="va">three_groups</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">hc3_result</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/run_analysis.html">run_analysis</a></span><span class="op">(</span><span class="va">hc3_plan</span>, <span class="va">three_groups</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/estimates.html">estimates</a></span><span class="op">(</span><span class="va">hc3_result</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 22</span></span></span>
+<span><span class="co">#&gt;   analysis_id                  outcome predictor stratum_label transformation_id</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                        <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>            </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_d6eea5eb-e597-4fc8… score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_d6eea5eb-e597-4fc8… score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_d6eea5eb-e597-4fc8… score   arm       <span style="color: #BB0000;">NA</span>            <span style="color: #BB0000;">NA</span>               </span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 17 more variables: transformation_label &lt;chr&gt;, term &lt;chr&gt;, level &lt;chr&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   estimate &lt;dbl&gt;, std_error &lt;dbl&gt;, std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   conf_high &lt;dbl&gt;, statistic &lt;dbl&gt;, df &lt;dbl&gt;, p_value &lt;dbl&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   effect_measure &lt;chr&gt;, scale &lt;chr&gt;, n &lt;int&gt;, n_events &lt;int&gt;, method &lt;chr&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   variance &lt;chr&gt;</span></span></span>
+<span><span class="fu"><a href="../reference/estimates.html">tests</a></span><span class="op">(</span><span class="va">hc3_result</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1 × 13</span></span></span>
+<span><span class="co">#&gt;   analysis_id   outcome predictor contrast numerator denominator test  statistic</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_d6e… score   arm       <span style="color: #BB0000;">NA</span>       <span style="color: #BB0000;">NA</span>        <span style="color: #BB0000;">NA</span>          pred…      6.39</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 5 more variables: df &lt;dbl&gt;, p_value &lt;dbl&gt;, p_adjusted &lt;dbl&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   adjust_method &lt;chr&gt;, method &lt;chr&gt;</span></span></span>
+<span><span class="fu"><a href="../reference/contrasts.html">contrasts</a></span><span class="op">(</span><span class="va">hc3_result</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 23</span></span></span>
+<span><span class="co">#&gt;   analysis_id       outcome predictor contrast_id contrast numerator denominator</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>             <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> analysis_d6eea5e… score   arm       contrast_0… Treatme… Treatmen… Control    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> analysis_d6eea5e… score   arm       contrast_0… Treatme… Treatmen… Control    </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> analysis_d6eea5e… score   arm       contrast_0… Treatme… Treatmen… Treatment A</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 16 more variables: modifier &lt;chr&gt;, modifier_level &lt;chr&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   inner_contrast &lt;chr&gt;, outer_contrast &lt;chr&gt;, estimand &lt;chr&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   exponentiated &lt;lgl&gt;, estimate &lt;dbl&gt;, std_error &lt;dbl&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   std_error_scale &lt;chr&gt;, conf_low &lt;dbl&gt;, conf_high &lt;dbl&gt;, p_value &lt;dbl&gt;,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   p_adjusted &lt;dbl&gt;, adjust_method &lt;chr&gt;, effect_measure &lt;chr&gt;, scale &lt;chr&gt;</span></span></span>
+<span><span class="fu"><a href="../reference/table_body.html">table_body</a></span><span class="op">(</span><span class="fu"><a href="../reference/tbl_comparison.html">tbl_comparison</a></span><span class="op">(</span><span class="va">hc3_result</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 7</span></span></span>
+<span><span class="co">#&gt;   outcome predictor contrast                estimate conf_int p_value p_adjusted</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> score   arm       Treatment A vs Control  5.37     -0.61 –… 0.076   0.152     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> score   arm       Treatment B vs Control  10.37    3.94 – … 0.003   0.009     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> score   arm       Treatment B vs Treatme… 5.00     -1.90 –… 0.147   0.152</span></span></code></pre></div>
+<p>The model callback owns fitting and normalization, including its
+model-based contrast algorithm. The registered comparison specification
+remains the source of the contrast id and multiplicity adjustment. The
+function id, hash, and required package version are retained in the plan
+and provenance.</p>
+</div>
+<div class="section level2">
 <h2 id="data-dependent-selection-before-fitting">Data-dependent selection before fitting<a class="anchor" aria-label="anchor" href="#data-dependent-selection-before-fitting"></a>
 </h2>
 <p>Selectors choose only among declared candidates during preflight.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">sample_size_policy</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/method_selector.html">method_selector</a></span><span class="op">(</span></span>
 <span>  id <span class="op">=</span> <span class="st">"sample_size_policy"</span>,</span>
 <span>  candidates <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>ordinary <span class="op">=</span> <span class="fu"><a href="../reference/linear_model.html">linear_model</a></span><span class="op">(</span><span class="op">)</span>, robust <span class="op">=</span> <span class="fu"><a href="../reference/linear_model.html">linear_model</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span>,</span>
@@ -206,7 +466,8 @@ missing columns or silently switch engines.</p>
 <span><span class="op">)</span></span></code></pre></div>
 <p>The selected concrete method, reason, diagnostics, callback hash, and
 package requirements are inspectable before <code><a href="../reference/run_analysis.html">run_analysis()</a></code>.
-A fit failure never causes the selector to run again.</p>
+Unless an explicit method chain was declared, a fit failure never causes
+the selector to run again.</p>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

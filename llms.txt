@@ -257,6 +257,8 @@ Select metadata-aware variables and compile inspectable plans.
   : Construct an atomic custom analysis function
 - [`analysis_method()`](https://bqmaks.github.io/bqreport/reference/analysis_method.md)
   : Construct a structured custom analysis method
+- [`analysis_method_chain()`](https://bqmaks.github.io/bqreport/reference/analysis_method_chain.md)
+  : Construct an explicit runtime method chain
 - [`analysis_output()`](https://bqmaks.github.io/bqreport/reference/analysis_output.md)
   : Construct normalized output from a custom engine
 - [`method_selector()`](https://bqmaks.github.io/bqreport/reference/method_selector.md)
@@ -270,6 +272,7 @@ Select metadata-aware variables and compile inspectable plans.
   [`tests()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
   [`diagnostics()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
   [`issues()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
+  [`attempts()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
   [`models()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
   [`descriptives()`](https://bqmaks.github.io/bqreport/reference/estimates.md)
   [`survival_estimates()`](https://bqmaks.github.io/bqreport/reference/estimates.md)

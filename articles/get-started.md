@@ -52,7 +52,7 @@ plan[, c("analysis_id", "formula", "method", "effect_measure", "scale",
 #> # A tibble: 1 × 7
 #>   analysis_id            formula   method effect_measure scale n_analyzed status
 #>   <chr>                  <list>    <chr>  <chr>          <chr>      <int> <chr> 
-#> 1 analysis_ecaad252-30c… <formula> logis… odds_ratio     ratio         12 ready
+#> 1 analysis_c5f7d84c-f12… <formula> logis… odds_ratio     ratio         12 ready
 ```
 
 At this point the method is concrete. A data-dependent selector, if
@@ -67,9 +67,9 @@ estimates(result)
 #> # A tibble: 3 × 22
 #>   analysis_id                  outcome predictor stratum_label transformation_id
 #>   <chr>                        <chr>   <chr>     <chr>         <chr>            
-#> 1 analysis_ecaad252-30c0-4116… respon… treatment NA            NA               
-#> 2 analysis_ecaad252-30c0-4116… respon… treatment NA            NA               
-#> 3 analysis_ecaad252-30c0-4116… respon… treatment NA            NA               
+#> 1 analysis_c5f7d84c-f125-4629… respon… treatment NA            NA               
+#> 2 analysis_c5f7d84c-f125-4629… respon… treatment NA            NA               
+#> 3 analysis_c5f7d84c-f125-4629… respon… treatment NA            NA               
 #> # ℹ 17 more variables: transformation_label <chr>, term <chr>, level <chr>,
 #> #   estimate <dbl>, std_error <dbl>, std_error_scale <chr>, conf_low <dbl>,
 #> #   conf_high <dbl>, statistic <dbl>, df <dbl>, p_value <dbl>,
@@ -79,16 +79,16 @@ tests(result)
 #> # A tibble: 2 × 8
 #>   analysis_id             outcome predictor test  statistic    df p_value method
 #>   <chr>                   <chr>   <chr>     <chr>     <dbl> <dbl>   <dbl> <chr> 
-#> 1 analysis_ecaad252-30c0… respon… treatment like…     1.37      2   0.503 logis…
-#> 2 analysis_ecaad252-30c0… respon… treatment pred…     0.612     1   0.434 logis…
+#> 1 analysis_c5f7d84c-f125… respon… treatment like…     1.37      2   0.503 logis…
+#> 2 analysis_c5f7d84c-f125… respon… treatment pred…     0.612     1   0.434 logis…
 diagnostics(result)
 #> # A tibble: 4 × 5
 #>   analysis_id                                   metric      value status message
 #>   <chr>                                         <chr>       <dbl> <chr>  <chr>  
-#> 1 analysis_ecaad252-30c0-4116-9af0-45f548de9e05 converged    1    obser… NA     
-#> 2 analysis_ecaad252-30c0-4116-9af0-45f548de9e05 deviance    14.9  obser… NA     
-#> 3 analysis_ecaad252-30c0-4116-9af0-45f548de9e05 null_devia… 16.3  obser… NA     
-#> 4 analysis_ecaad252-30c0-4116-9af0-45f548de9e05 dispersion…  1.66 obser… NA
+#> 1 analysis_c5f7d84c-f125-4629-870b-0e30a392e3dc converged    1    obser… NA     
+#> 2 analysis_c5f7d84c-f125-4629-870b-0e30a392e3dc deviance    14.9  obser… NA     
+#> 3 analysis_c5f7d84c-f125-4629-870b-0e30a392e3dc null_devia… 16.3  obser… NA     
+#> 4 analysis_c5f7d84c-f125-4629-870b-0e30a392e3dc dispersion…  1.66 obser… NA
 issues(result)
 #> # A tibble: 0 × 5
 #> # ℹ 5 variables: analysis_id <chr>, stage <chr>, severity <chr>,

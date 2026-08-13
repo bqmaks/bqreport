@@ -55,7 +55,9 @@
 <span>  <span class="va">scale</span>,</span>
 <span>  required_packages <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span>,</span>
 <span>  exponentiate <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  model_scale <span class="op">=</span> <span class="va">scale</span></span>
+<span>  model_scale <span class="op">=</span> <span class="va">scale</span>,</span>
+<span>  fallback <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  advance_on <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">character</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -92,6 +94,16 @@ confidence limits, and contrasts returned on <code>model_scale</code>.</p></dd>
 <dt id="arg-model-scale">model_scale<a class="anchor" aria-label="anchor" href="#arg-model-scale"></a></dt>
 <dd><p>Scale returned by the custom callbacks before optional
 exponentiation.</p></dd>
+
+
+<dt id="arg-fallback">fallback<a class="anchor" aria-label="anchor" href="#arg-fallback"></a></dt>
+<dd><p>Optional named list of additional custom methods attempted
+sequentially after an explicitly allowed failure of <code>run</code>.</p></dd>
+
+
+<dt id="arg-advance-on">advance_on<a class="anchor" aria-label="anchor" href="#arg-advance-on"></a></dt>
+<dd><p>Condition classes that permit advancing to the next
+declared method. Contract violations never permit advancement.</p></dd>
 
 </dl></div>
     <div class="section level2">
