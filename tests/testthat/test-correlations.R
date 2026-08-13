@@ -335,3 +335,53 @@ test_that("malformed custom correlation output is collected as an issue", {
     issues(result)$condition_class == "bq_error_invalid_correlation_output"
   ))
 })
+
+test_that("custom correlation comparators control stratified interaction output", {
+  comparator <- correlation_comparator(
+    id = "fixed_comparator", methods = "pearson",
+    compare = function(context) correlation_comparison_output(
+      statistic = 4, df = 1, p_value = 0.0455,
+      contrasts = tibble::tibble(
+        numerator = context$estimates$stratum_label[[1]],
+        denominator = context$estimates$stratum_label[[2]],
+        estimate = 0.5, std_error = 0.2, std_error_scale = "custom",
+        conf_low = 0.1, conf_high = 0.9, p_value = 0.02,
+        effect_measure = "custom_difference", scale = "custom"
+      )
+    )
+  )
+  data <- as_bq_data(tibble::tibble(
+    x = rep(1:8, 2), y = c(1:8, 8:1), arm = rep(c("A", "B"), each = 8)
+  ))
+  result <- data |>
+    plan_correlations(
+      x, with = y, strata = arm, interaction_test = TRUE,
+      comparator = comparator, adjust = "holm"
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+
+  expect_equal(tests(result)$statistic, 4)
+  expect_identical(tests(result)$method, "fixed_comparator")
+  expect_equal(contrasts(result)$estimate, 0.5)
+  expect_identical(contrasts(result)$effect_measure, "custom_difference")
+  expect_equal(contrasts(result)$p_adjusted, 0.02)
+  expect_true(all(result$provenance$correlation_comparator_id == "fixed_comparator"))
+})
+
+test_that("correlation comparator validates compatible method and output", {
+  comparator <- correlation_comparator(
+    id = "pearson_only", methods = "pearson",
+    compare = function(context) tibble::tibble()
+  )
+  data <- as_bq_data(tibble::tibble(
+    x = rep(1:8, 2), y = rep(2:9, 2), arm = rep(c("A", "B"), each = 8)
+  ))
+  expect_error(
+    plan_correlations(
+      data, x, with = y, strata = arm, interaction_test = TRUE,
+      method = spearman_correlation(), comparator = comparator
+    ),
+    class = "bq_error_invalid_correlation"
+  )
+})

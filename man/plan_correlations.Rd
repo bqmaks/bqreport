@@ -11,6 +11,7 @@ plan_correlations(
   adjust_for = tidyselect::any_of(character()),
   strata = tidyselect::any_of(character()),
   interaction_test = FALSE,
+  comparator = NULL,
   method = pearson_correlation(),
   missing = c("pairwise", "complete"),
   confidence_level = 0.95,
@@ -31,6 +32,8 @@ plan_correlations(
 
 \item{interaction_test}{Whether to test equality of Pearson correlations
 across strata and compute pairwise Fisher z contrasts.}
+
+\item{comparator}{Optional comparator used when \code{interaction_test = TRUE}.}
 
 \item{method}{A correlation method specification.}
 

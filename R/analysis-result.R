@@ -295,11 +295,20 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
         method = correlation_output$adjust_method[[rows[[1]]]]
       )
     }
-    correlation_interactions <- compute_correlation_interactions(correlation_output)
-    if (nrow(correlation_interactions$tests)) {
+    correlation_interactions <- tryCatch(
+      compute_correlation_interactions(correlation_output),
+      error = function(condition) condition
+    )
+    if (inherits(correlation_interactions, "error")) {
+      issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+        correlation_output$correlation_interaction_id[[1]], "comparison", "error",
+        class(correlation_interactions)[[1]], conditionMessage(correlation_interactions)
+      )
+    } else if (nrow(correlation_interactions$tests)) {
       test_rows[[length(test_rows) + 1L]] <- correlation_interactions$tests
     }
-    if (nrow(correlation_interactions$contrasts)) {
+    if (!inherits(correlation_interactions, "error") &&
+        nrow(correlation_interactions$contrasts)) {
       contrast_rows[[length(contrast_rows) + 1L]] <-
         correlation_interactions$contrasts
     }
@@ -1002,7 +1011,13 @@ provenance_row <- function(spec) {
     correlation_missing_policy = if (
       "missing_policy" %in% names(spec) &&
         identical(spec$analysis_type[[1]], "correlation")
-    ) spec$missing_policy[[1]] else NA_character_
+    ) spec$missing_policy[[1]] else NA_character_,
+    correlation_comparator_id = if (
+      "correlation_comparator_id" %in% names(spec)
+    ) spec$correlation_comparator_id[[1]] else NA_character_,
+    correlation_comparator_hash = if (
+      "correlation_comparator_hash" %in% names(spec)
+    ) spec$correlation_comparator_hash[[1]] else NA_character_
   )
 }
 
@@ -1098,7 +1113,8 @@ provenance_prototype <- function() {
     comparison_estimand = character(), comparison_scale = character(),
     comparison_ci_method = character(), comparison_function_hash = character()
     , correlation_estimand = character(), correlation_adjustment_ids = list(),
-    correlation_missing_policy = character()
+    correlation_missing_policy = character(), correlation_comparator_id = character(),
+    correlation_comparator_hash = character()
   )
 }
 
