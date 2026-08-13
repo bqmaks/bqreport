@@ -106,6 +106,9 @@ descriptive_plan_row <- function(
   row$variable_id <- variable_spec$var_id[[1]]
   row$variable <- variable_spec$name[[1]]
   row$variable_type <- variable_spec$type[[1]]
+  row$variable_label <- variable_spec$label[[1]]
+  row$variable_unit <- variable_spec$unit[[1]]
+  row$variable_digits <- variable_spec$digits[[1]]
   row$group_id <- if (is.null(group_spec)) NA_character_ else group_spec$var_id[[1]]
   row$group <- if (is.null(group_spec)) NA_character_ else group_spec$name[[1]]
   row$overall <- overall
@@ -198,6 +201,9 @@ validate_descriptive_plan_task <- function(plan, i, data, registry) {
     plan$variable[[i]] <- registry$name[[variable_row]]
     plan$outcome[[i]] <- registry$name[[variable_row]]
     plan$variable_type[[i]] <- registry$type[[variable_row]]
+    plan$variable_label[[i]] <- registry$label[[variable_row]]
+    plan$variable_unit[[i]] <- registry$unit[[variable_row]]
+    plan$variable_digits[[i]] <- registry$digits[[variable_row]]
   }
   group_row <- if (is.na(plan$group_id[[i]])) NA_integer_ else {
     match(plan$group_id[[i]], registry$var_id)
