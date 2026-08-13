@@ -956,7 +956,17 @@ provenance_row <- function(spec) {
     ) spec$comparison_ci_method[[1]] else NA_character_,
     comparison_function_hash = if (
       "comparison_function_hash" %in% names(spec)
-    ) spec$comparison_function_hash[[1]] else NA_character_
+    ) spec$comparison_function_hash[[1]] else NA_character_,
+    correlation_estimand = if (
+      "estimand" %in% names(spec)
+    ) spec$estimand[[1]] else NA_character_,
+    correlation_adjustment_ids = if (
+      "adjustment_ids" %in% names(spec)
+    ) spec$adjustment_ids else list(character()),
+    correlation_missing_policy = if (
+      "missing_policy" %in% names(spec) &&
+        identical(spec$analysis_type[[1]], "correlation")
+    ) spec$missing_policy[[1]] else NA_character_
   )
 }
 
@@ -1049,6 +1059,8 @@ provenance_prototype <- function() {
     descriptive_function_hashes = list(), comparison_method = character(),
     comparison_estimand = character(), comparison_scale = character(),
     comparison_ci_method = character(), comparison_function_hash = character()
+    , correlation_estimand = character(), correlation_adjustment_ids = list(),
+    correlation_missing_policy = character()
   )
 }
 

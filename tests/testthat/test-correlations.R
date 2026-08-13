@@ -92,3 +92,60 @@ test_that("correlation preflight rejects insufficient and constant pairs", {
   expect_identical(plan$status, "invalid")
   expect_match(plan$reason, "complete|variation", ignore.case = TRUE)
 })
+
+test_that("partial Pearson correlations agree with residualized variables", {
+  set.seed(91)
+  raw <- tibble::tibble(
+    age = rnorm(80), x = rnorm(80), y = rnorm(80)
+  )
+  raw$x <- raw$x + 0.8 * raw$age
+  raw$y <- raw$y + 0.6 * raw$age + 0.4 * raw$x
+  data <- as_bq_data(raw)
+  result <- data |>
+    plan_correlations(x, with = y, adjust_for = age) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  output <- correlations(result)
+  residual_x <- stats::residuals(stats::lm(x ~ age, data = raw))
+  residual_y <- stats::residuals(stats::lm(y ~ age, data = raw))
+  expected <- stats::cor(residual_x, residual_y)
+
+  expect_equal(output$estimate, expected)
+  expect_identical(output$estimand, "partial_correlation")
+  expect_identical(output$adjustment_variables[[1]], "age")
+  expect_identical(output$n_adjustment, 1L)
+  expect_equal(output$df, output$n - 3)
+  expect_equal(output$std_error, 1 / sqrt(output$n - 4))
+})
+
+test_that("partial Spearman correlation residualizes ranks", {
+  raw <- tibble::tibble(
+    x = c(1, 4, 2, 8, 5, 9), y = c(2, 1, 5, 4, 8, 7), z = 1:6
+  )
+  data <- as_bq_data(raw)
+  result <- data |>
+    plan_correlations(
+      x, with = y, adjust_for = z, method = spearman_correlation()
+    ) |>
+    validate_plan(data) |>
+    run_analysis(data)
+  rx <- stats::residuals(stats::lm(rank(x) ~ rank(z), data = raw))
+  ry <- stats::residuals(stats::lm(rank(y) ~ rank(z), data = raw))
+
+  expect_equal(correlations(result)$estimate, stats::cor(rx, ry))
+})
+
+test_that("partial correlation preflight validates method and residual df", {
+  data <- as_bq_data(tibble::tibble(x = 1:5, y = 2:6, z1 = 1:5, z2 = 5:1))
+  expect_error(
+    plan_correlations(
+      data, x, with = y, adjust_for = z1, method = kendall_correlation()
+    ),
+    class = "bq_error_invalid_correlation"
+  )
+  plan <- data |>
+    plan_correlations(x, with = y, adjust_for = c(z1, z2)) |>
+    validate_plan(data)
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "degrees of freedom|complete", ignore.case = TRUE)
+})

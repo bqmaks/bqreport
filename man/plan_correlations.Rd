@@ -8,6 +8,7 @@ plan_correlations(
   .data,
   variables = where_continuous(),
   with = NULL,
+  adjust_for = tidyselect::any_of(character()),
   method = pearson_correlation(),
   missing = c("pairwise", "complete"),
   confidence_level = 0.95,
@@ -21,6 +22,8 @@ plan_correlations(
 
 \item{with}{Optional second variable set. If omitted, unique pairs within
 \code{variables} are compiled.}
+
+\item{adjust_for}{Optional numeric covariates for partial correlation.}
 
 \item{method}{A correlation method specification.}
 
