@@ -9,10 +9,7 @@ test_that("as_bq_data creates a tibble subclass and variable registry", {
   expect_identical(names(out), names(x))
   expect_s3_class(registry, "tbl_df")
   expect_identical(registry$name, names(x))
-  expect_true(all(grepl(
-    "^var_[[:xdigit:]]{8}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{4}-[[:xdigit:]]{12}$",
-    registry$var_id
-  )))
+  expect_identical(registry$var_id, paste0("var_", names(x)))
   expect_length(unique(registry$var_id), ncol(x))
   expect_identical(registry$role, list("auxiliary", "auxiliary"))
 })

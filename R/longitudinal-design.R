@@ -58,12 +58,26 @@ set_longitudinal_design <- function(
       reason <- append_reasons(reason, "Duplicate id-time observations were found.")
     }
   }
+  id_var_id <- registry$var_id[match(id_name, registry$name)]
+  time_var_id <- if (length(time_name)) {
+    registry$var_id[match(time_name, registry$name)]
+  } else {
+    NA_character_
+  }
+  group_var_id <- if (length(group_name)) {
+    registry$var_id[match(group_name, registry$name)]
+  } else {
+    NA_character_
+  }
   row <- tibble::tibble(
-    design_id = paste0("design_", uuid::UUIDgenerate()),
+    design_id = bq_id(
+      "design", "longitudinal", layout, id_var_id, time_var_id,
+      group_var_id, baseline, time_scale
+    ),
     type = "longitudinal", layout = layout,
-    id_var_id = registry$var_id[match(id_name, registry$name)],
-    time_var_id = if (length(time_name)) registry$var_id[match(time_name, registry$name)] else NA_character_,
-    group_var_id = if (length(group_name)) registry$var_id[match(group_name, registry$name)] else NA_character_,
+    id_var_id = id_var_id,
+    time_var_id = time_var_id,
+    group_var_id = group_var_id,
     baseline = list(baseline), time_scale = time_scale,
     status = status, reason = reason
   )
@@ -166,7 +180,11 @@ add_longitudinal_outcome <- function(
   reason <- if (status == "valid") NA_character_ else
     "Repeated source columns have incompatible storage types."
   row <- tibble::tibble(
-    outcome_id = paste0("outcome_", uuid::UUIDgenerate()),
+    outcome_id = bq_id(
+      "outcome", outcome_name, "longitudinal", design$design_id[[1]],
+      registry$var_id[source_rows], time_values, baseline, time_scale,
+      event_value
+    ),
     name = outcome_name, type = "longitudinal", variable_type = outcome_variable_type,
     design_id = design$design_id[[1]], layout = design$layout[[1]],
     value_var_ids = list(registry$var_id[source_rows]),

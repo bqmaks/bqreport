@@ -23,3 +23,12 @@ predictors.}
 \description{
 Define predictor variables
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  treatment = factor(c("Control", "Treatment", "Control", "Treatment")),
+  age = c(44, 57, 51, 63)
+)) |>
+  set_predictor(treatment, type = "binary", reference = "Control") |>
+  set_predictor(age, type = "continuous")
+variables(data)
+}

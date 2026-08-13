@@ -109,6 +109,10 @@ plan_longitudinal <- function(
     row$method_object <- list(method); row$formula <- list(NULL)
     row$longitudinal_comparisons <- comparisons
     row$adjust_method <- adjust
+    row <- refine_analysis_id(
+      row, row$longitudinal_outcome_id[[1]], row$design[[1]],
+      row$method[[1]], row$engine[[1]], row$estimand[[1]], adjust
+    )
     row
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -318,7 +322,10 @@ compute_longitudinal_contrasts <- function(fit, covariance, spec, frame) {
     tibble::tibble(
       analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
       predictor = spec$predictor[[1]],
-      contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
+      contrast_id = bq_id(
+        "contrast", spec$analysis_id[[1]], estimand, numerator, denominator,
+        time_value
+      ),
       contrast = paste0(numerator, " - ", denominator),
       numerator = numerator, denominator = denominator,
       modifier = if (grouped) "group_by_time" else "time",

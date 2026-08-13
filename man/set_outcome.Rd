@@ -24,3 +24,12 @@ inferred or configured type is retained.}
 \description{
 Define outcome variables
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  response = c(0, 1, 1, 0),
+  bmi = c(21.4, 27.9, 24.2, 30.1)
+)) |>
+  set_outcome(response, type = "binary", event = 1) |>
+  set_outcome(bmi, type = "continuous")
+variables(data)
+}

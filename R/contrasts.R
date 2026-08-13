@@ -218,7 +218,10 @@ set_comparisons <- function(.data, .cols, comparisons, adjust = "none") {
     modifier_id <- registry$var_id[match(modifier_name, registry$name)]
   }
   additions <- lapply(rows, function(row) tibble::tibble(
-    contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
+    contrast_id = bq_id(
+      "contrast", registry$var_id[[row]], comparisons$type,
+      comparisons$reference, adjust, comparisons$function_hash, modifier_id
+    ),
     predictor_id = registry$var_id[[row]], predictor = registry$name[[row]],
     comparison_type = comparisons$type, reference = list(comparisons$reference),
     adjust_method = adjust, function_id = comparisons$function_id,

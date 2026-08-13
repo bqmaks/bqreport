@@ -47,6 +47,17 @@ new_reporting_table <- function(body, columns, locale, class, call) {
 #' @param p_value_digits Digits for p values.
 #' @param missing Missing-value text.
 #' @return A backend-independent `bq_table`.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   response = c(0, 0, 1, 0, 1, 1, 1, 0),
+#'   treatment = factor(rep(c("Control", "Treatment"), each = 4))
+#' )) |>
+#'   set_outcome(response, type = "binary", event = 1) |>
+#'   set_predictor(treatment, type = "binary", reference = "Control")
+#' result <- plan_analysis(data, response, treatment) |>
+#'   validate_plan(data) |>
+#'   run_analysis(data)
+#' tbl_regression(result)
 #' @export
 tbl_regression <- function(x, locale="en", digits=2L, p_value_digits=3L, missing="NA") {
   check_analysis_result(x); locale <- check_reporting_locale(locale)

@@ -19,6 +19,17 @@
 #' @param confidence_level Confidence level in the open interval `(0, 1)`.
 #'
 #' @return An `analysis_plan` tibble.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   response = c(0, 0, 1, 0, 1, 1, 1, 0),
+#'   treatment = factor(rep(c("Control", "Treatment"), each = 4)),
+#'   age = c(44, 57, 51, 63, 46, 55, 60, 49)
+#' )) |>
+#'   set_outcome(response, type = "binary", event = 1) |>
+#'   set_predictor(treatment, type = "binary", reference = "Control") |>
+#'   set_predictor(age, type = "continuous")
+#' plan <- plan_analysis(data, response, treatment, covariates = age)
+#' plan[, c("analysis_id", "outcome", "predictor", "method", "status")]
 #' @export
 plan_analysis <- function(
   .data,
@@ -202,7 +213,15 @@ analysis_plan_row <- function(
     predictor_spec$colors[[1]]
   } else NULL
   tibble::tibble(
-    analysis_id = paste0("analysis_", uuid::UUIDgenerate()),
+    analysis_id = bq_id(
+      "analysis",
+      outcome_spec$var_id[[1]],
+      predictor_spec$var_id[[1]],
+      if (is.null(covariate_specs)) character() else covariate_specs$var_id,
+      if (is.null(modifier_specs)) character() else modifier_specs$var_id,
+      weight_id, cluster_id, stratum_spec$label, stratum_spec$values,
+      method_id, method_function_hash, contrast_ids, confidence_level
+    ),
     analysis_type = "univariable_regression",
     outcome_id = outcome_spec$var_id[[1]],
     predictor_id = predictor_spec$var_id[[1]],
@@ -365,6 +384,15 @@ contrast_ids_for <- function(data, predictor_id) {
 #' @param data A `bq_data` object.
 #'
 #' @return A validated `analysis_plan`.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   bmi = c(21.4, 27.9, 24.2, 30.1, 26.6, 23.0),
+#'   treatment = factor(rep(c("Control", "Treatment"), 3))
+#' )) |>
+#'   set_outcome(bmi, type = "continuous") |>
+#'   set_predictor(treatment, type = "binary", reference = "Control")
+#' plan <- plan_analysis(data, bmi, treatment) |> validate_plan(data)
+#' plan[, c("outcome", "predictor", "method", "status", "n_analyzed")]
 #' @export
 validate_plan <- function(plan, data) {
   if (!inherits(plan, "analysis_plan")) {

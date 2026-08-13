@@ -1,8 +1,8 @@
 Package: bqreport
 Title: Reproducible Biomedical Data Analysis
 Version: 0.0.0.9000
-Authors@R: person("Bqreport", "Developers", role = c("aut", "cre"),
-    email = "developers@example.com")
+Authors@R: person(given = "bqmaks", role = c("aut", "cre"),
+    email = "qmaxksmu@gmail.com")
 Description: Provides metadata-aware planning and execution tools for
     reproducible biomedical data analysis.
 URL: https://bqmaks.github.io/bqreport/, https://github.com/bqmaks/bqreport
@@ -19,7 +19,6 @@ Imports:
     rlang,
     tibble,
     tidyselect,
-    uuid,
     vctrs
 Suggests:
     detectseparation,

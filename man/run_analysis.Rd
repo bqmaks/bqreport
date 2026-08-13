@@ -22,3 +22,16 @@ retained in the result plan and represented in the issues component. Engine
 failures never trigger an undeclared fallback method. Explicit
 \code{\link[=analysis_method_chain]{analysis_method_chain()}} objects retain every runtime attempt.
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  bmi = c(21.4, 27.9, 24.2, 30.1, 26.6, 23.0, 28.4, 22.1),
+  treatment = factor(rep(c("Control", "Treatment"), 4))
+)) |>
+  set_outcome(bmi, type = "continuous") |>
+  set_predictor(treatment, type = "binary", reference = "Control")
+result <- plan_analysis(data, bmi, treatment) |>
+  validate_plan(data) |>
+  run_analysis(data)
+estimates(result)
+issues(result)
+}

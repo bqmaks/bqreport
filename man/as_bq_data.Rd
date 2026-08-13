@@ -19,3 +19,10 @@ A \code{bq_data} tibble.
 metadata registries. Existing \code{bq_data} objects are returned without
 regenerating variable identifiers.
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  age = c(44, 57, 51, 63),
+  treatment = factor(c("Control", "Control", "Treatment", "Treatment"))
+))
+variables(data)
+}

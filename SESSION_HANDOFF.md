@@ -2,6 +2,34 @@
 
 Обновлено: 2026-08-13 (Europe/Moscow).
 
+## Изменения сессии 2026-08-13 (вечер)
+
+Пакет прошёл внешнюю ревизию; все найденные проблемы исправлены:
+
+- **Баг resampling**: `resampled_correlation()` теперь ресемплирует веса
+  вместе с наблюдениями; для методов с subject id — cluster bootstrap по
+  субъектам и перестановки только внутри субъекта
+  (`R/correlation-methods.R`: `resample_correlation_context()`,
+  `permute_correlation_context()`).
+- **Spearman CI**: SE Bonett–Wright `sqrt((1 + r^2/2)/(n - k - 3))`,
+  `ci_method = "fisher_z_bonett_wright"`.
+- **Point-estimate-only методы** (`biweight_correlation()`): статус
+  `review` при валидации; запуск после `approve_plan()` или через
+  `resampled_correlation()`. Ревизия учитывает `approved` при
+  повторной валидации внутри `run_analysis()`.
+- **Минимум наблюдений** для resampled-методов берётся от base method.
+- **Детерминированные id**: все идентификаторы — digest содержимого
+  (`R/ids.R`, `bq_id()`); `uuid` удалён из Imports. Одинаковый вход даёт
+  идентичные планы/результаты между запусками
+  (`tests/testthat/test-reproducible-ids.R`). `var_id` = `var_<имя>` с
+  детерминированной суффиксацией при повторном использовании имени.
+- **Файлы разрезаны**: `correlations.R` → `correlation-methods/plan/
+  execute/interactions.R`; `analysis-result.R` → `+ engines-builtin.R`,
+  `engines-custom.R`, `result-components.R`, `result-accessors.R`.
+- Примеры `@examples` у ключевых экспортов; `NEWS.md`; реальный автор в
+  `DESCRIPTION`; workflow `.github/workflows/R-CMD-check.yaml`;
+  AGENTS.md синхронизирован (Imports, стиль ошибок, инвариант №13 об id).
+
 ## Быстрый старт
 
 1. Полностью прочитать `AGENTS.md`.
@@ -120,16 +148,13 @@ pairwise contrasts, Holm adjustment and standard reporting.
 
 ## Последняя верификация
 
-Для commit `8af8e98` выполнено:
+После правок сессии 2026-08-13 (вечер):
 
 ```text
-devtools::test(): full suite passed (862 tests at that point)
-method-chain contract tests: 21 PASS
+devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
+devtools::run_examples(): OK
 R CMD check --no-manual: Status: OK
-custom-functions vignette: rendered successfully
 ```
-
-README-only commit `88ee3c4` был затем отправлен в `origin/main`.
 
 ## Важный незакрытый пробел
 

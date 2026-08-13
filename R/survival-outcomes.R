@@ -49,12 +49,17 @@ add_survival_outcome <- function(
       "Outcome `", outcome_name, "` is already registered."
     ))
   }
+  time_var_id <- registry$var_id[match(time_name, registry$name)]
+  event_var_id <- registry$var_id[match(event_name, registry$name)]
   row <- tibble::tibble(
-    outcome_id = paste0("outcome_", uuid::UUIDgenerate()),
+    outcome_id = bq_id(
+      "outcome", outcome_name, "survival", time_var_id, event_var_id,
+      event_value, time_unit
+    ),
     name = outcome_name,
     type = "survival",
-    time_var_id = registry$var_id[match(time_name, registry$name)],
-    event_var_id = registry$var_id[match(event_name, registry$name)],
+    time_var_id = time_var_id,
+    event_var_id = event_var_id,
     event_value = list(event_value),
     time_unit = time_unit,
     status = "valid",
@@ -101,11 +106,17 @@ add_competing_risk_outcome <- function(
   if (nrow(outcome_registry) && outcome_name %in% outcome_registry$name) {
     stop_invalid_survival_outcome(paste0("Outcome `", outcome_name, "` is already registered."))
   }
+  time_var_id <- registry$var_id[match(names(time_selection), registry$name)]
+  event_var_id <- registry$var_id[match(names(event_selection), registry$name)]
   row <- tibble::tibble(
-    outcome_id = paste0("outcome_", uuid::UUIDgenerate()), name = outcome_name,
+    outcome_id = bq_id(
+      "outcome", outcome_name, "competing_risk", time_var_id, event_var_id,
+      censor_value, time_unit
+    ),
+    name = outcome_name,
     type = "competing_risk",
-    time_var_id = registry$var_id[match(names(time_selection), registry$name)],
-    event_var_id = registry$var_id[match(names(event_selection), registry$name)],
+    time_var_id = time_var_id,
+    event_var_id = event_var_id,
     censor_value = list(censor_value), time_unit = time_unit,
     status = "valid", reason = NA_character_
   )

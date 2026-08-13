@@ -41,6 +41,10 @@ dplyr_reconstruct.bq_data <- function(data, template) {
     vctrs::vec_rbind(!!!registry_parts)
   }
   registry$name <- current_names
+  fresh <- which(is.na(retained))
+  if (length(fresh)) {
+    registry$var_id <- uniquify_fresh_ids(registry$var_id, fresh)
+  }
 
   attr(data, "variable_registry") <- registry
   attr(data, "outcome_registry") <- attr(template, "outcome_registry", exact = TRUE)

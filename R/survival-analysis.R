@@ -102,6 +102,7 @@ plan_survival <- function(
     row$time_unit <- outcome_spec$time_unit
     row$ties <- method$ties
     row$formula <- list(NULL)
+    row <- refine_analysis_id(row, row$survival_outcome_id[[1]])
     row
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))

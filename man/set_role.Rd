@@ -20,3 +20,12 @@ set_role(.data, .cols, role)
 Roles are additive: a variable can simultaneously be, for example, a
 \code{group} and a \code{predictor}. Assigning the same role repeatedly has no effect.
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  patient_id = c("p1", "p2", "p3"),
+  arm = factor(c("A", "B", "A"))
+)) |>
+  set_role(patient_id, "id") |>
+  set_role(arm, "group")
+variables(data)$role
+}

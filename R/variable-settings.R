@@ -95,6 +95,14 @@ stop_invalid_descriptive_statistics <- function(message) {
 #' @param reference Optional reference category for ordinal or nominal outcomes.
 #'
 #' @return `.data` with updated variable metadata.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   response = c(0, 1, 1, 0),
+#'   bmi = c(21.4, 27.9, 24.2, 30.1)
+#' )) |>
+#'   set_outcome(response, type = "binary", event = 1) |>
+#'   set_outcome(bmi, type = "continuous")
+#' variables(data)
 #' @export
 set_outcome <- function(.data, .cols, type = NULL, event = NULL, reference = NULL) {
   check_bq_data(.data)
@@ -146,6 +154,14 @@ set_outcome <- function(.data, .cols, type = NULL, event = NULL, reference = NUL
 #'   predictors.
 #'
 #' @return `.data` with updated variable metadata.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   treatment = factor(c("Control", "Treatment", "Control", "Treatment")),
+#'   age = c(44, 57, 51, 63)
+#' )) |>
+#'   set_predictor(treatment, type = "binary", reference = "Control") |>
+#'   set_predictor(age, type = "continuous")
+#' variables(data)
 #' @export
 set_predictor <- function(.data, .cols, type = NULL, reference = NULL) {
   check_bq_data(.data)

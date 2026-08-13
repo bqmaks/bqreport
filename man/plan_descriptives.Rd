@@ -45,3 +45,15 @@ Results may be computed for the complete population, levels of one grouping
 variable, or both. The grouping label used by a report is deliberately kept
 out of the numerical result.
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  bmi = c(21.4, 27.9, 24.2, 30.1, 26.6, 23.0),
+  arm = factor(rep(c("A", "B"), 3))
+)) |>
+  set_outcome(bmi, type = "continuous") |>
+  set_role(arm, "group")
+result <- plan_descriptives(data, bmi, groups = arm) |>
+  validate_plan(data) |>
+  run_analysis(data)
+descriptives(result)
+}

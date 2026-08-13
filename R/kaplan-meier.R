@@ -141,6 +141,10 @@ plan_kaplan_meier <- function(
     row$predictor_id <- NA_character_
     row$predictor <- NA_character_
     row$formula <- list(NULL)
+    row <- refine_analysis_id(
+      row, row$survival_outcome_id[[1]], row$group_id[[1]], times, quantiles,
+      row$rmst_tau[[1]], estimates, adjust
+    )
     row
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))
@@ -443,7 +447,10 @@ km_rmst_contrasts <- function(rmst_rows, spec, grouped) {
     tibble::tibble(
       analysis_id = spec$analysis_id[[1]], outcome = spec$outcome[[1]],
       predictor = spec$group[[1]],
-      contrast_id = paste0("contrast_", uuid::UUIDgenerate()),
+      contrast_id = bq_id(
+        "contrast", spec$analysis_id[[1]], "rmst_difference",
+        pairs$numerator[[i]], pairs$denominator[[i]]
+      ),
       contrast = paste0(pairs$numerator[[i]], " - ", pairs$denominator[[i]]),
       numerator = pairs$numerator[[i]], denominator = pairs$denominator[[i]],
       modifier = NA_character_, modifier_level = NA_character_,

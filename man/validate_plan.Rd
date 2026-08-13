@@ -19,3 +19,13 @@ Preflight resolves variables by stable identifiers, refreshes formulas and
 counts complete observations while treating labelled special missing values
 as missing only in the internal analysis view.
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  bmi = c(21.4, 27.9, 24.2, 30.1, 26.6, 23.0),
+  treatment = factor(rep(c("Control", "Treatment"), 3))
+)) |>
+  set_outcome(bmi, type = "continuous") |>
+  set_predictor(treatment, type = "binary", reference = "Control")
+plan <- plan_analysis(data, bmi, treatment) |> validate_plan(data)
+plan[, c("outcome", "predictor", "method", "status", "n_analyzed")]
+}

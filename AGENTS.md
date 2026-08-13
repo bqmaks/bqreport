@@ -51,6 +51,7 @@ bq_data + metadata + design
 10. Вычисление, диагностика и представление разделены.
 11. Лонгитудинальные engines работают с каноническим long analysis frame; преобразование из wide задаётся явно, проверяется до моделирования и фиксируется в плане и provenance без изменения исходного `bq_data`.
 12. Пользователь может передавать функции выбора метода и статистические engines через валидируемые публичные контракты; выбор и идентичность функции фиксируются в плане и provenance.
+13. Идентификаторы (`var_id`, `outcome_id`, `design_id`, `analysis_id`, `contrast_id`) — детерминированные digest-и определяющего содержимого (`R/ids.R`), не случайные значения: одинаковый вход компилируется в идентичные план и результат между запусками.
 
 ## Доменные объекты
 
@@ -422,13 +423,15 @@ p_adjusted, adjust_method, effect_measure, scale
 
 ## Tidyverse-совместимость
 
-В `Imports` использовать отдельные пакеты, не метапакет `tidyverse`:
+В `Imports` использовать отдельные пакеты, не метапакет `tidyverse`, и
+держать список минимальным. Текущий фактический список:
 
 ```text
-cli, dplyr, forcats, labelled, lifecycle, purrr, rlang,
-stringr, tibble, tidyr, tidyselect, vctrs, broom
+digest, dplyr, labelled, rlang, tibble, tidyselect, vctrs
 ```
 
+Новые кандидаты (`purrr`, `tidyr`, `stringr`, `forcats`, `broom`, `cli`,
+`lifecycle`) добавлять только когда появляется реальный вызов, а не заранее.
 Специализированные backends по возможности держать в `Suggests`. Для разделения в логистической регрессии предусмотреть опциональные `detectseparation` и `logistf`; отсутствие required package выявлять до запуска соответствующего задания.
 
 Для `bq_data` реализовать и тестировать `dplyr_reconstruct()`, `dplyr_row_slice()`, `dplyr_col_modify()`, `[.bq_data` и `names<-.bq_data`.
@@ -446,7 +449,10 @@ stringr, tibble, tidyr, tidyselect, vctrs, broom
 
 ## Ошибки и диагностика
 
-Использовать типизированные conditions и `cli`, например:
+Использовать типизированные base-conditions (`stop(structure(...))` с
+классами `bq_error_*`/`bq_warning_*`); `cli` сейчас не используется и не
+входит в Imports. Сообщение обязано называть проблемную переменную, метод
+или analysis id, когда они известны. Примеры классов:
 
 ```text
 bq_error_invalid_outcome

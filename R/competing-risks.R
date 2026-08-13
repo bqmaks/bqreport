@@ -56,6 +56,9 @@ plan_cumulative_incidence <- function(
     row$group <- if (is.null(group_spec)) NA_character_ else group_spec$name[[1]]
     row$evaluation_times <- list(times)
     row$predictor_id <- NA_character_; row$predictor <- NA_character_; row$formula <- list(NULL)
+    row <- refine_analysis_id(
+      row, row$survival_outcome_id[[1]], row$group_id[[1]], times
+    )
     row
   })
   new_analysis_plan(vctrs::vec_rbind(!!!rows))

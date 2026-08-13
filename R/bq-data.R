@@ -8,6 +8,12 @@
 #' @param metadata An optional metadata data frame. See [apply_dictionary()].
 #'
 #' @return A `bq_data` tibble.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   age = c(44, 57, 51, 63),
+#'   treatment = factor(c("Control", "Control", "Treatment", "Treatment"))
+#' ))
+#' variables(data)
 #' @export
 as_bq_data <- function(x, metadata = NULL) {
   if (inherits(x, "bq_data")) {
@@ -49,7 +55,7 @@ variables <- function(x) {
 
 new_variable_registry <- function(x) {
   n <- ncol(x)
-  ids <- if (n == 0L) character() else paste0("var_", uuid::UUIDgenerate(n = n))
+  ids <- if (n == 0L) character() else paste0("var_", names(x))
   analytical_type <- unname(vapply(x, infer_analytical_type, character(1)))
 
   tibble::tibble(
@@ -396,6 +402,14 @@ valid_roles <- c(
 #' @param role A single supported role.
 #'
 #' @return `.data` with an updated variable registry.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   patient_id = c("p1", "p2", "p3"),
+#'   arm = factor(c("A", "B", "A"))
+#' )) |>
+#'   set_role(patient_id, "id") |>
+#'   set_role(arm, "group")
+#' variables(data)$role
 #' @export
 set_role <- function(.data, .cols, role) {
   check_bq_data(.data)

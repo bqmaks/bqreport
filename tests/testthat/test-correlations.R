@@ -1,8 +1,29 @@
 test_that("correlation method constructors declare estimands and CI", {
   expect_identical(pearson_correlation()$id, "pearson")
   expect_identical(pearson_correlation()$ci_method, "fisher_z")
-  expect_identical(spearman_correlation()$ci_method, "fisher_z_approximation")
+  expect_identical(spearman_correlation()$ci_method, "fisher_z_bonett_wright")
   expect_identical(kendall_correlation()$ci_method, "normal_approximation")
+})
+
+test_that("Spearman confidence intervals use the Bonett-Wright standard error", {
+  data <- as_bq_data(tibble::tibble(
+    x = c(1, 4, 2, 8, 5, 9, 3, 7, 6, 10),
+    y = c(2, 1, 5, 4, 8, 7, 3, 9, 6, 10)
+  ))
+  output <- data |>
+    plan_correlations(x, with = y, method = spearman_correlation()) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+  estimate <- stats::cor(data$x, data$y, method = "spearman")
+  std_error <- sqrt((1 + estimate^2 / 2) / (nrow(data) - 3))
+  critical <- stats::qnorm(0.975)
+
+  expect_equal(output$estimate, estimate)
+  expect_equal(output$std_error, std_error)
+  expect_equal(output$conf_low, tanh(atanh(estimate) - critical * std_error))
+  expect_equal(output$conf_high, tanh(atanh(estimate) + critical * std_error))
+  expect_identical(output$std_error_scale, "fisher_z_bonett_wright")
 })
 
 test_that("plan_correlations compiles unique inspectable pairs", {
@@ -432,6 +453,18 @@ test_that("resampling preserves global random state and records provenance", {
   expect_identical(result$provenance$permutation_replicates, 49L)
 })
 
+test_that("resampled methods keep the minimum-n rule of their base method", {
+  data <- as_bq_data(tibble::tibble(x = c(1, 2, 3), y = c(2, 1, 3)))
+  plan <- data |>
+    plan_correlations(x, with = y, method = resampled_correlation(
+      pearson_correlation(), bootstrap = 99, permutations = 0, seed = 2
+    )) |>
+    validate_plan(data)
+
+  expect_identical(plan$status, "invalid")
+  expect_match(plan$reason, "at least 4")
+})
+
 test_that("resampling parameters are validated", {
   expect_error(
     resampled_correlation(pearson_correlation(), bootstrap = 1, seed = 1),
@@ -441,6 +474,139 @@ test_that("resampling parameters are validated", {
     resampled_correlation(pearson_correlation(), bootstrap = 10),
     class = "bq_error_invalid_correlation"
   )
+})
+
+test_that("resampled weighted correlation resamples weights with observations", {
+  set.seed(31)
+  n <- 40
+  x <- rnorm(n)
+  heavy <- rep(c(TRUE, FALSE), each = n / 2)
+  data <- as_bq_data(tibble::tibble(
+    x = x,
+    y = ifelse(heavy, x + rnorm(n, sd = 0.05), -x + rnorm(n, sd = 0.05)),
+    w = ifelse(heavy, 100, 0.01)
+  ))
+  method <- resampled_correlation(
+    weighted_pearson_correlation(), bootstrap = 199, permutations = 0, seed = 5
+  )
+  output <- data |>
+    plan_correlations(x, with = y, weights = w, method = method) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+
+  # The estimate is dominated by the heavily weighted, positively correlated
+  # half. Bootstrap replicates that keep weights paired with their
+  # observations must stay in its neighbourhood; misaligned weights would
+  # produce intervals spanning zero.
+  expect_true(output$estimate > 0.9)
+  expect_true(output$conf_low > 0.5)
+  expect_identical(output$bootstrap_successful, 199L)
+})
+
+test_that("resampled weighted correlation with unit weights matches unweighted", {
+  data <- as_bq_data(tibble::tibble(
+    x = c(1, 3, 2, 5, 4, 7, 6, 9, 8, 10, 12, 11),
+    y = c(2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 11, 13),
+    w = rep(1, 12)
+  ))
+  weighted <- data |>
+    plan_correlations(x, with = y, weights = w, method = resampled_correlation(
+      weighted_pearson_correlation(), bootstrap = 99, permutations = 0, seed = 3
+    )) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+  unweighted <- data |>
+    plan_correlations(x, with = y, method = resampled_correlation(
+      pearson_correlation(), bootstrap = 99, permutations = 0, seed = 3
+    )) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+
+  expect_equal(weighted$estimate, unweighted$estimate)
+  expect_equal(weighted$conf_low, unweighted$conf_low)
+  expect_equal(weighted$conf_high, unweighted$conf_high)
+})
+
+test_that("resampled repeated-measures correlation resamples whole subjects", {
+  set.seed(8)
+  subjects <- sprintf("s%02d", 1:10)
+  data <- as_bq_data(tibble::tibble(
+    id = rep(subjects, each = 6),
+    x = rep(rnorm(10, sd = 5), each = 6) + rep(1:6, 10),
+    y = rep(rnorm(10, sd = 5), each = 6) + rep(1:6, 10) * 2 +
+      rnorm(60, sd = 0.3)
+  ))
+  method <- resampled_correlation(
+    repeated_measures_correlation(), bootstrap = 199, permutations = 199,
+    seed = 9
+  )
+  run <- function() data |>
+    plan_correlations(x, with = y, id = id, method = method) |>
+    validate_plan(data) |>
+    run_analysis(data) |>
+    correlations()
+  first <- run()
+  second <- run()
+
+  expect_equal(first$conf_low, second$conf_low)
+  expect_equal(first$p_value, second$p_value)
+  expect_true(first$estimate > 0.9)
+  expect_true(first$conf_low > 0.5)
+  expect_true(first$conf_low <= first$estimate)
+  expect_true(first$conf_high >= first$estimate)
+  # A strong within-subject association must be detected by the
+  # within-subject permutation test.
+  expect_lt(first$p_value, 0.05)
+  expect_identical(first$bootstrap_successful, 199L)
+  expect_identical(first$permutation_successful, 199L)
+})
+
+test_that("resampling helpers preserve pairing and subject structure", {
+  weighted_context <- structure(list(
+    x = 1:8 + 0.5, y = 8:1 - 0.25,
+    adjustment = matrix(numeric(), nrow = 8L, ncol = 0L),
+    weights = c(1, 2, 3, 4, 5, 6, 7, 8), id = NULL,
+    confidence_level = 0.95
+  ), class = "correlation_context")
+  set.seed(21)
+  sampled <- resample_correlation_context(weighted_context)
+  original_triples <- paste(
+    weighted_context$x, weighted_context$y, weighted_context$weights
+  )
+  expect_true(all(
+    paste(sampled$x, sampled$y, sampled$weights) %in% original_triples
+  ))
+
+  subject_context <- structure(list(
+    x = as.numeric(1:9), y = as.numeric(9:1),
+    adjustment = matrix(numeric(), nrow = 9L, ncol = 0L),
+    weights = NULL, id = rep(c("a", "b", "c"), each = 3L),
+    confidence_level = 0.95
+  ), class = "correlation_context")
+  set.seed(22)
+  cluster <- resample_correlation_context(subject_context)
+  original_blocks <- vapply(
+    split(paste(subject_context$x, subject_context$y), subject_context$id),
+    paste, character(1), collapse = ";"
+  )
+  sampled_blocks <- vapply(
+    split(paste(cluster$x, cluster$y), cluster$id),
+    paste, character(1), collapse = ";"
+  )
+  expect_true(all(sampled_blocks %in% original_blocks))
+  expect_identical(length(unique(cluster$id)), 3L)
+
+  set.seed(23)
+  permuted <- permute_correlation_context(subject_context)
+  expect_identical(permuted$x, subject_context$x)
+  for (rows in split(seq_along(subject_context$y), subject_context$id)) {
+    expect_identical(
+      sort(permuted$y[rows]), sort(subject_context$y[rows])
+    )
+  }
 })
 
 test_that("weighted Pearson correlation agrees with direct weighted moments", {
@@ -512,6 +678,29 @@ test_that("weighted and repeated correlation requirements fail in preflight", {
   )
 })
 
+test_that("point-estimate-only methods require review before execution", {
+  data <- as_bq_data(tibble::tibble(
+    x = c(1:20, 100), y = c(1:20, -100)
+  ))
+  plan <- data |>
+    plan_correlations(x, with = y, method = biweight_correlation()) |>
+    validate_plan(data)
+
+  expect_identical(plan$status, "review")
+  expect_match(plan$reason, "point estimate", ignore.case = TRUE)
+
+  skipped <- run_analysis(plan, data)
+  expect_identical(nrow(correlations(skipped)), 0L)
+  expect_identical(nrow(issues(skipped)), 1L)
+
+  resampled_plan <- data |>
+    plan_correlations(x, with = y, method = resampled_correlation(
+      biweight_correlation(), bootstrap = 99, permutations = 0, seed = 4
+    )) |>
+    validate_plan(data)
+  expect_identical(resampled_plan$status, "ready")
+})
+
 test_that("biweight correlation is robust to a bivariate outlier", {
   data <- as_bq_data(tibble::tibble(
     x = c(1:20, 100), y = c(1:20, -100)
@@ -519,6 +708,7 @@ test_that("biweight correlation is robust to a bivariate outlier", {
   output <- data |>
     plan_correlations(x, with = y, method = biweight_correlation()) |>
     validate_plan(data) |>
+    approve_plan() |>
     run_analysis(data) |>
     correlations()
 

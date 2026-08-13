@@ -29,3 +29,15 @@ A backend-independent \code{bq_table}.
 \description{
 Build a regression results table
 }
+\examples{
+data <- as_bq_data(tibble::tibble(
+  response = c(0, 0, 1, 0, 1, 1, 1, 0),
+  treatment = factor(rep(c("Control", "Treatment"), each = 4))
+)) |>
+  set_outcome(response, type = "binary", event = 1) |>
+  set_predictor(treatment, type = "binary", reference = "Control")
+result <- plan_analysis(data, response, treatment) |>
+  validate_plan(data) |>
+  run_analysis(data)
+tbl_regression(result)
+}

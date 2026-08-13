@@ -17,6 +17,17 @@
 #' @param adjust Multiplicity adjustment accepted by [stats::p.adjust()].
 #'
 #' @return An `analysis_plan` tibble.
+#' @examples
+#' data <- as_bq_data(tibble::tibble(
+#'   bmi = c(21.4, 27.9, 24.2, 30.1, 26.6, 23.0),
+#'   arm = factor(rep(c("A", "B"), 3))
+#' )) |>
+#'   set_outcome(bmi, type = "continuous") |>
+#'   set_role(arm, "group")
+#' result <- plan_descriptives(data, bmi, groups = arm) |>
+#'   validate_plan(data) |>
+#'   run_analysis(data)
+#' descriptives(result)
 #' @export
 plan_descriptives <- function(
   .data,
@@ -166,6 +177,11 @@ descriptive_plan_row <- function(
   row$required_packages <- list(character())
   row$method_object <- list(NULL)
   row$validated <- FALSE
+  row <- refine_analysis_id(
+    row, row$variable_id[[1]], row$group_id[[1]], row$overall[[1]],
+    templates, row$comparison_method[[1]], row$comparison_function_hash[[1]],
+    row$comparison_adjust_method[[1]]
+  )
   row
 }
 
