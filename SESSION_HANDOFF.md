@@ -1,34 +1,7 @@
 # Контекст для следующей сессии
 
-Обновлено: 2026-08-13 (Europe/Moscow).
-
-## Изменения сессии 2026-08-13 (вечер)
-
-Пакет прошёл внешнюю ревизию; все найденные проблемы исправлены:
-
-- **Баг resampling**: `resampled_correlation()` теперь ресемплирует веса
-  вместе с наблюдениями; для методов с subject id — cluster bootstrap по
-  субъектам и перестановки только внутри субъекта
-  (`R/correlation-methods.R`: `resample_correlation_context()`,
-  `permute_correlation_context()`).
-- **Spearman CI**: SE Bonett–Wright `sqrt((1 + r^2/2)/(n - k - 3))`,
-  `ci_method = "fisher_z_bonett_wright"`.
-- **Point-estimate-only методы** (`biweight_correlation()`): статус
-  `review` при валидации; запуск после `approve_plan()` или через
-  `resampled_correlation()`. Ревизия учитывает `approved` при
-  повторной валидации внутри `run_analysis()`.
-- **Минимум наблюдений** для resampled-методов берётся от base method.
-- **Детерминированные id**: все идентификаторы — digest содержимого
-  (`R/ids.R`, `bq_id()`); `uuid` удалён из Imports. Одинаковый вход даёт
-  идентичные планы/результаты между запусками
-  (`tests/testthat/test-reproducible-ids.R`). `var_id` = `var_<имя>` с
-  детерминированной суффиксацией при повторном использовании имени.
-- **Файлы разрезаны**: `correlations.R` → `correlation-methods/plan/
-  execute/interactions.R`; `analysis-result.R` → `+ engines-builtin.R`,
-  `engines-custom.R`, `result-components.R`, `result-accessors.R`.
-- Примеры `@examples` у ключевых экспортов; `NEWS.md`; реальный автор в
-  `DESCRIPTION`; workflow `.github/workflows/R-CMD-check.yaml`;
-  AGENTS.md синхронизирован (Imports, стиль ошибок, инвариант №13 об id).
+Обновлено: 2026-08-13, вечер (Europe/Moscow). Рабочее дерево чистое,
+`main` синхронизирован с `origin/main`, CI зелёный.
 
 ## Быстрый старт
 
@@ -39,15 +12,23 @@
 5. Перед публикацией запускать `devtools::test()` и
    `R CMD check --no-manual`.
 
-На момент handoff рабочее дерево было чистым до обновления этого файла.
 Последние опубликованные коммиты:
 
 ```text
+339ff4c Fix correlation resampling and make identifiers deterministic
+d7061c3 Update session handoff
 88ee3c4 Document package installation
 8af8e98 Add explicit custom method fallback chains
 9b3ea21 Add vignettes and pkgdown site
-fb968ae Add categorical plot colors
-1e402b4 Add reporting tables and plots
+```
+
+## Состояние верификации (commit 339ff4c)
+
+```text
+devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
+devtools::run_examples(): OK
+R CMD check --no-manual: Status: OK (локально)
+GitHub Actions: R-CMD-check (release + oldrel-1) success, pkgdown success
 ```
 
 ## Архитектура
@@ -65,6 +46,51 @@ bq_data + metadata + design
 
 Источники истины — `bq_data` и `analysis_plan`. Вычисления, диагностика и
 представление разделены. Все численные результаты хранятся без округления.
+
+Все идентификаторы детерминированы (`R/ids.R`, `bq_id()` — digest
+содержимого): одинаковый вход компилируется в идентичные планы и
+результаты между запусками. `var_id` = `var_<имя столбца>` с
+детерминированной суффиксацией, если освобождённое имя переиспользуется
+(`uniquify_fresh_ids()` в `dplyr_reconstruct`). Специализированные
+планировщики неймспейсят `analysis_id` через `refine_analysis_id()`.
+Случайные id (uuid) запрещены — инвариант №13 в AGENTS.md.
+
+### Карта файлов (после разрезания 339ff4c)
+
+- `R/analysis-plan.R` — plan_analysis, analysis_plan_row, validate_plan,
+  approve_plan.
+- `R/analysis-result.R` — только run_analysis (диспетчер по analysis_type).
+- `R/engines-builtin.R` — analysis frame, fit builtin engines, tidy
+  extraction, диагностика.
+- `R/engines-custom.R` — custom engines, method chains, контрактная
+  валидация вывода.
+- `R/result-components.R` — прототипы компонентов, provenance_row,
+  issue_row, engine conditions.
+- `R/result-accessors.R` — estimates()/contrasts()/tests()/issues() и пр.
+- `R/correlation-methods.R` — конструкторы методов, correlation_output,
+  comparator, resampling (`resample_correlation_context()` — cluster
+  bootstrap; `permute_correlation_context()` — within-subject permutation).
+- `R/correlation-plan.R` — plan_correlations, preflight.
+- `R/correlation-execute.R` — execute_correlation, встроенные оценщики.
+- `R/correlation-interactions.R` — interaction tests, Fisher z comparator.
+- `R/ids.R` — bq_id, refine_analysis_id, uniquify_fresh_ids.
+
+## Ключевые решения прошлой сессии (2026-08-13, вечер)
+
+- `resampled_correlation()`: bootstrap ресемплирует веса вместе с
+  наблюдениями; для методов с subject id — cluster bootstrap целыми
+  субъектами, перестановки только внутри субъекта.
+- Spearman CI: SE Bonett–Wright `sqrt((1 + r^2/2)/(n - k - 3))`,
+  `ci_method = "fisher_z_bonett_wright"`.
+- Методы без inference (`biweight_correlation()`,
+  `provides_inference = FALSE`) валидируются в статус `review`; запуск
+  после `approve_plan()` или через `resampled_correlation()`. При
+  re-validation внутри `run_analysis()` учитывается `plan$approved`.
+- Минимум наблюдений resampled-метода берётся от base method id.
+- Kendall CI — грубая нормальная аппроксимация; задокументировано,
+  рекомендован resampling.
+- `@examples` у ключевых экспортов; NEWS.md ведётся; автор в DESCRIPTION
+  реальный; добавлен workflow `.github/workflows/R-CMD-check.yaml`.
 
 ## Реализованные подсистемы
 
@@ -87,8 +113,6 @@ bq_data + metadata + design
   contrasts-of-contrasts.
 - Reporting tables/plots, categorical colors as vector/named vector/function,
   `ru`/`en` groundwork, vignettes and pkgdown configuration.
-- README contains GitHub installation via `pak`, `remotes`, and local
-  `devtools::install()`.
 
 ## Пользовательские функции
 
@@ -102,59 +126,22 @@ bq_data + metadata + design
 
 ### Explicit runtime method chains
 
-Commit `8af8e98` added:
+`analysis_method_chain(id, methods, advance_on)` и `fallback`/`advance_on`
+у `analysis_function()`: продвижение только по объявленным condition
+classes; члены цепочки обязаны иметь идентичные effect measure/scale/
+exponentiation; `attempts(result)` хранит каждую попытку; provenance —
+declared chain, actual method, `fallback_used`.
 
-```r
-analysis_method_chain(id, methods, advance_on)
-
-analysis_function(
-  id, run, effect_measure, scale,
-  fallback = list(...),
-  advance_on = c("bq_error_convergence")
-)
-```
-
-Properties:
-
-- only declared condition classes allow advancement;
-- all members must have identical effect measure, scale, model scale and
-  exponentiation policy;
-- `bq_error_invalid_engine_output` and contract errors never advance;
-- `attempts(result)` contains every attempted method;
-- plan stores `method_chain`, `fallback_conditions`, `executed_method`;
-- provenance stores declared chain, actual method and `fallback_used`;
-- failed attempts also appear in `issues()`.
-
-Current limitation: runtime chains accept custom `analysis_function()` /
-`analysis_method()` members only. Built-in engines are not chain members yet.
+Ограничение: членами runtime chain могут быть только пользовательские
+`analysis_function()`/`analysis_method()`; встроенные engines — ещё нет.
 
 ## Документация
 
 Pkgdown site: <https://bqmaks.github.io/bqreport/>
 
-Main vignettes:
-
-- `vignettes/get-started.Rmd`
-- `vignettes/descriptive-analysis.Rmd`
-- `vignettes/models-and-contrasts.Rmd`
-- `vignettes/correlation-analysis.Rmd`
-- `vignettes/longitudinal-survival.Rmd`
-- `vignettes/custom-functions.Rmd`
-- `vignettes/examples-gallery.Rmd`
-
-`custom-functions.Rmd` now contains an executable three-group custom HC3
-linear model showing `analysis_method()`, estimates, omnibus test, custom
-pairwise contrasts, Holm adjustment and standard reporting.
-
-## Последняя верификация
-
-После правок сессии 2026-08-13 (вечер):
-
-```text
-devtools::test(): 985 PASS, 0 FAIL, 0 SKIP
-devtools::run_examples(): OK
-R CMD check --no-manual: Status: OK
-```
+Виньетки: `get-started`, `descriptive-analysis`, `models-and-contrasts`,
+`correlation-analysis`, `longitudinal-survival`, `custom-functions`
+(включает исполняемый three-group custom HC3 workflow), `examples-gallery`.
 
 ## Важный незакрытый пробел
 
@@ -188,10 +175,20 @@ outcomes:
    пользовательские функции на descriptive/selector/model/contrast этапах.
 7. После тестов обновить pkgdown и опубликовать.
 
+Мелкие кандидаты в бэклог:
+
+- coverage workflow (covr локально не установлен; воркфлоу не добавлен,
+  чтобы не публиковать непроверенный YAML);
+- `set_comparisons()` дважды для одного predictor сейчас дописывает
+  дубликат в contrast registry — рассмотреть replace-семантику;
+- встроенные engines как члены `analysis_method_chain`.
+
 ## GitHub/окружение
 
-- SSH push в `origin/main` работает.
-- `gh auth status` сообщал о недействительном CLI token; это не блокировало
-  обычный `git push` по SSH.
+- SSH push в `origin/main` работает; `gh` CLI тоже работает
+  (`gh run list` показывает статусы Actions).
+- CI: `.github/workflows/R-CMD-check.yaml` (ubuntu, release + oldrel-1)
+  и `pkgdown.yaml` (деплой на gh-pages).
 - Не добавлять build/check artifacts: `/*.tar.gz`, `/*.Rcheck/` и `docs/`
   исключены через `.gitignore`.
+- При правках публичного API: NEWS.md обновлять в том же коммите.
