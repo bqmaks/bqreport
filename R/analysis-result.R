@@ -87,6 +87,25 @@ run_analysis <- function(plan, data, error = c("collect", "stop", "warn")) {
       next
     }
 
+    if (identical(spec$analysis_type[[1]], "longitudinal_regression")) {
+      output <- tryCatch(
+        execute_longitudinal_analysis(spec, data),
+        error = function(condition) condition
+      )
+      if (inherits(output, "error")) {
+        issue_rows[[length(issue_rows) + 1L]] <- issue_row(
+          analysis_id, "fit", "error", class(output)[[1]], conditionMessage(output)
+        )
+      } else {
+        model_list[[analysis_id]] <- output$model
+        estimate_rows[[length(estimate_rows) + 1L]] <- output$estimates
+        test_rows[[length(test_rows) + 1L]] <- output$tests
+        diagnostic_rows[[length(diagnostic_rows) + 1L]] <- output$diagnostics
+        provenance_rows[[length(provenance_rows) + 1L]] <- provenance_row(spec)
+      }
+      next
+    }
+
     if (identical(spec$analysis_type[[1]], "descriptive")) {
       computed <- tryCatch(
         compute_observed_descriptives(spec, data),

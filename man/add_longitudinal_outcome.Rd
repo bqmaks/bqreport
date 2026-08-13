@@ -11,7 +11,8 @@ add_longitudinal_outcome(
   time = NULL,
   baseline = NULL,
   time_scale = NULL,
-  type = "continuous"
+  type = "continuous",
+  event_value = NULL
 )
 }
 \arguments{
@@ -29,6 +30,8 @@ data, select the single outcome column.}
 \item{time_scale}{Optional outcome-specific time scale.}
 
 \item{type}{Analytical outcome type.}
+
+\item{event_value}{Explicit event value for a binary repeated outcome.}
 }
 \value{
 Updated \code{bq_data}.

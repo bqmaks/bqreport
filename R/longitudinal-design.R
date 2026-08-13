@@ -108,11 +108,12 @@ designs <- function(x) {
 #' @param baseline Optional baseline value; defaults to the design baseline.
 #' @param time_scale Optional outcome-specific time scale.
 #' @param type Analytical outcome type.
+#' @param event_value Explicit event value for a binary repeated outcome.
 #' @return Updated `bq_data`.
 #' @export
 add_longitudinal_outcome <- function(
   .data, name, values, time = NULL, baseline = NULL,
-  time_scale = NULL, type = "continuous"
+  time_scale = NULL, type = "continuous", event_value = NULL
 ) {
   check_bq_data(.data)
   design <- designs(.data)
@@ -151,7 +152,14 @@ add_longitudinal_outcome <- function(
   if (!type %in% valid_variable_types || type == "unknown") {
     stop_invalid_longitudinal_outcome("`type` is not a supported analytical variable type.")
   }
+  if (type == "binary" && (is.null(event_value) || length(event_value) != 1L ||
+      is.na(event_value))) {
+    stop_invalid_longitudinal_outcome(
+      "Binary longitudinal outcomes require one explicit `event_value`."
+    )
+  }
   registry <- variables(.data)
+  outcome_variable_type <- type
   source_rows <- match(value_names, registry$name)
   storage_types <- registry$storage_type[source_rows]
   status <- if (length(unique(storage_types)) == 1L) "valid" else "invalid"
@@ -159,11 +167,12 @@ add_longitudinal_outcome <- function(
     "Repeated source columns have incompatible storage types."
   row <- tibble::tibble(
     outcome_id = paste0("outcome_", uuid::UUIDgenerate()),
-    name = outcome_name, type = "longitudinal", variable_type = type,
+    name = outcome_name, type = "longitudinal", variable_type = outcome_variable_type,
     design_id = design$design_id[[1]], layout = design$layout[[1]],
     value_var_ids = list(registry$var_id[source_rows]),
     time_values = list(time_values), baseline = list(baseline),
-    time_scale = time_scale, status = status, reason = reason
+    time_scale = time_scale, event_value = list(event_value),
+    status = status, reason = reason
   )
   current <- attr(.data, "outcome_registry", exact = TRUE)
   if (nrow(current) && outcome_name %in% current$name) {
@@ -212,6 +221,10 @@ build_longitudinal_frame <- function(data, outcome_name) {
     levels <- if (design$layout[[1]] == "wide") outcome$time_values[[1]] else
       unique(analysis_vector(frame$..bq_time))
     frame$..bq_time <- factor(frame$..bq_time, levels = levels)
+  }
+  if (outcome$variable_type[[1]] == "binary") {
+    frame$..bq_outcome <- analysis_vector(frame$..bq_outcome) ==
+      outcome$event_value[[1]]
   }
   attr(frame, "reshape_spec") <- list(
     layout = design$layout[[1]], design_id = design$design_id[[1]],

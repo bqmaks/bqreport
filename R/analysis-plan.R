@@ -351,6 +351,10 @@ validate_plan <- function(plan, data) {
       out <- validate_correlation_task(out, i, data, registry)
       next
     }
+    if (identical(out$analysis_type[[i]], "longitudinal_regression")) {
+      out <- validate_longitudinal_task(out, i, data)
+      next
+    }
     if (identical(out$analysis_type[[i]], "kaplan_meier")) {
       out <- validate_kaplan_meier_task(out, i, data, registry)
       next
