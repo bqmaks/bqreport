@@ -14,21 +14,26 @@ Above it the column is left \code{"unknown"}, which keeps free text and
 identifiers out of the categorical analyses.}
 }
 \value{
-One of \code{"continuous"}, \code{"binary"}, \code{"indicator"}, \code{"ordinal"},
-\code{"nominal"}, \code{"date"}, \code{"datetime"} or \code{"unknown"}. \code{"count"} is only ever
-set explicitly.
+One of \code{"continuous"}, \code{"binary"}, \code{"ordinal"}, \code{"nominal"},
+\code{"date"}, \code{"datetime"} or \code{"unknown"}. \code{"count"} is only ever set
+explicitly.
 }
 \description{
 Classifies a vector into the measurement scale the analysis needs, which is
-deliberately not the same thing as its storage in R: a count, an indicator
+deliberately not the same thing as its storage in R: a count, a binary flag
 and a continuous measurement are all numeric.
 }
 \details{
 The rules are conservative. \code{count} is never inferred, because a count and a
 continuous measurement rounded to whole numbers are indistinguishable from
 the values alone and the consequences of guessing wrong reach the model
-family. A numeric column is only read as an indicator when every observed
-value is 0 or 1.
+family. A numeric column is only read as binary when every observed value is
+0 or 1.
+
+How a binary column is stored — \code{0}/\code{1}, \code{TRUE}/\code{FALSE} or two labels — is
+not part of its type. It decides which level counts as the event, recorded
+separately, and how the column is laid out in tables, which belongs to the
+presentation layer.
 
 Factors are classified from their declared \code{levels()}, not from the values
 that happen to occur, since the declaration states how many categories the
@@ -38,5 +43,5 @@ variable has. Call \code{\link[=droplevels]{droplevels()}} first if unused level
 infer_type(c(40, 55, 61))
 infer_type(c(0, 1, 1, 0))
 infer_type(factor(c("f", "m")))
-infer_type(factor(c("mild", "severe"), ordered = TRUE))
+infer_type(factor(c("low", "mid", "high"), ordered = TRUE))
 }

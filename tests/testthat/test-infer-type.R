@@ -1,8 +1,8 @@
 test_that("numbers are continuous unless every value is 0 or 1", {
   expect_identical(infer_type(c(40, 55, 61)), "continuous")
   expect_identical(infer_type(c(1L, 2L, 3L)), "continuous")
-  expect_identical(infer_type(c(0, 1, 1, 0)), "indicator")
-  expect_identical(infer_type(c(0L, 1L, NA)), "indicator")
+  expect_identical(infer_type(c(0, 1, 1, 0)), "binary")
+  expect_identical(infer_type(c(0L, 1L, NA)), "binary")
 })
 
 test_that("count is never inferred", {
@@ -17,14 +17,18 @@ test_that("numbers coded 1/2 are left continuous", {
   expect_identical(infer_type(c(1, 2, 1, 2)), "continuous")
 })
 
-test_that("logicals are indicators", {
-  expect_identical(infer_type(c(TRUE, FALSE, TRUE)), "indicator")
+test_that("logicals are binary", {
+  expect_identical(infer_type(c(TRUE, FALSE, TRUE)), "binary")
+  expect_identical(infer_type(c(TRUE, TRUE)), "binary")
 })
 
-test_that("categories that spell out 0/1 or TRUE/FALSE are indicators", {
-  expect_identical(infer_type(c("0", "1", "1")), "indicator")
-  expect_identical(infer_type(factor(c("0", "1"))), "indicator")
-  expect_identical(infer_type(c("TRUE", "FALSE")), "indicator")
+test_that("a 0/1 or TRUE/FALSE coding is binary even with one value observed", {
+  expect_identical(infer_type(c("0", "1", "1")), "binary")
+  expect_identical(infer_type(factor(c("0", "1"))), "binary")
+  expect_identical(infer_type(c("TRUE", "FALSE")), "binary")
+  # Everyone had the event: still a binary column, not a one-level category.
+  expect_identical(infer_type(c("1", "1")), "binary")
+  expect_identical(infer_type(c(1, 1, 1)), "binary")
 })
 
 test_that("two categories are binary and more are nominal", {
