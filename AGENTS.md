@@ -1,533 +1,193 @@
 # AGENTS.md
 
+Контракт и соглашения проекта. Текущее состояние и следующий шаг —
+в `SESSION_HANDOFF.md`; начинать сессию нужно с него.
+
 ## Проект
 
-Разрабатывается R-пакет для воспроизводимого анализа биомедицинских данных:
+R-пакет для автоматизации анализа биомедицинских данных и отчётности.
+Задачи, для которых строятся однотипные интерфейсы: описательные статистики,
+сравнение групп, регрессионные модели, анализ выживаемости, лонгитудинальный
+анализ, публикационные таблицы и графики.
 
-- препроцессинг и метаданные на основе `labelled`;
-- описательная статистика и сравнение групп;
-- однофакторные регрессионные модели;
-- лонгитудинальный анализ;
-- анализ выживаемости;
-- tidy-результаты, публикационные таблицы и графики.
+Пакет переписывается с нуля с 2026-08-14. Прежняя реализация доступна в
+истории git начиная с `fc07399` и ниже — как справочник, никогда как контракт.
+Она была вычислительно шире, но её архитектурные решения приняты заново.
 
-Пакет должен быть максимально tidyverse-native. Он не является форком или обёрткой над `gtsummary`: вычислительное ядро, классы и публичный контракт собственные. Удачные UX-паттерны `gtsummary` можно использовать как ориентир.
+## Порядок работы
 
-## Архитектурная модель
+Автор пакета читает каждую строку кода лично и должен быть способен её
+защитить. Это определяет темп и способ:
 
-Проект строится как аналитический компилятор:
+1. **Один логический шаг за раз** — одна функция или один небольшой файл.
+   После этого остановка и разбор. Никакой пакетной генерации, даже когда
+   дизайн уже согласован.
+2. **Сначала намерение, потом код.** Перед написанием проговариваются
+   назначение, сигнатура и принимаемые решения. Автор может отклонить до того,
+   как появится код.
+3. **Проверять, а не рассуждать.** Утверждение о поведении кода делается
+   только после запуска. Два реальных бага в первой сессии нашлись именно так,
+   причём один уже прошёл зелёный набор тестов.
+4. **Никаких «заодно»** — скрытых хелперов, попутных рефакторингов, изменений
+   сверх задачи. Всё, что не просили, сначала называется вслух.
+5. **Коммит только по явной просьбе.**
+
+## Архитектура
+
+Аналитический компилятор: решения фиксируются до вычислений и доступны для
+просмотра.
 
 ```text
-bq_data + metadata + design
-  -> selectors + analysis_rules
-  -> validated analysis_plan
-  -> statistical engines
-  -> analysis_result
-  -> tidy data / tables / plots
+bq_data + метаданные
+  -> план анализа
+  -> preflight-проверка
+  -> движки
+  -> результат
+  -> таблицы и графики
 ```
 
-Источником истины является связка `bq_data + analysis_plan`, а не оформленная таблица и не объект конкретной модели.
-
-Настройка **column-driven, но не column-only**:
-
-- свойства переменной задаются от столбца;
-- связи между столбцами хранятся в спецификации дизайна;
-- survival outcome — составной объект `time + event`;
-- лонгитудинальные данные могут поступать в long- или wide-формате;
-- в long-формате дизайн задаёт как минимум `id + time`, а в wide-формате повторный outcome связывает набор столбцов с явными значениями времени;
-- contrasts/comparisons — отдельные estimand-спецификации предиктора.
+Источник истины — связка данных и плана, а не оформленная таблица и не объект
+конкретной модели.
 
 ## Инварианты
 
-1. Входные данные остаются tibble и работают в pipe-конвейерах.
-2. Выбор переменных использует tidyselect.
-3. Публичные вычислительные результаты представлены tidy tibbles.
-4. Числа хранятся без округления; форматирование выполняется только при выводе.
-5. Метод, основание выбора, estimand, scale и warnings фиксируются в плане и результате.
-6. До выполнения batch-анализа пользователь может просмотреть и изменить план.
-7. Никаких молчаливых замен метода при ошибке или несходимости.
-8. Метаданные сохраняются только когда остаются корректными; устаревшие свойства инвалидируются.
-9. Оценки эффекта и доверительные интервалы первичны; p-values дополнительны.
-10. Вычисление, диагностика и представление разделены.
-11. Лонгитудинальные engines работают с каноническим long analysis frame; преобразование из wide задаётся явно, проверяется до моделирования и фиксируется в плане и provenance без изменения исходного `bq_data`.
-12. Пользователь может передавать функции выбора метода и статистические engines через валидируемые публичные контракты; выбор и идентичность функции фиксируются в плане и provenance.
-13. Идентификаторы (`var_id`, `outcome_id`, `design_id`, `analysis_id`, `contrast_id`) — детерминированные digest-и определяющего содержимого (`R/ids.R`), не случайные значения: одинаковый вход компилируется в идентичные план и результат между запусками.
+Приняты и обоснованы; переигрывать без нового повода не нужно.
+
+1. **Данные остаются tibble.** `bq_data` — подкласс tibble и работает в
+   pipe-конвейерах. Класс задаётся конструктором целиком, а не выводится из
+   аргумента: dplyr передаёт голые data frame.
+2. **Метаданные хранятся в реестре**, приложенном к данным, а не в атрибутах
+   отдельных столбцов. Связи между столбцами иначе хранить негде.
+3. **Реестр позиционно соответствует столбцам** — ровно одна строка на
+   столбец, в том же порядке. Это условие делает переименование отличимым от
+   «удалили один столбец, добавили другой».
+4. **Идентификаторы порядковые** (`v001`, `v002`), не хеши содержимого.
+   Нумерация продолжается от максимума и никогда не переиспользует номер:
+   ссылка на `var_id` не должна начать указывать на другой столбец.
+5. **Разметка не меняет данные.** Установка типа фиксирует свойство в реестре;
+   приведение столбца к нужному виду делает движок при построении модельного
+   фрейма. Исходный `bq_data` не преобразуется на месте.
+6. **Метаданные не переживают того, что их обесценило.** Перезапись столбца
+   через `mutate()` сбрасывает `type` (он описывает значения) и сохраняет
+   `label` и `role` (они описывают намерение).
+7. **Молчаливая потеря метаданных запрещена.** Операция, которая не может их
+   сохранить, либо возвращает обычный tibble явно (`summarise()`), либо
+   отвергается с объяснением (`group_by()`).
+8. **Аналитический тип отделён от хранения в R.** Счётная, двухуровневая и
+   непрерывная переменные все хранятся как numeric.
+9. **Вычисление, диагностика и представление разделены.** Способ кодировки
+   двухуровневой переменной — вопрос слоя оформления, а не шкалы измерения.
+10. **Автовывод консервативен и помечен.** Там, где значения не дают ответа,
+    выбирается безопасный вариант, а решение помечается как выведенное и
+    видно до анализа. Явно заданное значение автовывод не перезаписывает.
+11. **Числа хранятся без округления.** Форматирование — только при выводе.
+12. **Никаких runtime fallback.** Метод не подменяется молча при ошибке или
+    несходимости.
 
 ## Доменные объекты
 
 ### `bq_data`
 
-Подкласс tibble с реестрами:
+Подкласс tibble с реестром переменных в атрибуте. Доступ к реестру — только
+через `variables()`; атрибут является деталью реализации.
 
-- `variable_registry` — свойства столбцов;
-- `outcome_registry` — составные outcomes;
-- `design_registry` — дизайн исследования;
-- `contrast_registry` — comparisons/estimands.
+Реестр — обычный tibble, а не объект со своими классами. Это обязательное
+свойство: метаданные должны задаваться таблицей-словарём, а список-колонки
+сделали бы такой словарь неудобным.
 
-Доступ только через `variables()`, `outcomes()`, `designs()` и `contrasts()`. Публичный API не должен требовать прямой работы с атрибутами.
-
-### `analysis_rules`
-
-Декларативное сопоставление:
+Текущая схема реестра:
 
 ```text
-outcome type + predictor type + design -> method_spec
+var_id, name, label, role, type
 ```
 
-Приоритет: конкретная пара outcome–predictor → конкретный outcome → пользовательское selector-rule → профиль проекта → системный default. Два правила одинакового приоритета — ошибка неоднозначности.
+Колонки добавляются тогда, когда появляется функция, которая их читает, а не
+заранее.
 
-Правило может возвращать как конкретный `method_spec`, так и `method_selector`. `method_selector` выполняет data-dependent выбор из заранее объявленных методов на этапе компиляции/preflight; после выбора план обязан содержать конкретный метод.
+### Совместимость с dplyr
 
-### `analysis_plan`
+dplyr перестраивает объект четырьмя разными путями, и все они перекрыты:
 
-Подкласс tibble; одна строка — одно аналитическое задание. Минимальная схема:
-
-```text
-analysis_id, analysis_type, outcome_id, outcome, predictor,
-design, data_layout, reshape_spec, method_policy, selector_id,
-candidate_methods, method, engine, estimator, ci_method, formula,
-family, link, effect_measure, selection_reason,
-selection_diagnostics, function_id, function_hash, required_packages,
-contrast_id, adjust_method, missing_policy, confidence_level,
-status, reason
-```
-
-`reshape_spec` — структурированная спецификация преобразования, а не исполняемый пользовательский код. Для wide-лонгитудинальных задач она хранит стабильные `var_id` исходных столбцов, соответствующие значения времени, baseline, `time_scale` и правила переноса метаданных.
-
-`candidate_methods`, `selection_diagnostics` и другие структурированные значения допустимо хранить list-columns. В validated plan поле `method` всегда конкретно: unresolved selector получает статус `invalid`, а не переносится в `run_analysis()`.
-
-Статусы: `ready`, `review`, `warning`, `invalid`, `excluded`.
-
-### `analysis_result`
-
-Составной объект:
-
-```text
-plan, models, estimates, contrasts, tests, descriptives,
-diagnostics, issues, provenance
-```
-
-Все компоненты, кроме моделей, — tibbles. Нужны accessors: `estimates()`, `contrasts()`, `tests()`, `diagnostics()`, `issues()`, `models()`.
-
-## Метаданные
-
-`labelled` используется для variable labels, value labels и специальных пропусков. Аналитические свойства хранятся в отдельном tidy-реестре.
-
-`variable_registry` поддерживает:
-
-```text
-var_id, name, label, unit, role, type, storage_type,
-distribution, reference, event_value, transformation,
-missing_policy, source, locked, status
-```
-
-Разделять физический тип R, аналитический тип, диагностику распределения и утверждённый distribution profile.
-
-Типы:
-
-```text
-continuous, binary, ordinal, nominal, count,
-date, datetime, identifier, unknown
-```
-
-Роли:
-
-```text
-outcome, predictor, group, id, time, visit, event,
-offset, weight, cluster, stratum, auxiliary
-```
-
-Настройка хранит источник: `explicit`, `dictionary`, `inferred`, `diagnostic`, `default`. Во внутренних ссылках использовать стабильный `var_id`, чтобы корректно поддерживать `rename()`.
-
-## Ожидаемый API
-
-```r
-data <- raw_data |>
-  as_bq_data() |>
-  apply_dictionary(dictionary) |>
-  set_role(patient_id, "id") |>
-  set_role(visit, "time") |>
-  set_predictor(treatment, type = "nominal", reference = "Placebo") |>
-  set_predictor(age, type = "continuous", effect = per(10)) |>
-  set_outcome(c(bmi, crp, quality_score), type = "continuous") |>
-  set_distribution(crp, "skewed") |>
-  set_outcome(response, type = "binary", event = 1)
-```
-
-Селекторы:
-
-```r
-all_outcomes(); all_predictors(); all_groups()
-where_role(); where_type(); where_distribution()
-where_binary(); where_continuous(); where_ordinal()
-where_nominal(); where_count(); where_survival()
-where_status(); where_inferred()
-```
-
-Они должны компоноваться средствами tidyselect:
-
-```r
-where_continuous() & where_gaussian()
-all_outcomes() & !matches("_exploratory$")
-```
-
-## Дизайн и контрасты
-
-Long-формат настраивается непосредственно через столбцы `id` и `time`:
-
-```r
-data <- data |>
-  set_longitudinal_design(
-    id = patient_id,
-    time = visit,
-    group = treatment,
-    layout = "long",
-    baseline = "Visit 0",
-    time_scale = "categorical"
-  )
-```
-
-Wide-формат является полноценным допустимым входом. Соответствие столбцов визитам задаётся явно в составном longitudinal outcome:
-
-```r
-data <- data |>
-  set_longitudinal_design(
-    id = patient_id,
-    group = treatment,
-    layout = "wide"
-  ) |>
-  add_longitudinal_outcome(
-    bmi,
-    values = c(bmi_v0, bmi_v1, bmi_v2),
-    time = c("Visit 0", "Visit 1", "Visit 2"),
-    baseline = "Visit 0",
-    time_scale = "categorical",
-    type = "continuous"
-  ) |>
-  add_survival_outcome(
-    overall_survival,
-    time = os_time,
-    event = death,
-    event_value = 1,
-    time_unit = "months"
-  )
-```
-
-Не выводить соответствие `столбец -> время` молча из имён. Допустим отдельный helper для построения предлагаемой спецификации по шаблону, но результат должен получать статус `review` до явного подтверждения. Разные outcomes могут иметь разные наборы визитов. При преобразовании переносить label, unit, value labels и специальные пропуски только когда соответствующие метаданные совместимы; конфликты должны давать диагностируемый issue.
-
-Исходный wide `bq_data` не преобразуется на месте. Планировщик создаёт для конкретного задания внутренний канонический long analysis frame с техническими столбцами outcome и time, а точное преобразование сохраняет в `reshape_spec` и `provenance`.
-
-Не считать LMM/GLMM и GEE взаимозаменяемыми: выбор должен отражать estimand и быть явным.
-
-Строго разделять model coding и целевые comparisons:
-
-```r
-data |>
-  set_coding(treatment, coding = "treatment", reference = "Placebo") |>
-  set_comparisons(
-    treatment,
-    comparisons = against_reference("Placebo"),
-    adjust = "holm"
-  )
-```
-
-Публичный `contrast_spec` не должен зависеть от `emmGrid`; `emmeans` используется через adapter.
-
-## Распределения и автоматизация
-
-Не выбирать параметрический/непараметрический анализ только по p-value теста нормальности. Разделять диагностику, рекомендацию пакета и утверждённую пользователем настройку.
-
-```r
-profile <- data |> profile_distributions(where_continuous())
-data <- data |> apply_distribution_profile(profile, mode = "reviewed")
-```
-
-По умолчанию предлагать метод для просмотра, а не применять его молча.
-
-## Планирование и исполнение
-
-```r
-rules <- analysis_rules(
-  where_continuous() & where_gaussian() ~ linear_model(),
-  where_continuous() & where_skewed() ~ robust_or_rank_model(),
-  where_binary() ~ logistic_model(),
-  where_survival() ~ cox_model()
-)
-
-plan <- data |>
-  plan_analysis(
-    outcomes = all_outcomes(),
-    predictors = all_predictors(),
-    rules = rules
-  )
-
-validate_plan(plan, data)
-result <- run_analysis(plan, data, error = "collect")
-```
-
-Preflight проверяет переменные, variation, reference/event values, группы, число событий, estimability контрастов, объём complete cases и формулу. Для лонгитудинальных задач дополнительно проверяются полнота и однозначность wide mapping, совместимость типов и метаданных повторных столбцов, допустимость baseline/time и уникальность `id + time` уже в каноническом long analysis frame.
-
-Если правило содержит `method_selector`, планировщик строит тот же model frame и model matrix, которые получит engine, выполняет selector, валидирует возвращённый `method_choice` и записывает выбранный метод, основание и pre-fit diagnostics в план. Пользователь должен иметь возможность проверить это решение до `run_analysis()`.
-
-## Статистические движки
-
-Единый внутренний контракт:
-
-```r
-fit_engine(spec, data)
-tidy_estimates(fit, spec)
-tidy_tests(fit, spec)
-compute_contrasts(fit, spec)
-check_diagnostics(fit, spec)
-```
-
-Движок не форматирует вывод.
-
-| Задача | Backend |
+| Глагол | Точка входа |
 |---|---|
-| Descriptives | собственные функции на `dplyr` |
-| Базовые тесты | `stats` |
-| Linear/logistic models | `stats::lm()`, `stats::glm()` |
-| Survival | `survival` |
-| Mixed models | `lme4`, позднее `glmmTMB` |
-| GEE | `geepack` |
-| Контрасты | `emmeans` |
-| Tidy extraction | `broom`, `broom.mixed`, собственные adapters |
+| `filter`, `arrange`, `slice` | `dplyr_row_slice` → `dplyr_reconstruct` |
+| `select`, `relocate`, `head`, `[` | `[` |
+| `rename` | `names<-` |
+| `mutate` | `dplyr_col_modify` → `dplyr_reconstruct` |
+| joins, `bind_rows`, `bind_cols` | `dplyr_reconstruct` |
 
-Нормализовать вывод внешних пакетов во внутреннюю стабильную схему; не считать текущую схему `broom` внутренним контрактом.
+Трёх «канонических» generic-функций из документации dplyr **недостаточно**:
+`select()` и `rename()` до `dplyr_reconstruct()` не доходят. Проверять
+фактическое поведение, а не документацию.
 
-## Пользовательские функции и выбор метода
+## Словари
 
-Расширяемость поддерживается двумя отдельными контрактами.
+### Аналитические типы
 
-### Data-dependent `method_selector`
+```text
+continuous, count, binary, ordinal, nominal, date, datetime, unknown
+```
 
-Selector выбирает метод до fit из явно перечисленных candidates. Он получает read-only `analysis_context` и возвращает только `method_choice`:
+- `count` никогда не выводится автоматически: возраст в годах и число событий
+  неразличимы по значениям, а цена ошибки — семейство модели.
+- `nominal`, не `multinomial`: тип описывает переменную, а не модель. Тот же
+  столбец в роли предиктора никакой мультиномиальной моделью не описывается.
+- `continuous`, не `numeric`: `numeric` описывает хранение и замаскировал бы
+  `base::numeric()`.
+- Отдельного типа для 0/1 нет. Какой уровень считать событием — колонка
+  реестра; как печатать столбец — слой оформления.
+
+### Роли
+
+Словарь ролей пока не зафиксирован. В работе используются `outcome`,
+`predictor`, `group`, `id`; набор будет закреплён вместе с сеттерами.
+
+## Соглашения по коду
+
+- **Язык.** Код, имена и roxygen-документация — английский. Обсуждение,
+  `AGENTS.md` и `SESSION_HANDOFF.md` — русский.
+- **Комментарии объясняют почему, а не что.** Ставятся там, где строка
+  выглядит необязательной или странной, и без них была бы удалена при первом
+  же рефакторинге.
+- **Зависимости** добавляются только при появлении реального вызова. Текущие
+  `Imports`: `dplyr`, `tibble`. Тяжёлые движки — в `Suggests`.
+- **Обращения к чужим пакетам через `::`**, без `@importFrom` (исключение —
+  один импорт в `R/bqreport-package.R`, который нужен `R CMD check`).
+- **Ошибки** — базовые типизированные условия через `bq_abort()`. Класс
+  конкретный (`bq_error_*`) плюс общий `bq_error`. `cli` не используется.
+  Сообщение называет проблемную переменную или анализ и говорит, что делать.
+- **Внутренние функции** документируются roxygen с `@noRd`.
+- **NAMESPACE генерируется roxygen2**, руками не правится.
+- Во внутренних ссылках использовать `var_id`, а не имя столбца.
+
+## Проверка
 
 ```r
-separation_policy <- method_selector(
-  id = "separation_glm_or_firth",
-  candidates = list(
-    glm = logistic_model(engine = "glm"),
-    firth = firth_logistic(engine = "logistf")
-  ),
-  select = function(context) {
-    separation_fit <- stats::glm(
-      formula = context$formula,
-      data = context$model_frame,
-      family = stats::binomial("logit"),
-      method = detectseparation::detect_separation
-    )
-
-    separated <- any(is.infinite(stats::coef(separation_fit)))
-
-    method_choice(
-      method = if (separated) "firth" else "glm",
-      reason = if (separated) {
-        "Detected complete or quasi-complete separation"
-      } else {
-        "Maximum-likelihood estimates are finite"
-      },
-      diagnostics = tibble::tibble(separation = separated)
-    )
-  }
-)
-
-rules <- analysis_rules(
-  where_binary() ~ separation_policy
-)
+devtools::test()
+R CMD check --no-manual
 ```
 
-Это явная pre-fit policy, а не fallback: `detectseparation` диагностирует данные, план фиксирует `glm` или `logistf`, затем запускается только выбранный engine. Ошибка или несходимость выбранного engine регистрируется как issue и не вызывает молчаливого переключения.
+Оба должны быть чистыми до коммита. `R CMD check` — со статусом `OK`, без
+NOTE: объявленная и неиспользуемая зависимость означает, что её надо убрать.
 
-Selector обязан:
+Тестирование:
 
-- выбирать только из объявленных `candidates`;
-- возвращать стабильный `method_choice(method, reason, diagnostics)`;
-- не изменять данные, глобальные options или внешнее состояние;
-- объявлять необходимые пакеты и значимые настройки;
-- оставлять диагностические числа неокруглёнными.
+- Тесты проверяют **объект целиком**, а не только тот кусок, который меняла
+  функция. Баг с потерей класса `tbl_df` прошёл сквозь зелёный набор именно
+  потому, что тесты сверяли содержимое реестра и не смотрели на сам объект.
+- Инварианты выносятся в общий хелпер и вызываются во всех подходящих тестах.
+- Не привязываться к тому, что зависит от локали или версии зависимости
+  (например, к символу-разделителю размерности в выводе tibble).
+- Численные результаты сверяются с прямыми вызовами базовых функций R.
 
-### Пользовательский статистический engine
+## Направление
 
-Полный контракт регистрируется через конструктор, а не через неформальный набор функций:
+Ниже — намерение, а не контракт. Эти вещи не спроектированы; ссылаться на них
+как на принятые решения нельзя.
 
-```r
-custom_method <- analysis_method(
-  id = "my_logistic_method",
-  fit = function(context) {
-    my_fit(context$formula, data = context$model_frame)
-  },
-  tidy_estimates = function(fit, context) {
-    # tibble стандартной схемы estimates
-  },
-  tidy_tests = function(fit, context) {
-    # tibble стандартной схемы tests
-  },
-  compute_contrasts = function(fit, context) {
-    # tibble стандартной схемы contrasts
-  },
-  diagnose = function(fit, context) {
-    # tibble стандартной схемы diagnostics
-  }
-)
-```
+Ближайший вертикальный срез — описательные статистики и сравнение групп:
+конструкторы типов и сеттеры, словарь метаданных таблицей, селекторы на
+tidyselect, план и preflight, движок описательных, сравнение групп.
 
-Для атомарного engine допустим сокращённый контракт:
-
-```r
-custom_method <- analysis_function(
-  id = "my_method",
-  run = function(context) {
-    analysis_output(
-      model = fit,
-      estimates = estimates,
-      tests = tests,
-      contrasts = contrasts,
-      diagnostics = diagnostics,
-      issues = issues
-    )
-  }
-)
-```
-
-`analysis_context` содержит только подготовленные входы конкретного задания:
-
-```text
-analysis_id, formula, model_frame, model_matrix, response,
-weights, offset, outcome_spec, predictor_spec, design_spec,
-contrast_specs, missing_counts, confidence_level
-```
-
-Не передавать пользовательской функции изменяемый полный `bq_data`. Возвращаемые tibbles валидируются по внутренним схемам, типам, `analysis_id`, effect measure и scale. Нарушение контракта — типизированная ошибка, а не попытка угадать или исправить результат.
-
-`function_id`, хеш тела/значимых настроек, версии необходимых пакетов и выбранный method записываются в provenance. Хеш помогает обнаруживать изменение реализации, но не заменяет версионирование исходного кода; для воспроизводимых workflows предпочтительны именованные функции из пакета или проекта.
-
-Основные поля `estimates`:
-
-```text
-analysis_id, outcome, predictor, term, level, estimate,
-std_error, conf_low, conf_high, statistic, df, p_value,
-effect_measure, scale, n, n_events, method
-```
-
-Основные поля `contrasts`:
-
-```text
-analysis_id, outcome, predictor, contrast, numerator,
-denominator, estimate, conf_low, conf_high, p_value,
-p_adjusted, adjust_method, effect_measure, scale
-```
-
-Всегда учитывать `n_total`, `n_eligible`, `n_analyzed`, `n_missing_outcome`, `n_missing_predictor`.
-
-## Tidyverse-совместимость
-
-В `Imports` использовать отдельные пакеты, не метапакет `tidyverse`, и
-держать список минимальным. Текущий фактический список:
-
-```text
-digest, dplyr, labelled, rlang, tibble, tidyselect, vctrs
-```
-
-Новые кандидаты (`purrr`, `tidyr`, `stringr`, `forcats`, `broom`, `cli`,
-`lifecycle`) добавлять только когда появляется реальный вызов, а не заранее.
-Специализированные backends по возможности держать в `Suggests`. Для разделения в логистической регрессии предусмотреть опциональные `detectseparation` и `logistf`; отсутствие required package выявлять до запуска соответствующего задания.
-
-Для `bq_data` реализовать и тестировать `dplyr_reconstruct()`, `dplyr_row_slice()`, `dplyr_col_modify()`, `[.bq_data` и `names<-.bq_data`.
-
-| Операция | Метаданные |
-|---|---|
-| `filter()`, `slice()`, `arrange()` | сохранить |
-| `select()` | удалить записи исключённых переменных |
-| `rename()` | обновить все ссылки |
-| `mutate()` новой переменной | создать запись `review` |
-| `mutate()` существующей | проверить тип, инвалидировать устаревшее |
-| joins | объединить реестры, выявить конфликты |
-| `summarise()`, `reframe()` | вернуть обычный tibble |
-| pivots | специальные методы; не сохранять неоднозначное молча; аналитическое wide-to-long преобразование описывать через `reshape_spec` |
-
-## Ошибки и диагностика
-
-Использовать типизированные base-conditions (`stop(structure(...))` с
-классами `bq_error_*`/`bq_warning_*`); `cli` сейчас не используется и не
-входит в Imports. Сообщение обязано называть проблемную переменную, метод
-или analysis id, когда они известны. Примеры классов:
-
-```text
-bq_error_invalid_outcome
-bq_error_ambiguous_rule
-bq_error_missing_reference
-bq_error_invalid_method_contract
-bq_error_invalid_method_choice
-bq_error_invalid_engine_output
-bq_error_missing_backend
-bq_warning_sparse_cells
-bq_warning_convergence
-bq_warning_non_estimable_contrast
-```
-
-Сообщение объясняет, что произошло, для какого анализа, почему и как исправить. В batch-режиме поддержать `error = "stop" | "collect" | "warn"`.
-
-## Представление
-
-Результаты работают с обычными глаголами `dplyr`. Табличный и графический слои отдельны:
-
-```r
-result |> contrasts() |> filter(p_adjusted < 0.05)
-result |> tbl_comparison() |> as_gt()
-result |> tbl_regression() |> as_flextable()
-result |> plot_forest()
-result |> plot_longitudinal()
-result |> plot_survival()
-```
-
-Поддержать локали `ru` и `en`. Не хранить локализованный или округлённый текст в численных результатах.
-
-## Тестирование
-
-Использовать `testthat`. Каждый встроенный и пользовательский engine обязан проходить общий набор контрактных тестов стандартной схемы, `analysis_id`, CI, scale/effect measure, отсутствия округления и обработки warnings/errors.
-
-Численные результаты сверять с прямыми вызовами backend. Snapshot-тесты использовать преимущественно для сообщений и оформленных таблиц.
-
-Обязательные edge cases: один уровень binary outcome, predictor без variation, пустая группа, полностью пропущенный outcome, missing reference, perfect separation, отсутствие событий, дубли `id + visit`, singular mixed model, non-estimable contrast. Для wide-лонгитудинальных данных отдельно тестировать несовпадение длин `values` и `time`, повторяющиеся или неизвестные значения времени, отсутствующий baseline, несовместимые типы/метаданные столбцов и дубли `id + time`, возникающие после преобразования.
-
-Для `method_selector` тестировать выбор каждой candidate-ветви, повторяемость решения, неизвестный method id, malformed diagnostics, ошибку selector и отсутствие required package. Для политики separation отдельно сверять выбор `glm` на overlapping data и `logistf` при complete/quasi-complete separation. `run_analysis()` не должен повторно вызывать selector или менять зафиксированный метод.
-
-## Правила для coding agents
-
-1. Перед изменением публичного API создать или обновить тест желаемого поведения.
-2. Не добавлять метод без явного estimand, схемы результата и диагностик.
-3. Не смешивать расчёт, округление и рендеринг.
-4. Для NSE использовать только стандартные механизмы `rlang`/tidyselect.
-5. Не использовать недокументированные internals зависимостей.
-6. Во внутренних реестрах ссылаться на стабильные `var_id`, а не только на имена.
-7. Не сохранять устаревшие метаданные после изменения столбца.
-8. Не выполнять runtime fallback. Data-dependent выбор допустим только как объявленный pre-fit `method_selector` с candidates, reason и diagnostics, зафиксированными в плане.
-9. Ошибки должны быть предметными и исправимыми.
-10. Публичные функции документировать через roxygen2 и покрывать тестами.
-11. Новые зависимости добавлять только при явной пользе; тяжёлые engines делать опциональными.
-12. Предпочитать работающий вертикальный срез множеству API-заглушек.
-13. Пользовательские функции принимать только через валидируемые constructors контрактов; не выводить семантику произвольного return value эвристически.
-
-## Дорожная карта
-
-- **v0.1:** каркас пакета, `bq_data`, реестры, `labelled`, типы/роли/селекторы, dplyr-реконструкция, минимальный plan и preflight.
-- **v0.2:** descriptives, сравнение групп, univariable linear/logistic models, контракт пользовательских engines, pre-fit `method_selector`, опциональная маршрутизация `detectseparation -> glm/logistf`, базовые contrasts, `analysis_result`, первый `gt`-вывод.
-- **v0.3:** survival outcomes, Kaplan–Meier, log-rank, Cox, PH diagnostics, survival/forest plots.
-- **v0.4:** longitudinal design для long и wide inputs, проверяемый wide-to-long analysis frame, LMM/GLMM, GEE, `group × time`, change contrasts, longitudinal plots.
-- **v0.5:** multinomial, ordinal, count models, survey weights, multiple imputation, дополнительные backends.
-
-## Первый вертикальный срез
-
-```text
-as_bq_data()
-  -> set_outcome()/set_predictor()
-  -> selector-based plan_analysis()
-  -> validate_plan()
-  -> linear/logistic engine
-  -> analysis_result + tidy accessors
-  -> простая gt-таблица
-```
-
-Критерий готовности: каждое аналитическое решение можно просмотреть, изменить и воспроизвести; численные результаты совпадают с прямыми вызовами базовых R-моделей.
+Дальше по мере необходимости: регрессионные модели, контрасты, выживаемость,
+лонгитудинальный анализ, публикационные таблицы и графики.
