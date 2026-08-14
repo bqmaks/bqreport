@@ -35,21 +35,24 @@ as_bq_data <- function(data) {
 
 #' Build a bq_data object from its parts
 #'
-#' Low-level constructor: it performs no validation and expects `data` to be a
-#' plain tibble whose column names already match `variables$name`.
+#' Low-level constructor: it performs no validation and expects the column
+#' names of `data` to already match `variables$name`.
 #'
-#' @param data A tibble.
+#' The class vector is stated in full rather than derived from `data`, because
+#' dplyr hands back bare data frames: deriving it would quietly produce a
+#' `bq_data` that is no longer a tibble.
+#'
+#' @param data A data frame.
 #' @param variables A variable registry tibble.
 #'
 #' @return A `bq_data` object.
 #' @noRd
 new_bq_data <- function(data, variables) {
-  structure(
+  tibble::new_tibble(
     data,
     variables = variables,
-    # setdiff() keeps the constructor idempotent: rebuilding an object that is
-    # already a bq_data must not stack the class twice.
-    class = c("bq_data", setdiff(class(data), "bq_data"))
+    nrow = nrow(data),
+    class = "bq_data"
   )
 }
 

@@ -21,9 +21,14 @@ labelled_data <- function() {
   data
 }
 
-# The invariant every dplyr method has to keep: one registry row per column,
-# in column order.
+# The invariants every dplyr method has to keep: the object is still a tibble
+# subclass, and the registry holds one row per column, in column order.
 expect_registry_aligned <- function(x) {
+  testthat::expect_s3_class(
+    x,
+    c("bq_data", "tbl_df", "tbl", "data.frame"),
+    exact = TRUE
+  )
   testthat::expect_identical(names(x), variables_of(x)$name)
   testthat::expect_identical(nrow(variables_of(x)), ncol(x))
 }

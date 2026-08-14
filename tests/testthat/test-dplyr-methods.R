@@ -7,7 +7,7 @@ test_that("row verbs leave the registry alone", {
     dplyr::slice(data, 1:2),
     utils::head(data, 2)
   )) {
-    expect_s3_class(result, "bq_data")
+    expect_registry_aligned(result)
     expect_identical(variables_of(result), variables_of(data))
   }
 })
@@ -98,8 +98,10 @@ test_that("columns arriving from joins and binds get blank rows", {
 
 test_that("bind_rows() keeps the registry of the first argument", {
   data <- labelled_data()
+  bound <- dplyr::bind_rows(data, data)
 
-  expect_identical(variables_of(dplyr::bind_rows(data, data)), variables_of(data))
+  expect_registry_aligned(bound)
+  expect_identical(variables_of(bound), variables_of(data))
 })
 
 test_that("an identifier is never reused by a later column of the same name", {
