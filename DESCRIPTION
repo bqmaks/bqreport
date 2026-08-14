@@ -1,0 +1,21 @@
+Package: bqreport
+Title: Reproducible Biomedical Data Analysis
+Version: 0.0.0.9000
+Authors@R: person(given = "bqmaks", role = c("aut", "cre"),
+    email = "qmaxksmu@gmail.com")
+Description: Provides metadata-aware planning and execution tools for
+    reproducible biomedical data analysis.
+URL: https://github.com/bqmaks/bqreport
+BugReports: https://github.com/bqmaks/bqreport/issues
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+Depends:
+    R (>= 4.2.0)
+Imports:
+    dplyr,
+    tibble
+Suggests:
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
+Config/roxygen2/version: 8.0.0
