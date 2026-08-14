@@ -1,8 +1,0 @@
-^AGENTS\.md$
-^snowflake\.log$
-^bqreport.*\.tar\.gz$
-^bqreport\.Rcheck$
-^_pkgdown\.yml$
-^pkgdown$
-^docs$
-^\.github$
