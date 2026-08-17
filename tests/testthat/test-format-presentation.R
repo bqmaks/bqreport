@@ -8,7 +8,7 @@ formatted_example <- function(rounding = TRUE) {
     "mean",
     function(x) data.frame(mean = mean(x))
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(
     plan,
@@ -94,7 +94,7 @@ test_that("format_presentation() formats component scales", {
     3,
     "significant"
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   presentation <- prepare_presentation(run_analysis(plan))
 
@@ -124,7 +124,7 @@ test_that("format_presentation() normalizes negative zero", {
     "value",
     function(x) data.frame(value = mean(x))
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   presentation <- prepare_presentation(run_analysis(plan))
 
@@ -166,7 +166,10 @@ test_that("format_presentation() records missing and empty status text", {
       )
     }
   )
-  plan <- plan_summary(data, value, strata = stratum)
+  plan <- plan_summary(
+    data,
+    strata = stratum
+  )
   plan <- add_statistic(plan, value, statistic)
   presentation <- prepare_presentation(run_analysis(plan))
 

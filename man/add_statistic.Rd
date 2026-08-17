@@ -4,36 +4,31 @@
 \alias{add_statistic}
 \title{Add a statistic to a summary plan}
 \usage{
-add_statistic(plan, variables, statistic)
+add_statistic(plan, variables, statistic = continuous_descriptives())
 }
 \arguments{
 \item{plan}{A \code{bq_plan_summary} object.}
 
-\item{variables}{A tidyselect expression selecting one or more variables
-already included in \code{plan$variables}.}
+\item{variables}{A tidyselect expression selecting one or more variables.
+Design-axis variables cannot also be summary variables.}
 
-\item{statistic}{A \code{bq_statistic} specification such as one created by
-\code{\link[=continuous_statistic]{continuous_statistic()}}.}
+\item{statistic}{A \code{bq_statistic} specification. The default is
+\code{\link[=continuous_descriptives]{continuous_descriptives()}}.}
 }
 \value{
 A copy of \code{plan} with the statistic registered and assigned.
 }
 \description{
-Registers one statistic specification and assigns it to selected summary
-variables. Declarative metadata, output components and assignments stay in
-flat tables; an executable custom function is stored separately under the
-same stable \code{statistic_id}.
+Selects one or more summary variables and assigns a calculation
+specification to them. Variables are added to the plan in first-selection
+order. Declarative metadata, output components and assignments stay in flat
+tables; the executable function is stored separately under the same stable
+\code{statistic_id}.
 }
 \examples{
 data <- as_bq_data(data.frame(age = c(40, 55, NA), bmi = c(22, 31, 27)))
-plan <- plan_summary(data, c(age, bmi))
-robust <- continuous_statistic(
-  "robust",
-  function(x) {
-    data.frame(
-      median = if (length(x) == 0L) NA_real_ else stats::median(x, na.rm = TRUE)
-    )
-  }
-)
-add_statistic(plan, c(age, bmi), robust)
+data <- set_type(data, age, continuous())
+data <- set_type(data, bmi, continuous())
+plan_summary(data) |>
+  add_statistic(c(age, bmi))
 }

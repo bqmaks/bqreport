@@ -19,7 +19,6 @@ preflight diagnostics is rejected before any statistic is computed.
 \examples{
 data <- as_bq_data(data.frame(age = c(40, 55, NA)))
 data <- set_type(data, age, continuous())
-plan <- plan_summary(data, age)
 average <- continuous_statistic(
   "average",
   function(x) {
@@ -28,6 +27,7 @@ average <- continuous_statistic(
     )
   }
 )
-plan <- add_statistic(plan, age, average)
+plan <- plan_summary(data) |>
+  add_statistic(age, average)
 run_analysis(plan)
 }

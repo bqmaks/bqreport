@@ -4,19 +4,10 @@
 \alias{plan_summary}
 \title{Plan a summary analysis}
 \usage{
-plan_summary(
-  data,
-  variables,
-  group = NULL,
-  strata = NULL,
-  overall = character()
-)
+plan_summary(data, group = NULL, strata = NULL, overall = character())
 }
 \arguments{
 \item{data}{A \code{bq_data} object.}
-
-\item{variables}{A tidyselect expression selecting one or more variables to
-summarise.}
 
 \item{group}{\code{NULL}, or a tidyselect expression selecting exactly one group
 variable.}
@@ -32,15 +23,16 @@ are never model-based.}
 A \code{bq_plan_summary} object.
 }
 \description{
-Fixes the variables and design axes of a summary analysis before any
-computation. \code{group} defines levels that may later be compared, while
-\code{strata} defines contexts in which the analysis is repeated. \code{overall}
-names axes that should also be collapsed into raw, pooled summaries.
+Fixes the design axes of a summary analysis before any computation. \code{group}
+defines levels that may later be compared, while \code{strata} defines contexts
+in which the analysis is repeated. \code{overall} names axes that should also be
+collapsed into raw, pooled summaries.
 }
 \details{
 The plan stores stable variable identifiers and the \code{bq_data} object they
-belong to. It does not infer types, choose estimands, validate analytic
-methods or compute results.
+belong to. Summary variables and their calculation specifications are added
+separately with \code{\link[=add_statistic]{add_statistic()}}. The plan does not infer types, validate
+analytic methods or compute results.
 }
 \examples{
 data <- as_bq_data(data.frame(
@@ -50,9 +42,9 @@ data <- as_bq_data(data.frame(
 ))
 plan_summary(
   data,
-  variables = age,
   group = treatment,
   strata = centre,
   overall = c("group", "strata")
-)
+) |>
+  add_statistic(age)
 }

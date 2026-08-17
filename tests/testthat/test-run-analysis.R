@@ -15,7 +15,10 @@ test_that("run_analysis() computes raw continuous summaries by cell", {
       )
     }
   )
-  plan <- plan_summary(data, value, group = treatment)
+  plan <- plan_summary(
+    data,
+    group = treatment
+  )
   plan <- add_statistic(plan, value, statistic)
 
   result <- run_analysis(plan)
@@ -59,7 +62,11 @@ test_that("run_analysis() computes raw Overall from its member rows", {
     "total",
     function(x) data.frame(total = sum(x, na.rm = TRUE))
   )
-  plan <- plan_summary(data, value, group = treatment, overall = "group")
+  plan <- plan_summary(
+    data,
+    group = treatment,
+    overall = "group"
+  )
   plan <- add_statistic(plan, value, statistic)
 
   result <- run_analysis(plan)
@@ -81,7 +88,10 @@ test_that("run_analysis() executes statistics for empty cells", {
     "length",
     function(x) data.frame(length = length(x))
   )
-  plan <- plan_summary(data, value, group = treatment)
+  plan <- plan_summary(
+    data,
+    group = treatment
+  )
   plan <- add_statistic(plan, value, statistic)
 
   result <- run_analysis(plan)
@@ -102,7 +112,7 @@ test_that("run_analysis() keeps raw values despite display metadata", {
       data.frame(mean = if (length(x) == 0L) NA_real_ else mean(x))
     }
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(plan, value, enumerate_values())
 
@@ -112,7 +122,7 @@ test_that("run_analysis() keeps raw values despite display metadata", {
 })
 
 test_that("run_analysis() stops before computing a plan that fails preflight", {
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data())
 
   error <- tryCatch(
     run_analysis(plan),
@@ -121,7 +131,10 @@ test_that("run_analysis() stops before computing a plan that fails preflight", {
 
   expect_s3_class(error, "bq_error_preflight")
   expect_false(error$preflight$ok)
-  expect_identical(error$preflight$diagnostics$code, "missing_statistic")
+  expect_identical(
+    error$preflight$diagnostics$code,
+    "missing_summary_variable"
+  )
 })
 
 test_that("run_analysis() wraps errors raised by a statistic", {
@@ -136,7 +149,7 @@ test_that("run_analysis() wraps errors raised by a statistic", {
       data.frame(value = NA_real_)
     }
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
 
   error <- tryCatch(
@@ -160,7 +173,7 @@ test_that("run_analysis() rejects runtime component type changes", {
       data.frame(value = if (length(x) == 0L) NA_real_ else 1L)
     }
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
 
   error <- tryCatch(
@@ -198,7 +211,7 @@ test_that("run_analysis() validates the complete runtime schema", {
         }
       })
     )
-    plan <- plan_summary(data, value)
+    plan <- plan_summary(data)
     plan <- add_statistic(plan, value, statistic)
 
     expect_error(

@@ -25,7 +25,10 @@ compose_table_example <- function() {
     },
     scale = c(mean = "variable", observed = "count")
   )
-  plan <- plan_summary(data, value, strata = stratum)
+  plan <- plan_summary(
+    data,
+    strata = stratum
+  )
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(
     plan,
@@ -65,6 +68,8 @@ test_that("compose_table() builds rows and visible body values", {
       statistic_name = c("summary", "summary", NA_character_),
       component = c("mean", "observed", NA_character_),
       component_scale = c("variable", "count", NA_character_),
+      row_label = rep(NA_character_, 3),
+      template = rep(NA_character_, 3),
       variable_label = rep("Serum level", 3),
       unit = rep("mg", 3),
       position = 1:3
@@ -98,15 +103,62 @@ test_that("compose_table() keeps statuses outside the body", {
   expect_false(any(table$body$cell_id %in% c("c001", "c003")))
 })
 
+test_that("compose_table() substitutes named summary formats", {
+  data <- as_bq_data(tibble::tibble(value = c(1, 2, 3)))
+  data <- set_type(data, value, continuous())
+  data <- set_rounding(data, value, 1)
+  data <- set_summary_format(
+    data,
+    value,
+    c(
+      "Mean (SD)" = "{mean} ({sd})",
+      "Median (Q1; Q3)" = "{median} ({q1}; {q3})"
+    )
+  )
+  plan <- plan_summary(data) |>
+    add_statistic(value)
+  plan <- add_display_rule(
+    plan,
+    value,
+    enumerate_values(max_n = 3L, display_statistics = TRUE)
+  )
+  formatted <- format_presentation(prepare_presentation(run_analysis(plan)))
+
+  table <- compose_table(formatted)
+
+  expect_identical(
+    table$rows$row_kind,
+    c("summary_format", "summary_format", "enumeration")
+  )
+  expect_identical(
+    table$rows$row_label,
+    c("Mean (SD)", "Median (Q1; Q3)", NA_character_)
+  )
+  expect_identical(
+    table$rows$template,
+    c(
+      "{mean} ({sd})",
+      "{median} ({q1}; {q3})",
+      NA_character_
+    )
+  )
+  expect_true(all(is.na(table$rows$component)))
+  expect_identical(
+    table$body$value,
+    c("2.0 (1.0)", "2.0 (1.5; 2.5)", "1.0, 2.0, 3.0")
+  )
+})
+
 test_that("compose_table() omits statistics replaced by enumeration", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
   data <- set_type(data, value, continuous())
   data <- set_rounding(data, value, 0)
+  data <- set_summary_format(data, value, c("Mean" = "{mean}"))
   statistic <- continuous_statistic(
     "mean",
     function(x) data.frame(mean = mean(x))
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(plan, value, enumerate_values(max_n = 2L))
   formatted <- format_presentation(prepare_presentation(run_analysis(plan)))
@@ -115,6 +167,27 @@ test_that("compose_table() omits statistics replaced by enumeration", {
 
   expect_identical(table$rows$row_kind, "enumeration")
   expect_identical(table$body$value, "1, 2")
+})
+
+test_that("compose_table() retains an unnamed summary format", {
+  data <- as_bq_data(tibble::tibble(value = c(1, 2)))
+  data <- set_type(data, value, continuous())
+  data <- set_rounding(data, value, 0)
+  data <- set_summary_format(data, value, "{mean}")
+  statistic <- continuous_statistic(
+    "mean",
+    function(x) data.frame(mean = mean(x))
+  )
+  plan <- plan_summary(data)
+  plan <- add_statistic(plan, value, statistic)
+  formatted <- format_presentation(prepare_presentation(run_analysis(plan)))
+
+  table <- compose_table(formatted)
+
+  expect_identical(table$rows$row_kind, "summary_format")
+  expect_identical(table$rows$row_label, NA_character_)
+  expect_identical(table$rows$template, "{mean}")
+  expect_identical(table$body$value, "2")
 })
 
 test_that("compose_table() identifies group, strata and Overall headers", {
@@ -137,7 +210,6 @@ test_that("compose_table() identifies group, strata and Overall headers", {
   )
   plan <- plan_summary(
     data,
-    value,
     group = treatment,
     strata = centre,
     overall = c("group", "strata")
@@ -181,7 +253,11 @@ test_that("compose_table() supports a table without design axes", {
     "mean",
     function(x) data.frame(mean = mean(x))
   )
-  plan <- add_statistic(plan_summary(data, value), value, statistic)
+  plan <- add_statistic(
+    plan_summary(data),
+    value,
+    statistic
+  )
   formatted <- format_presentation(prepare_presentation(run_analysis(plan)))
 
   table <- compose_table(formatted)

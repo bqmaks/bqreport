@@ -4,6 +4,12 @@
 #' body registries. The result contains no renderer-specific objects and does
 #' not perform numeric calculations or formatting.
 #'
+#' If a summary variable has formats recorded by [set_summary_format()], each
+#' template becomes one `summary_format` row. Its name is stored as a separate
+#' row label, while placeholders are replaced with already formatted statistic
+#' components. Components not referenced by any template remain in the
+#' analysis result but do not get separate table rows.
+#'
 #' @param formatted A `bq_formatted_presentation` object.
 #'
 #' @return A `bq_table` object.
@@ -16,8 +22,8 @@
 #'   "mean",
 #'   function(x) data.frame(mean = mean(x))
 #' )
-#' plan <- plan_summary(data, value)
-#' plan <- add_statistic(plan, value, statistic)
+#' plan <- plan_summary(data) |>
+#'   add_statistic(value, statistic)
 #' formatted <- format_presentation(prepare_presentation(run_analysis(plan)))
 #' compose_table(formatted)
 compose_table <- function(formatted) {
@@ -45,6 +51,7 @@ compose_table.bq_formatted_presentation_summary <- function(formatted) {
   result <- formatted$presentation$result
   plan <- result$plan
   registry <- attr(plan$data, "variables")
+  summary_formats <- attr(plan$data, "summary_formats")
   row_records <- list()
   next_row_number <- 1L
 
@@ -68,32 +75,56 @@ compose_table.bq_formatted_presentation_summary <- function(formatted) {
           plan$statistic_assignments$var_id == var_id
         ]
     ]
+    variable_formats <- summary_formats[summary_formats$var_id == var_id, ]
+    variable_formats <- variable_formats[order(variable_formats$position), ]
 
     if (show_statistic_rows) {
-      for (statistic_id in assigned_statistics) {
-        statistic_name <- plan$statistics$name[
-          match(statistic_id, plan$statistics$statistic_id)
-        ]
-        components <- plan$statistic_components[
-          plan$statistic_components$statistic_id == statistic_id,
-          c("component", "scale", "position")
-        ]
-        components <- components[order(components$position), ]
-
-        for (component_row in seq_len(nrow(components))) {
+      if (nrow(variable_formats) > 0L) {
+        for (format_row in seq_len(nrow(variable_formats))) {
           row_records[[next_row_number]] <- tibble::tibble(
             row_id = sprintf("r%03d", next_row_number),
             var_id = var_id,
-            row_kind = "statistic",
-            statistic_id = statistic_id,
-            statistic_name = statistic_name,
-            component = components$component[component_row],
-            component_scale = components$scale[component_row],
+            row_kind = "summary_format",
+            statistic_id = NA_character_,
+            statistic_name = NA_character_,
+            component = NA_character_,
+            component_scale = NA_character_,
+            row_label = variable_formats$format_name[format_row],
+            template = variable_formats$template[format_row],
             variable_label = variable_label,
             unit = registry$unit[variable_row],
             position = next_row_number
           )
           next_row_number <- next_row_number + 1L
+        }
+      } else {
+        for (statistic_id in assigned_statistics) {
+          statistic_name <- plan$statistics$name[
+            match(statistic_id, plan$statistics$statistic_id)
+          ]
+          components <- plan$statistic_components[
+            plan$statistic_components$statistic_id == statistic_id,
+            c("component", "scale", "position")
+          ]
+          components <- components[order(components$position), ]
+
+          for (component_row in seq_len(nrow(components))) {
+            row_records[[next_row_number]] <- tibble::tibble(
+              row_id = sprintf("r%03d", next_row_number),
+              var_id = var_id,
+              row_kind = "statistic",
+              statistic_id = statistic_id,
+              statistic_name = statistic_name,
+              component = components$component[component_row],
+              component_scale = components$scale[component_row],
+              row_label = NA_character_,
+              template = NA_character_,
+              variable_label = variable_label,
+              unit = registry$unit[variable_row],
+              position = next_row_number
+            )
+            next_row_number <- next_row_number + 1L
+          }
         }
       }
     }
@@ -110,6 +141,8 @@ compose_table.bq_formatted_presentation_summary <- function(formatted) {
         statistic_name = NA_character_,
         component = NA_character_,
         component_scale = NA_character_,
+        row_label = NA_character_,
+        template = NA_character_,
         variable_label = variable_label,
         unit = registry$unit[variable_row],
         position = next_row_number
@@ -126,6 +159,8 @@ compose_table.bq_formatted_presentation_summary <- function(formatted) {
     statistic_name = character(),
     component = character(),
     component_scale = character(),
+    row_label = character(),
+    template = character(),
     variable_label = character(),
     unit = character(),
     position = integer()
@@ -185,6 +220,65 @@ compose_table.bq_formatted_presentation_summary <- function(formatted) {
           formatted$formatted_estimates$component == row$component,
         c("cell_id", "value")
       ]
+    } else if (row$row_kind == "summary_format") {
+      displays <- displays[displays$show_statistics, ]
+      value_records <- list()
+
+      for (display_row in seq_len(nrow(displays))) {
+        cell_id <- displays$cell_id[display_row]
+        estimates <- formatted$formatted_estimates[
+          formatted$formatted_estimates$cell_id == cell_id &
+            formatted$formatted_estimates$var_id == row$var_id,
+        ]
+        placeholder_matches <- regmatches(
+          row$template,
+          gregexpr(
+            "\\{[A-Za-z][A-Za-z0-9_.]*\\}",
+            row$template,
+            perl = TRUE
+          )
+        )[[1L]]
+        components <- unique(substring(
+          placeholder_matches,
+          2L,
+          nchar(placeholder_matches) - 1L
+        ))
+        value <- row$template
+
+        for (component in components) {
+          replacement <- estimates$value[estimates$component == component]
+          if (length(replacement) != 1L) {
+            bq_abort(
+              "bq_error_invalid_presentation",
+              sprintf(
+                paste0(
+                  "Summary component `%s` for variable `%s` in cell `%s` ",
+                  "does not have exactly one formatted value."
+                ),
+                component,
+                row$var_id,
+                cell_id
+              )
+            )
+          }
+          value <- gsub(
+            paste0("{", component, "}"),
+            replacement,
+            value,
+            fixed = TRUE
+          )
+        }
+        value_records[[display_row]] <- tibble::tibble(
+          cell_id = cell_id,
+          value = value
+        )
+      }
+      values <- dplyr::bind_rows(
+        c(
+          list(tibble::tibble(cell_id = character(), value = character())),
+          value_records
+        )
+      )
     } else {
       displays <- displays[displays$show_values, ]
       values <- formatted$enumerations[

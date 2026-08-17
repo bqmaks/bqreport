@@ -49,25 +49,50 @@
 - `R/selectors.R` — внутренний `resolve_variables()`, немедленно связывающий
   tidyselect-выбор со стабильными `var_id`; на него переведены `set_type()` и
   `set_role()` с его обёртками, а также `infer_types()`.
-- `R/plan-summary.R` — `plan_summary()`, минимальный план с анализируемыми
-  переменными, group, strata и осями raw Overall; компактный print показывает
-  зарегистрированные статистики и их назначения, но не вложенные данные и
-  функции. План также содержит плоские реестры `display_rules` (`rule_id`,
-  `kind`, `max_n`, `display_statistics`) и `display_rule_assignments`
-  (`rule_id`, `var_id`) со счётчиком `next_display_rule_number`.
+- `R/plan-summary.R` — `plan_summary()`, конструктор только дизайна: group,
+  strata и оси raw Overall. Анализируемые переменные и вычисления в нём не
+  задаются; их последовательно добавляет `add_statistic()`. Поэтому только что
+  созданный план является допустимым промежуточным объектом с пустым
+  `variables`, а preflight возвращает для него blocking
+  `missing_summary_variable`. Компактный print показывает дизайн,
+  зарегистрированные статистики и назначения, но не вложенные данные и
+  функции. План также
+  содержит плоские реестры `display_rules` (`rule_id`, `kind`, `max_n`,
+  `display_statistics`) и `display_rule_assignments` (`rule_id`, `var_id`) со
+  счётчиком `next_display_rule_number`.
 - `R/continuous-statistic.R` — `continuous_statistic()`, декларация custom raw
   функции с one-row data-frame prototype, пользовательской missing policy и
   шкалой каждого компонента: `variable`, `count` или `dimensionless`. Скалярный
   `scale` применяется ко всем компонентам, разные шкалы задаются именованным
   вектором; count требует integer storage. Specification также содержит
   именованные `component_rounding` и `component_digits`.
+- `R/continuous-descriptives.R` — `continuous_descriptives()`, встроенная
+  базовая raw specification с компонентами `mean`, `sd`, `median`, `q1`,
+  `q3`, `min`, `max`. Пропуски исключаются системно, квартиль использует
+  `quantile(type = 7)`, пустая/all-missing ячейка возвращает NA для всех
+  компонентов, а выборка из одного наблюдения — NA для `sd`. Все компоненты
+  имеют variable scale и наследуют формат переменной.
+- `R/continuous-descriptives-extended.R` —
+  `continuous_descriptives_extended()`, отдельная встроенная specification,
+  добавляющая к базовому набору `iqr`, `mad`, скорректированный type-2
+  `skewness` и `excess_kurtosis`. Моменты вычисляет Suggested-пакет
+  `datawizard`; его отсутствие даёт явную `bq_error_missing_dependency` без
+  fallback. Чтобы исключить внутренний fallback datawizard с type 2 на type 1,
+  skewness вызывается только при n >= 3, kurtosis при n >= 4; нулевой разброс
+  даёт NA. IQR согласован с квартилями type 7, MAD использует стандартный
+  `stats::mad()`. Два dimensionless-компонента имеют default decimal/2.
 - `R/set-component-rounding.R` — `set_component_rounding()`, явная decimal или
   significant policy для variable/dimensionless компонентов. Variable без
   override наследует политику переменной; count всегда остаётся целым и setter
   для него запрещён.
-- `R/add-statistic.R` — `add_statistic()`, регистрация specification, её
-  компонентов (включая `scale`), назначений `var_id` и исполняемой функции в
-  summary plan.
+- `R/add-statistic.R` — публичный `add_statistic(plan, variables, statistic =
+  continuous_descriptives())`. Tidyselect-выбор одновременно добавляет summary-
+  переменные в план в порядке первого выбора и назначает им specification, её
+  компоненты (включая `scale`) и исполняемую функцию. Разные стадии pipe могут
+  назначать basic, extended или custom specification разным подмножествам.
+  Design axes выбирать запрещено. Одинаковые human-readable имена statistics
+  допустимы для непересекающихся переменных, поскольку ссылки используют
+  `statistic_id`; повтор того же имени для той же переменной отвергается.
 - `R/preflight.R` — generic `preflight()` и метод summary-плана; повреждённая
   структура плана отвергается, а аналитические проблемы возвращаются плоской
   таблицей diagnostics с адресацией по `var_id`, `statistic_id`, `component`,
@@ -78,7 +103,13 @@
   несовместимость возвращается как блокирующая `incompatible_display_rule`,
   но не дублируется для missing/unknown type. Результат preflight содержит
   скомпилированные `cells`, `cell_axes` и `cell_rows`. Dimensionless component
-  без явной политики даёт блокирующую `missing_component_rounding`.
+  без явной политики даёт блокирующую `missing_component_rounding`. Summary
+  format registry проверяется структурно; placeholders сопоставляются с
+  компонентами statistics, назначенных той же переменной. Отсутствующее имя
+  даёт blocking `unknown_summary_component`, одно имя из нескольких statistics
+  — `ambiguous_summary_component`; повтор placeholder внутри одного шаблона не
+  дублирует diagnostic, а при полном отсутствии statistic остаётся только
+  первичная `missing_statistic`.
 - `R/compile-cells.R` — внутренний `compile_summary_cells()`, нормализующий
   leaf и raw Overall в три плоских реестра: `cells`, `cell_axes`, `cell_rows`.
   Factor использует объявленные levels, включая пустые комбинации; NA остаётся
@@ -125,7 +156,20 @@
   `column_axes`, `cell_displays` и `body`. Порядок строк следует переменным,
   статистикам и компонентам плана; enumeration может заменять statistic-строки
   или следовать после них. Для `all_missing` и `empty` body не дублируется:
-  приоритетный текст остаётся в `cell_displays$status_text`.
+  приоритетный текст остаётся в `cell_displays$status_text`. Если у переменной
+  есть summary formats, component rows заменяются строками
+  `row_kind = "summary_format"`: пользовательское имя хранится отдельно в
+  `row_label`, исходный шаблон — в `template`, а body собирается подстановкой
+  уже отформатированных estimates. Неупомянутые компоненты остаются в result,
+  но отдельно не выводятся; unnamed format имеет `row_label = NA`, совместный
+  режим с enumeration и полная замена statistics сохраняют прежнюю семантику.
+- `demo/continuous-summary.R` — запускаемый сквозной пример continuous summary
+  от `as_bq_data()` и словаря метаданных до renderer-neutral `bq_table`.
+  Показывает tidyselect, raw Overall по group/strata, basic descriptives,
+  одновременное перечисление и статистики в малых ячейках, decimal comma,
+  удаление висящих нулей, а также отдельные basic, extended и custom
+  specification через последовательные `add_statistic()`.
+  Зарегистрирован в `demo/00Index`.
 - К `bq_data` добавлен плоский реестр уровней `var_id`, `value`, `position`;
   dplyr сохраняет его, удаляет строки исчезнувших переменных и очищает уровни
   переписанного через `mutate()` столбца.
@@ -139,18 +183,17 @@
 Экспортируются конструктор данных и accessor, конструкторы типов, явные
 сеттеры ролей и типов, `infer_type()` и `infer_types()`.
 
-951 тест, `R CMD check` — Status: OK. Коммиты `d4650bc`, `d0243f4`,
-`6c9e384` запушены в `origin/main`; завершённый engine/presentation-срез
-зафиксирован локальным коммитом `3ab2bcc`.
+1013 тестов, `R CMD check --no-manual` — Status: OK. Коммиты `d4650bc`, `d0243f4`,
+`6c9e384` запушены в `origin/main`; последующие завершённые срезы зафиксированы
+локальными коммитами `3ab2bcc` и `4bd8669`.
 
 ## Следующий шаг
 
-Renderer-specific слой пока не проектировать. Следующий шаг — реализовать
-`continuous_descriptives()` как встроенную базовую statistic specification с
-компонентами `mean`, `sd`, `median`, `q1`, `q3`, `min`, `max`, системной
-missing policy и без дублирования уже рассчитанных `n`/`n_missing`. После
-отдельной проверки добавить extended-вариант и лишь затем preflight-проверку и
-подстановку summary format templates в composer.
+Renderer-specific слой пока не проектировать. Ближайший новый дизайн —
+одновыборочные оценки и доверительные интервалы для continuous-переменных.
+Нужно отдельно определить контракт raw-vector estimand и будущего model-based
+estimand от master model, сохранив принятое ограничение: Overall всегда
+вычисляется только по исходному вектору и никогда не бывает model-based.
 
 ## Известные пробелы
 

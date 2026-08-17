@@ -52,8 +52,8 @@ statistic <- continuous_statistic(
   "mean",
   function(x) data.frame(mean = mean(x))
 )
-plan <- plan_summary(data, value)
-plan <- add_statistic(plan, value, statistic)
+plan <- plan_summary(data) |>
+  add_statistic(value, statistic)
 plan <- add_display_rule(plan, value, enumerate_values())
 presentation <- prepare_presentation(run_analysis(plan))
 format_presentation(

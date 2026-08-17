@@ -1,43 +1,16 @@
-#' Add a statistic to a summary plan
+#' Check a statistic specification
 #'
-#' Registers one statistic specification and assigns it to selected summary
-#' variables. Declarative metadata, output components and assignments stay in
-#' flat tables; an executable custom function is stored separately under the
-#' same stable `statistic_id`.
+#' @param statistic An object to validate.
 #'
-#' @param plan A `bq_plan_summary` object.
-#' @param variables A tidyselect expression selecting one or more variables
-#'   already included in `plan$variables`.
-#' @param statistic A `bq_statistic` specification such as one created by
-#'   [continuous_statistic()].
-#'
-#' @return A copy of `plan` with the statistic registered and assigned.
-#' @export
-#' @examples
-#' data <- as_bq_data(data.frame(age = c(40, 55, NA), bmi = c(22, 31, 27)))
-#' plan <- plan_summary(data, c(age, bmi))
-#' robust <- continuous_statistic(
-#'   "robust",
-#'   function(x) {
-#'     data.frame(
-#'       median = if (length(x) == 0L) NA_real_ else stats::median(x, na.rm = TRUE)
-#'     )
-#'   }
-#' )
-#' add_statistic(plan, c(age, bmi), robust)
-add_statistic <- function(plan, variables, statistic) {
-  if (!inherits(plan, "bq_plan_summary")) {
-    bq_abort(
-      "bq_error_invalid_plan",
-      sprintf("`plan` must be a bq_plan_summary object, not %s.", class(plan)[1L])
-    )
-  }
-
+#' @return `TRUE` when the object follows the statistic specification schema.
+#' @noRd
+is_valid_statistic_specification <- function(statistic) {
   expected_fields <- c(
     "kind", "name", "components", "component_types", "component_scales",
     "component_rounding", "component_digits", "source", "missing", "fun"
   )
-  valid_statistic <- inherits(statistic, "bq_statistic") &&
+
+  inherits(statistic, "bq_statistic") &&
     identical(names(statistic), expected_fields) &&
     is.character(statistic$kind) && length(statistic$kind) == 1L &&
     !is.na(statistic$kind) && nzchar(statistic$kind) &&
@@ -91,6 +64,43 @@ add_statistic <- function(plan, variables, statistic) {
     is.character(statistic$missing) && length(statistic$missing) == 1L &&
     !is.na(statistic$missing) && nzchar(statistic$missing) &&
     is.function(statistic$fun)
+}
+
+#' Add a statistic to a summary plan
+#'
+#' Selects one or more summary variables and assigns a calculation
+#' specification to them. Variables are added to the plan in first-selection
+#' order. Declarative metadata, output components and assignments stay in flat
+#' tables; the executable function is stored separately under the same stable
+#' `statistic_id`.
+#'
+#' @param plan A `bq_plan_summary` object.
+#' @param variables A tidyselect expression selecting one or more variables.
+#'   Design-axis variables cannot also be summary variables.
+#' @param statistic A `bq_statistic` specification. The default is
+#'   [continuous_descriptives()].
+#'
+#' @return A copy of `plan` with the statistic registered and assigned.
+#' @export
+#' @examples
+#' data <- as_bq_data(data.frame(age = c(40, 55, NA), bmi = c(22, 31, 27)))
+#' data <- set_type(data, age, continuous())
+#' data <- set_type(data, bmi, continuous())
+#' plan_summary(data) |>
+#'   add_statistic(c(age, bmi))
+add_statistic <- function(
+  plan,
+  variables,
+  statistic = continuous_descriptives()
+) {
+  if (!inherits(plan, "bq_plan_summary")) {
+    bq_abort(
+      "bq_error_invalid_plan",
+      sprintf("`plan` must be a bq_plan_summary object, not %s.", class(plan)[1L])
+    )
+  }
+
+  valid_statistic <- is_valid_statistic_specification(statistic)
 
   if (!valid_statistic) {
     bq_abort(
@@ -105,25 +115,49 @@ add_statistic <- function(plan, variables, statistic) {
     argument = "variables",
     min = 1L
   )
-  outside_plan <- setdiff(selection$var_id, plan$variables)
+  design_ids <- c(plan$group, plan$strata)
+  design_overlap <- intersect(selection$var_id, design_ids)
 
-  if (length(outside_plan) > 0L) {
-    variable_name <- selection$name[match(outside_plan[1L], selection$var_id)]
+  if (length(design_overlap) > 0L) {
+    variable_name <- selection$name[
+      match(design_overlap[1L], selection$var_id)
+    ]
     bq_abort(
       "bq_error_invalid_plan",
       sprintf(
-        "Variable `%s` is not a summary variable in `plan`; select only planned variables.",
+        "Variable `%s` is a design axis and cannot also be summarised.",
         variable_name
       )
     )
   }
 
-  if (statistic$name %in% plan$statistics$name) {
+  existing_named_assignments <- plan$statistic_assignments$var_id[
+    plan$statistic_assignments$statistic_id %in%
+      plan$statistics$statistic_id[plan$statistics$name == statistic$name]
+  ]
+  duplicate_assignment <- intersect(
+    selection$var_id,
+    existing_named_assignments
+  )
+
+  if (length(duplicate_assignment) > 0L) {
+    variable_name <- selection$name[
+      match(duplicate_assignment[1L], selection$var_id)
+    ]
     bq_abort(
       "bq_error_invalid_plan",
-      sprintf("Statistic name `%s` is already used in `plan`.", statistic$name)
+      sprintf(
+        "Variable `%s` already has a statistic named `%s`.",
+        variable_name,
+        statistic$name
+      )
     )
   }
+
+  plan$variables <- c(
+    plan$variables,
+    setdiff(selection$var_id, plan$variables)
+  )
 
   statistic_id <- sprintf("s%03d", plan$next_statistic_number)
 

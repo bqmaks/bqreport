@@ -17,6 +17,13 @@ Arranges already formatted summary output into flat row, column, header and
 body registries. The result contains no renderer-specific objects and does
 not perform numeric calculations or formatting.
 }
+\details{
+If a summary variable has formats recorded by \code{\link[=set_summary_format]{set_summary_format()}}, each
+template becomes one \code{summary_format} row. Its name is stored as a separate
+row label, while placeholders are replaced with already formatted statistic
+components. Components not referenced by any template remain in the
+analysis result but do not get separate table rows.
+}
 \examples{
 data <- as_bq_data(data.frame(value = c(1.2, 3)))
 data <- set_type(data, value, continuous())
@@ -25,8 +32,8 @@ statistic <- continuous_statistic(
   "mean",
   function(x) data.frame(mean = mean(x))
 )
-plan <- plan_summary(data, value)
-plan <- add_statistic(plan, value, statistic)
+plan <- plan_summary(data) |>
+  add_statistic(value, statistic)
 formatted <- format_presentation(prepare_presentation(run_analysis(plan)))
 compose_table(formatted)
 }

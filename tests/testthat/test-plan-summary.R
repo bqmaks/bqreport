@@ -1,6 +1,6 @@
-test_that("plan_summary() records a minimal summary plan", {
+test_that("plan_summary() creates an empty summary design", {
   data <- labelled_data()
-  plan <- plan_summary(data, c(age, bmi))
+  plan <- plan_summary(data)
 
   expect_s3_class(plan, c("bq_plan_summary", "bq_plan"), exact = TRUE)
   expect_identical(
@@ -8,7 +8,7 @@ test_that("plan_summary() records a minimal summary plan", {
     list(
       analysis = "summary",
       data = data,
-      variables = c("v001", "v003"),
+      variables = character(),
       group = character(),
       strata = character(),
       overall = character(),
@@ -51,30 +51,28 @@ test_that("plan_summary() records a minimal summary plan", {
 
 test_that("plan_summary() records group, multiple strata and overall axes", {
   data <- as_bq_data(tibble::tibble(
-    outcome = 1:3,
     treatment = c("A", "B", "A"),
     centre = c("X", "X", "Y"),
     sex = c("f", "m", "m")
   ))
   plan <- plan_summary(
     data,
-    outcome,
     group = treatment,
     strata = c(centre, sex),
     overall = c("strata", "group")
   )
 
-  expect_identical(plan$variables, "v001")
-  expect_identical(plan$group, "v002")
-  expect_identical(plan$strata, c("v003", "v004"))
+  expect_identical(plan$variables, character())
+  expect_identical(plan$group, "v001")
+  expect_identical(plan$strata, c("v002", "v003"))
   expect_identical(plan$overall, c("group", "strata"))
 })
 
-test_that("plan_summary() resolves renamed columns to their stable identifiers", {
-  data <- dplyr::rename(labelled_data(), years = age)
-  plan <- plan_summary(data, years)
+test_that("plan_summary() resolves renamed axes to stable identifiers", {
+  data <- dplyr::rename(labelled_data(), treatment = sex)
+  plan <- plan_summary(data, group = treatment)
 
-  expect_identical(plan$variables, "v001")
+  expect_identical(plan$group, "v002")
   expect_identical(plan$data, data)
 })
 
@@ -82,11 +80,11 @@ test_that("plan_summary() requires an available axis for each overall", {
   data <- labelled_data()
 
   expect_error(
-    plan_summary(data, age, overall = "group"),
+    plan_summary(data, overall = "group"),
     class = "bq_error_invalid_plan"
   )
   expect_error(
-    plan_summary(data, age, overall = "strata"),
+    plan_summary(data, overall = "strata"),
     class = "bq_error_invalid_plan"
   )
 })
@@ -96,58 +94,55 @@ test_that("plan_summary() validates the overall specification", {
 
   for (overall in list(NA_character_, "centre", c("group", "group"), 1)) {
     expect_error(
-      plan_summary(data, age, group = sex, overall = overall),
+      plan_summary(data, group = sex, overall = overall),
       class = "bq_error_invalid_plan"
     )
   }
 })
 
-test_that("plan_summary() keeps summarised variables separate from design axes", {
+test_that("plan_summary() keeps group and strata separate", {
   data <- labelled_data()
 
   expect_error(
-    plan_summary(data, age, group = age),
-    class = "bq_error_invalid_plan"
-  )
-  expect_error(plan_summary(data, age, group = age), "both summarised")
-  expect_error(
-    plan_summary(data, age, strata = age),
+    plan_summary(data, group = sex, strata = sex),
     class = "bq_error_invalid_plan"
   )
   expect_error(
-    plan_summary(data, age, group = sex, strata = sex),
-    class = "bq_error_invalid_plan"
+    plan_summary(data, group = sex, strata = sex),
+    "both `group` and `strata`"
   )
-  expect_error(plan_summary(data, age, group = sex, strata = sex), "both `group` and `strata`")
 })
 
-test_that("plan_summary() validates data and selection cardinality", {
+test_that("plan_summary() validates data and axis cardinality", {
   data <- labelled_data()
 
   expect_error(
-    plan_summary(tibble::tibble(age = 1), age),
+    plan_summary(tibble::tibble(age = 1)),
     class = "bq_error_invalid_data"
   )
-  expect_error(plan_summary(data, missing), class = "bq_error_invalid_selection")
   expect_error(
-    plan_summary(data, age, group = c(sex, bmi)),
+    plan_summary(data, group = missing),
     class = "bq_error_invalid_selection"
   )
-  expect_error(plan_summary(data, age, group = c(sex, bmi)), "at most 1 column")
+  expect_error(
+    plan_summary(data, group = c(sex, bmi)),
+    class = "bq_error_invalid_selection"
+  )
+  expect_error(
+    plan_summary(data, group = c(sex, bmi)),
+    "at most 1 column"
+  )
 })
 
-test_that("a summary plan prints its selections without printing data", {
+test_that("a summary design prints without printing data", {
   data <- as_bq_data(tibble::tibble(
-    outcome = 1:3,
     treatment = c("A", "B", "A"),
-    centre = c("X", "X", "Y"),
-    sex = c("f", "m", "m")
+    centre = c("X", "X", "Y")
   ))
   plan <- plan_summary(
     data,
-    outcome,
     group = treatment,
-    strata = c(centre, sex),
+    strata = centre,
     overall = c("group", "strata")
   )
 
@@ -157,9 +152,9 @@ test_that("a summary plan prints its selections without printing data", {
     output,
     c(
       "<bq summary plan>",
-      "Variables: outcome",
+      "Variables: none",
       "Group: treatment",
-      "Strata: centre, sex",
+      "Strata: centre",
       "Overall: group, strata",
       "Statistics: none"
     )
@@ -168,16 +163,7 @@ test_that("a summary plan prints its selections without printing data", {
   expect_identical(visibility$value, plan)
 })
 
-test_that("a summary plan prints absent design axes as none", {
-  plan <- plan_summary(labelled_data(), c(age, bmi))
-  output <- capture.output(print(plan))
-
-  expect_identical(output[3:5], c("Group: none", "Strata: none", "Overall: none"))
-  expect_identical(output[6], "Statistics: none")
-})
-
-test_that("a summary plan prints statistic components and assignments", {
-  plan <- plan_summary(labelled_data(), c(age, bmi))
+test_that("a configured summary plan prints statistic assignments", {
   robust <- continuous_statistic(
     "robust",
     function(x) data.frame(median = NA_real_, observed = NA_integer_)
@@ -186,15 +172,21 @@ test_that("a summary plan prints statistic components and assignments", {
     "average",
     function(x) data.frame(mean = NA_real_)
   )
-  plan <- plan |>
+  plan <- labelled_data() |>
+    plan_summary() |>
     add_statistic(c(age, bmi), robust) |>
     add_statistic(age, average)
 
   output <- capture.output(print(plan))
 
   expect_identical(
-    output[6:8],
+    output,
     c(
+      "<bq summary plan>",
+      "Variables: age, bmi",
+      "Group: none",
+      "Strata: none",
+      "Overall: none",
       "Statistics:",
       "  robust: median, observed -> age, bmi",
       "  average: mean -> age"

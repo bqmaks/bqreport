@@ -1,17 +1,16 @@
 #' Plan a summary analysis
 #'
-#' Fixes the variables and design axes of a summary analysis before any
-#' computation. `group` defines levels that may later be compared, while
-#' `strata` defines contexts in which the analysis is repeated. `overall`
-#' names axes that should also be collapsed into raw, pooled summaries.
+#' Fixes the design axes of a summary analysis before any computation. `group`
+#' defines levels that may later be compared, while `strata` defines contexts
+#' in which the analysis is repeated. `overall` names axes that should also be
+#' collapsed into raw, pooled summaries.
 #'
 #' The plan stores stable variable identifiers and the `bq_data` object they
-#' belong to. It does not infer types, choose estimands, validate analytic
-#' methods or compute results.
+#' belong to. Summary variables and their calculation specifications are added
+#' separately with [add_statistic()]. The plan does not infer types, validate
+#' analytic methods or compute results.
 #'
 #' @param data A `bq_data` object.
-#' @param variables A tidyselect expression selecting one or more variables to
-#'   summarise.
 #' @param group `NULL`, or a tidyselect expression selecting exactly one group
 #'   variable.
 #' @param strata `NULL`, or a tidyselect expression selecting one or more
@@ -30,14 +29,13 @@
 #' ))
 #' plan_summary(
 #'   data,
-#'   variables = age,
 #'   group = treatment,
 #'   strata = centre,
 #'   overall = c("group", "strata")
-#' )
+#' ) |>
+#'   add_statistic(age)
 plan_summary <- function(
   data,
-  variables,
   group = NULL,
   strata = NULL,
   overall = character()
@@ -61,12 +59,6 @@ plan_summary <- function(
     )
   }
 
-  selected_variables <- resolve_variables(
-    data,
-    rlang::enquo(variables),
-    argument = "variables",
-    min = 1L
-  )
   selected_group <- resolve_variables(
     data,
     rlang::enquo(group),
@@ -108,29 +100,13 @@ plan_summary <- function(
     )
   }
 
-  design_ids <- c(selected_group$var_id, selected_strata$var_id)
-  variable_design_overlap <- intersect(selected_variables$var_id, design_ids)
-
-  if (length(variable_design_overlap) > 0L) {
-    overlap_name <- registry$name[
-      match(variable_design_overlap[1L], registry$var_id)
-    ]
-    bq_abort(
-      "bq_error_invalid_plan",
-      sprintf(
-        "Variable `%s` cannot be both summarised and used as a design axis.",
-        overlap_name
-      )
-    )
-  }
-
   overall <- allowed_overall[allowed_overall %in% overall]
 
-  structure(
+  plan <- structure(
     list(
       analysis = "summary",
       data = data,
-      variables = selected_variables$var_id,
+      variables = character(),
       group = selected_group$var_id,
       strata = selected_strata$var_id,
       overall = overall,
@@ -170,6 +146,8 @@ plan_summary <- function(
     ),
     class = c("bq_plan_summary", "bq_plan")
   )
+
+  plan
 }
 
 #' Print a summary analysis plan
@@ -191,7 +169,7 @@ print.bq_plan_summary <- function(x, ...) {
 
   cat(
     "<bq summary plan>\n",
-    "Variables: ", paste(variable_names, collapse = ", "), "\n",
+    "Variables: ", if (length(variable_names) == 0L) "none" else paste(variable_names, collapse = ", "), "\n",
     "Group: ", if (length(group_names) == 0L) "none" else group_names, "\n",
     "Strata: ", if (length(strata_names) == 0L) "none" else paste(strata_names, collapse = ", "), "\n",
     "Overall: ", if (length(x$overall) == 0L) "none" else paste(x$overall, collapse = ", "), "\n",

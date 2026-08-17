@@ -14,7 +14,8 @@
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55, NA), bmi = c(22, 31, 27)))
-#' plan <- plan_summary(data, c(age, bmi))
+#' plan <- plan_summary(data) |>
+#'   add_statistic(c(age, bmi))
 #' add_display_rule(plan, c(age, bmi), enumerate_values(max_n = 2L))
 add_display_rule <- function(plan, variables, rule) {
   if (!inherits(plan, "bq_plan_summary")) {

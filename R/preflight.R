@@ -6,6 +6,10 @@
 #' structure raises an error because its references cannot be interpreted
 #' safely.
 #'
+#' Summary format placeholders are checked against components returned by the
+#' statistics assigned to each variable. Unknown or ambiguous component names
+#' are blocking diagnostics.
+#'
 #' @param plan A `bq_plan` object.
 #'
 #' @return A `bq_preflight` object with readiness diagnostics and compiled cell
@@ -14,12 +18,12 @@
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55, NA)))
 #' data <- set_type(data, age, continuous())
-#' plan <- plan_summary(data, age)
 #' statistic <- continuous_statistic(
 #'   "average",
 #'   function(x) data.frame(mean = mean(x, na.rm = TRUE))
 #' )
-#' plan <- add_statistic(plan, age, statistic)
+#' plan <- plan_summary(data) |>
+#'   add_statistic(age, statistic)
 #' preflight(plan)
 preflight <- function(plan) {
   if (!inherits(plan, "bq_plan")) {
@@ -62,7 +66,7 @@ preflight.bq_plan_summary <- function(plan) {
   valid_structure <- identical(names(plan), expected_fields) &&
     identical(plan$analysis, "summary") &&
     inherits(plan$data, "bq_data") &&
-    is.character(plan$variables) && length(plan$variables) > 0L &&
+    is.character(plan$variables) &&
     !anyNA(plan$variables) && !anyDuplicated(plan$variables) &&
     is.character(plan$group) && length(plan$group) <= 1L &&
     !anyNA(plan$group) &&
@@ -113,6 +117,11 @@ preflight.bq_plan_summary <- function(plan) {
     "var_id", "name", "label", "role", "type", "event",
     "event_source", "reference", "type_source", "unit", "rounding", "digits"
   )
+  summary_formats <- attr(plan$data, "summary_formats")
+  summary_format_fields <- c(
+    "var_id", "format_name", "template", "position"
+  )
+  placeholder_pattern <- "\\{[A-Za-z][A-Za-z0-9_.]*\\}"
   function_names <- names(plan$statistic_functions)
   if (is.null(function_names)) {
     function_names <- character()
@@ -127,6 +136,39 @@ preflight.bq_plan_summary <- function(plan) {
     identical(registry$name, names(plan$data)) &&
     is.character(registry$var_id) && !anyNA(registry$var_id) &&
     !anyDuplicated(registry$var_id) &&
+    is.data.frame(summary_formats) &&
+    identical(names(summary_formats), summary_format_fields) &&
+    is.character(summary_formats$var_id) &&
+    is.character(summary_formats$format_name) &&
+    is.character(summary_formats$template) &&
+    is.integer(summary_formats$position) &&
+    !anyNA(summary_formats[c("var_id", "template", "position")]) &&
+    all(summary_formats$var_id %in% registry$var_id) &&
+    all(nzchar(summary_formats$template)) &&
+    all(summary_formats$position > 0L) &&
+    !anyDuplicated(summary_formats[c("var_id", "position")]) &&
+    !any(duplicated(
+      summary_formats[
+        !is.na(summary_formats$format_name),
+        c("var_id", "format_name")
+      ]
+    )) &&
+    all(is.na(summary_formats$format_name) | nzchar(summary_formats$format_name)) &&
+    all(vapply(
+      split(summary_formats$position, summary_formats$var_id),
+      function(position) identical(position, seq_along(position)),
+      logical(1)
+    )) &&
+    all(grepl(placeholder_pattern, summary_formats$template, perl = TRUE)) &&
+    !any(grepl(
+      "[{}]",
+      gsub(
+        placeholder_pattern,
+        "",
+        summary_formats$template,
+        perl = TRUE
+      )
+    )) &&
     is.character(registry$type) &&
     is.character(registry$unit) &&
     all(is.na(registry$unit) | nzchar(registry$unit)) &&
@@ -147,7 +189,6 @@ preflight.bq_plan_summary <- function(plan) {
     all(vapply(plan$statistics, is.character, logical(1))) &&
     !anyNA(plan$statistics) &&
     !anyDuplicated(plan$statistics$statistic_id) &&
-    !anyDuplicated(plan$statistics$name) &&
     is.character(plan$statistic_components$statistic_id) &&
     is.character(plan$statistic_components$component) &&
     is.character(plan$statistic_components$type) &&
@@ -250,6 +291,25 @@ preflight.bq_plan_summary <- function(plan) {
     cell_id = character(),
     message = character()
   )
+
+  if (length(plan$variables) == 0L) {
+    diagnostics <- dplyr::bind_rows(
+      diagnostics,
+      tibble::tibble(
+        severity = "error",
+        code = "missing_summary_variable",
+        var_id = NA_character_,
+        statistic_id = NA_character_,
+        component = NA_character_,
+        rule_id = NA_character_,
+        cell_id = NA_character_,
+        message = paste0(
+          "The summary plan has no variables; add at least one with ",
+          "`add_statistic()`."
+        )
+      )
+    )
+  }
 
   for (var_id in plan_ids) {
     variable_row <- match(var_id, registry$var_id)
@@ -417,6 +477,99 @@ preflight.bq_plan_summary <- function(plan) {
         )
       )
     )
+  }
+
+  for (var_id in plan$variables) {
+    variable_formats <- summary_formats[summary_formats$var_id == var_id, ]
+    assigned_statistic_ids <- plan$statistic_assignments$statistic_id[
+      plan$statistic_assignments$var_id == var_id
+    ]
+    if (nrow(variable_formats) == 0L || length(assigned_statistic_ids) == 0L) {
+      next
+    }
+
+    assigned_components <- plan$statistic_components[
+      plan$statistic_components$statistic_id %in% assigned_statistic_ids,
+      c("statistic_id", "component")
+    ]
+    variable_name <- registry$name[match(var_id, registry$var_id)]
+
+    for (format_row in seq_len(nrow(variable_formats))) {
+      template <- variable_formats$template[format_row]
+      placeholder_matches <- regmatches(
+        template,
+        gregexpr(placeholder_pattern, template, perl = TRUE)
+      )[[1L]]
+      placeholders <- unique(substring(
+        placeholder_matches,
+        2L,
+        nchar(placeholder_matches) - 1L
+      ))
+      format_name <- variable_formats$format_name[format_row]
+      format_description <- if (is.na(format_name)) {
+        sprintf("at position %d", variable_formats$position[format_row])
+      } else {
+        sprintf("`%s`", format_name)
+      }
+
+      for (component in placeholders) {
+        matching_statistic_ids <- unique(
+          assigned_components$statistic_id[
+            assigned_components$component == component
+          ]
+        )
+
+        if (length(matching_statistic_ids) == 0L) {
+          diagnostics <- dplyr::bind_rows(
+            diagnostics,
+            tibble::tibble(
+              severity = "error",
+              code = "unknown_summary_component",
+              var_id = var_id,
+              statistic_id = NA_character_,
+              component = component,
+              rule_id = NA_character_,
+              cell_id = NA_character_,
+              message = sprintf(
+                paste0(
+                  "Summary format %s for variable `%s` references component ",
+                  "`%s`, but no assigned statistic returns it."
+                ),
+                format_description,
+                variable_name,
+                component
+              )
+            )
+          )
+        } else if (length(matching_statistic_ids) > 1L) {
+          statistic_names <- plan$statistics$name[
+            match(matching_statistic_ids, plan$statistics$statistic_id)
+          ]
+          diagnostics <- dplyr::bind_rows(
+            diagnostics,
+            tibble::tibble(
+              severity = "error",
+              code = "ambiguous_summary_component",
+              var_id = var_id,
+              statistic_id = NA_character_,
+              component = component,
+              rule_id = NA_character_,
+              cell_id = NA_character_,
+              message = sprintf(
+                paste0(
+                  "Summary format %s for variable `%s` references component ",
+                  "`%s`, which is returned by multiple statistics: %s."
+                ),
+                format_description,
+                variable_name,
+                component,
+                paste(statistic_names, collapse = ", ")
+              )
+            )
+          )
+        }
+      }
+    }
   }
 
   missing_rounding_rows <- which(

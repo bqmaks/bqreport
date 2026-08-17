@@ -1,5 +1,6 @@
 test_that("add_display_rule() assigns one rule to several variables", {
-  plan <- plan_summary(labelled_data(), c(age, bmi))
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(c(age, bmi))
   result <- add_display_rule(
     plan,
     c(age, bmi),
@@ -26,7 +27,8 @@ test_that("add_display_rule() assigns one rule to several variables", {
 })
 
 test_that("add_display_rule() returns a new plan without changing its input", {
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(age)
   result <- add_display_rule(plan, age, enumerate_values())
 
   expect_identical(nrow(plan$display_rules), 0L)
@@ -35,7 +37,8 @@ test_that("add_display_rule() returns a new plan without changing its input", {
 })
 
 test_that("add_display_rule() gives later rules fresh identifiers", {
-  plan <- plan_summary(labelled_data(), c(age, bmi))
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(c(age, bmi))
   result <- plan |>
     add_display_rule(age, enumerate_values(2L)) |>
     add_display_rule(bmi, enumerate_values(3L))
@@ -47,7 +50,8 @@ test_that("add_display_rule() gives later rules fresh identifiers", {
 
 test_that("add_display_rule() resolves renamed variables by var_id", {
   data <- dplyr::rename(labelled_data(), years = age)
-  plan <- plan_summary(data, years)
+  plan <- plan_summary(data) |>
+    add_statistic(years)
 
   result <- add_display_rule(plan, years, enumerate_values())
 
@@ -55,7 +59,8 @@ test_that("add_display_rule() resolves renamed variables by var_id", {
 })
 
 test_that("add_display_rule() rejects columns outside summary variables", {
-  plan <- plan_summary(labelled_data(), age, group = sex)
+  plan <- plan_summary(labelled_data(), group = sex) |>
+    add_statistic(age)
 
   expect_error(
     add_display_rule(plan, bmi, enumerate_values()),
@@ -68,7 +73,8 @@ test_that("add_display_rule() rejects columns outside summary variables", {
 })
 
 test_that("add_display_rule() permits only one rule per variable", {
-  plan <- plan_summary(labelled_data(), c(age, bmi))
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(c(age, bmi))
   plan <- add_display_rule(plan, age, enumerate_values())
 
   expect_error(
@@ -82,7 +88,8 @@ test_that("add_display_rule() permits only one rule per variable", {
 })
 
 test_that("add_display_rule() validates plan and rule objects", {
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(age)
 
   expect_error(
     add_display_rule(labelled_data(), age, enumerate_values()),

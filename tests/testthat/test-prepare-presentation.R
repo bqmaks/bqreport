@@ -16,7 +16,10 @@ test_that("prepare_presentation() distinguishes cell status and display mode", {
       )
     }
   )
-  plan <- plan_summary(data, value, strata = stratum)
+  plan <- plan_summary(
+    data,
+    strata = stratum
+  )
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(plan, value, enumerate_values(max_n = 2L))
   result <- run_analysis(plan)
@@ -69,7 +72,6 @@ test_that("prepare_presentation() retains order and duplicates in Overall", {
   )
   plan <- plan_summary(
     data,
-    value,
     strata = stratum,
     overall = "strata"
   )
@@ -96,7 +98,7 @@ test_that("prepare_presentation() shows only statistics without a rule", {
     "mean",
     function(x) data.frame(mean = mean(x))
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
 
   presentation <- prepare_presentation(run_analysis(plan))
@@ -115,7 +117,7 @@ test_that("prepare_presentation() can show statistics and values together", {
     "mean",
     function(x) data.frame(mean = mean(x))
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(
     plan,
@@ -137,7 +139,7 @@ test_that("prepare_presentation() detects inconsistent source counts", {
     "mean",
     function(x) data.frame(mean = mean(x))
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
   plan <- add_display_rule(plan, value, enumerate_values())
   result <- run_analysis(plan)

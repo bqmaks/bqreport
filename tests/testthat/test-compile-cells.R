@@ -6,7 +6,6 @@ test_that("compile_summary_cells() builds leaf and every requested Overall", {
   ))
   plan <- plan_summary(
     data,
-    value,
     group = treatment,
     strata = centre,
     overall = c("group", "strata")
@@ -50,7 +49,7 @@ test_that("compile_summary_cells() retains missing design values as cells", {
     value = c(10, 20),
     treatment = c("A", NA_character_)
   ))
-  plan <- plan_summary(data, value, group = treatment)
+  plan <- plan_summary(data, group = treatment)
 
   compiled <- compile_summary_cells(plan)
 
@@ -67,7 +66,6 @@ test_that("strata Overall collapses multiple strata variables together", {
   ))
   plan <- plan_summary(
     data,
-    value,
     strata = c(centre, sex),
     overall = "strata"
   )
@@ -88,7 +86,7 @@ test_that("strata Overall collapses multiple strata variables together", {
 })
 
 test_that("compile_summary_cells() builds one leaf cell without design axes", {
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data())
 
   compiled <- compile_summary_cells(plan)
 

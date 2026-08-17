@@ -1,5 +1,5 @@
 test_that("preflight() accepts a ready continuous summary plan", {
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data())
   statistic <- continuous_statistic(
     "average",
     function(x) data.frame(mean = NA_real_)
@@ -60,7 +60,6 @@ test_that("preflight() compiles design cells and reports empty leaf cells", {
   data <- set_type(data, centre, nominal("X"))
   plan <- plan_summary(
     data,
-    value,
     group = treatment,
     strata = centre,
     overall = c("group", "strata")
@@ -88,7 +87,10 @@ test_that("preflight() reports missing design values without dropping rows", {
   ))
   data <- set_type(data, value, continuous())
   data <- set_type(data, treatment, binary("A"))
-  plan <- plan_summary(data, value, group = treatment)
+  plan <- plan_summary(
+    data,
+    group = treatment
+  )
   statistic <- continuous_statistic(
     "average",
     function(x) data.frame(mean = NA_real_)
@@ -107,7 +109,7 @@ test_that("preflight() reports missing design values without dropping rows", {
 
 test_that("preflight() reports missing and unknown analytic types", {
   missing_data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  missing_plan <- plan_summary(missing_data, value)
+  missing_plan <- plan_summary(missing_data)
   statistic <- continuous_statistic(
     "average",
     function(x) data.frame(mean = NA_real_)
@@ -123,7 +125,7 @@ test_that("preflight() reports missing and unknown analytic types", {
     missing_data,
     tibble::tibble(name = "value", type = "unknown")
   )
-  unknown_plan <- plan_summary(unknown_data, value)
+  unknown_plan <- plan_summary(unknown_data)
   unknown_plan <- add_statistic(unknown_plan, value, statistic)
   unknown_plan <- add_display_rule(
     unknown_plan,
@@ -147,7 +149,10 @@ test_that("preflight() checks types of design axes", {
     group = c("a", "b")
   ))
   data <- set_type(data, value, continuous())
-  plan <- plan_summary(data, value, group = group)
+  plan <- plan_summary(
+    data,
+    group = group
+  )
   statistic <- continuous_statistic(
     "average",
     function(x) data.frame(mean = NA_real_)
@@ -164,7 +169,10 @@ test_that("preflight() checks types of design axes", {
 test_that("preflight() restricts units and rounding to quantitative variables", {
   data <- set_unit(labelled_data(), sex, "kg")
   data <- set_rounding(data, sex, 1)
-  plan <- plan_summary(data, age, group = sex)
+  plan <- plan_summary(
+    data,
+    group = sex
+  )
   statistic <- continuous_statistic(
     "average",
     function(x) data.frame(mean = NA_real_)
@@ -181,20 +189,17 @@ test_that("preflight() restricts units and rounding to quantitative variables", 
   expect_identical(result$diagnostics$var_id, c("v002", "v002"))
 })
 
-test_that("preflight() requires a statistic for every summary variable", {
-  result <- preflight(plan_summary(labelled_data(), c(age, bmi)))
+test_that("preflight() requires at least one summary variable", {
+  result <- preflight(plan_summary(labelled_data()))
 
   expect_false(result$ok)
-  expect_identical(
-    result$diagnostics$code,
-    c("missing_statistic", "missing_statistic")
-  )
-  expect_identical(result$diagnostics$var_id, c("v001", "v003"))
+  expect_identical(result$diagnostics$code, "missing_summary_variable")
+  expect_identical(result$diagnostics$var_id, NA_character_)
 })
 
 test_that("preflight() reports incompatible continuous statistics", {
   data <- set_type(labelled_data(), sex, binary("m"))
-  plan <- plan_summary(data, sex)
+  plan <- plan_summary(data)
   statistic <- continuous_statistic(
     "average",
     function(x) data.frame(mean = NA_real_)
@@ -211,7 +216,8 @@ test_that("preflight() reports incompatible continuous statistics", {
 
 test_that("preflight() reports incompatible display rules", {
   data <- set_type(labelled_data(), sex, binary("m"))
-  plan <- plan_summary(data, sex)
+  plan <- plan_summary(data) |>
+    add_statistic(sex)
   plan <- add_display_rule(plan, sex, enumerate_values())
 
   result <- preflight(plan)
@@ -234,7 +240,7 @@ test_that("preflight() requires rounding for dimensionless components", {
     function(x) data.frame(ratio = NA_real_),
     scale = "dimensionless"
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
 
   missing_result <- preflight(plan)
@@ -253,10 +259,97 @@ test_that("preflight() requires rounding for dimensionless components", {
     3,
     "significant"
   )
-  plan <- plan_summary(data, value)
+  plan <- plan_summary(data)
   plan <- add_statistic(plan, value, statistic)
 
   expect_true(preflight(plan)$ok)
+})
+
+test_that("preflight() accepts unique summary format components", {
+  data <- set_summary_format(
+    labelled_data(),
+    age,
+    c(
+      "Mean (SD)" = "{mean} ({sd})",
+      "Median (Q1; Q3)" = "{median} ({q1}; {q3})"
+    )
+  )
+  plan <- plan_summary(data) |>
+    add_statistic(age)
+
+  result <- preflight(plan)
+
+  expect_true(result$ok)
+  expect_identical(nrow(result$diagnostics), 0L)
+})
+
+test_that("preflight() reports unknown summary format components once", {
+  data <- set_summary_format(
+    labelled_data(),
+    age,
+    c("Mean" = "{average} / {average}")
+  )
+  plan <- plan_summary(data) |>
+    add_statistic(age)
+
+  result <- preflight(plan)
+  diagnostic <- result$diagnostics[
+    result$diagnostics$code == "unknown_summary_component",
+  ]
+
+  expect_false(result$ok)
+  expect_identical(nrow(diagnostic), 1L)
+  expect_identical(diagnostic$severity, "error")
+  expect_identical(diagnostic$var_id, "v001")
+  expect_identical(diagnostic$statistic_id, NA_character_)
+  expect_identical(diagnostic$component, "average")
+  expect_match(diagnostic$message, "Summary format `Mean`")
+})
+
+test_that("unassigned summary formats do not duplicate an empty-plan diagnostic", {
+  data <- set_summary_format(labelled_data(), age, "{mean}")
+
+  result <- preflight(plan_summary(data))
+
+  expect_false(result$ok)
+  expect_identical(result$diagnostics$code, "missing_summary_variable")
+})
+
+test_that("preflight() reports ambiguous summary format components", {
+  data <- set_summary_format(labelled_data(), age, "{mean}")
+  first <- continuous_statistic(
+    "first",
+    function(x) data.frame(mean = NA_real_)
+  )
+  second <- continuous_statistic(
+    "second",
+    function(x) data.frame(mean = NA_real_)
+  )
+  plan <- plan_summary(data)
+  plan <- add_statistic(plan, age, first)
+  plan <- add_statistic(plan, age, second)
+
+  result <- preflight(plan)
+  diagnostic <- result$diagnostics[
+    result$diagnostics$code == "ambiguous_summary_component",
+  ]
+
+  expect_false(result$ok)
+  expect_identical(nrow(diagnostic), 1L)
+  expect_identical(diagnostic$var_id, "v001")
+  expect_identical(diagnostic$component, "mean")
+  expect_match(diagnostic$message, "first, second")
+})
+
+test_that("preflight() rejects damaged summary format registries", {
+  data <- set_summary_format(labelled_data(), age, "{mean}")
+  plan <- plan_summary(data) |>
+    add_statistic(age)
+  formats <- attr(plan$data, "summary_formats")
+  formats$position <- 2L
+  attr(plan$data, "summary_formats") <- formats
+
+  expect_error(preflight(plan), class = "bq_error_invalid_plan")
 })
 
 test_that("preflight() rejects non-plans and damaged plan structures", {
@@ -265,12 +358,14 @@ test_that("preflight() rejects non-plans and damaged plan structures", {
     class = "bq_error_invalid_plan"
   )
 
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(age)
   plan$statistics <- plan$statistics[, -1]
 
   expect_error(preflight(plan), class = "bq_error_invalid_plan")
 
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data()) |>
+    add_statistic(age)
   plan$display_rules <- plan$display_rules[, -1]
 
   expect_error(preflight(plan), class = "bq_error_invalid_plan")
@@ -279,7 +374,7 @@ test_that("preflight() rejects non-plans and damaged plan structures", {
     "mean",
     function(x) data.frame(mean = NA_real_)
   )
-  plan <- plan_summary(labelled_data(), age)
+  plan <- plan_summary(labelled_data())
   plan <- add_statistic(plan, age, statistic)
   plan$statistic_components$scale <- "distance"
 

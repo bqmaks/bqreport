@@ -20,14 +20,19 @@ inspected and corrected before an engine runs. A damaged internal plan
 structure raises an error because its references cannot be interpreted
 safely.
 }
+\details{
+Summary format placeholders are checked against components returned by the
+statistics assigned to each variable. Unknown or ambiguous component names
+are blocking diagnostics.
+}
 \examples{
 data <- as_bq_data(data.frame(age = c(40, 55, NA)))
 data <- set_type(data, age, continuous())
-plan <- plan_summary(data, age)
 statistic <- continuous_statistic(
   "average",
   function(x) data.frame(mean = mean(x, na.rm = TRUE))
 )
-plan <- add_statistic(plan, age, statistic)
+plan <- plan_summary(data) |>
+  add_statistic(age, statistic)
 preflight(plan)
 }
