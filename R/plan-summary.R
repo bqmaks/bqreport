@@ -152,7 +152,18 @@ plan_summary <- function(
         var_id = character()
       ),
       statistic_functions = list(),
-      next_statistic_number = 1L
+      next_statistic_number = 1L,
+      display_rules = tibble::tibble(
+        rule_id = character(),
+        kind = character(),
+        max_n = integer(),
+        display_statistics = logical()
+      ),
+      display_rule_assignments = tibble::tibble(
+        rule_id = character(),
+        var_id = character()
+      ),
+      next_display_rule_number = 1L
     ),
     class = c("bq_plan_summary", "bq_plan")
   )

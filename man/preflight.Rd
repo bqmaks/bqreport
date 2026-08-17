@@ -10,7 +10,8 @@ preflight(plan)
 \item{plan}{A \code{bq_plan} object.}
 }
 \value{
-A \code{bq_preflight} object with \code{analysis}, \code{ok} and \code{diagnostics}.
+A \code{bq_preflight} object with readiness diagnostics and compiled cell
+registries.
 }
 \description{
 Performs analysis-specific checks without computing results. Analytic

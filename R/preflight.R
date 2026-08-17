@@ -8,7 +8,8 @@
 #'
 #' @param plan A `bq_plan` object.
 #'
-#' @return A `bq_preflight` object with `analysis`, `ok` and `diagnostics`.
+#' @return A `bq_preflight` object with readiness diagnostics and compiled cell
+#'   registries.
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55, NA)))
@@ -42,7 +43,8 @@ preflight.bq_plan_summary <- function(plan) {
   expected_fields <- c(
     "analysis", "data", "variables", "group", "strata", "overall",
     "statistics", "statistic_components", "statistic_assignments",
-    "statistic_functions", "next_statistic_number"
+    "statistic_functions", "next_statistic_number", "display_rules",
+    "display_rule_assignments", "next_display_rule_number"
   )
   statistic_fields <- c(
     "statistic_id", "name", "kind", "source", "missing"
@@ -51,6 +53,10 @@ preflight.bq_plan_summary <- function(plan) {
     "statistic_id", "component", "type", "position"
   )
   assignment_fields <- c("statistic_id", "var_id")
+  display_rule_fields <- c(
+    "rule_id", "kind", "max_n", "display_statistics"
+  )
+  display_assignment_fields <- c("rule_id", "var_id")
 
   valid_structure <- identical(names(plan), expected_fields) &&
     identical(plan$analysis, "summary") &&
@@ -76,14 +82,27 @@ preflight.bq_plan_summary <- function(plan) {
     !is.na(plan$next_statistic_number) &&
     is.finite(plan$next_statistic_number) &&
     plan$next_statistic_number > 0 &&
-    plan$next_statistic_number == floor(plan$next_statistic_number)
+    plan$next_statistic_number == floor(plan$next_statistic_number) &&
+    is.data.frame(plan$display_rules) &&
+    identical(names(plan$display_rules), display_rule_fields) &&
+    is.data.frame(plan$display_rule_assignments) &&
+    identical(
+      names(plan$display_rule_assignments),
+      display_assignment_fields
+    ) &&
+    is.numeric(plan$next_display_rule_number) &&
+    length(plan$next_display_rule_number) == 1L &&
+    !is.na(plan$next_display_rule_number) &&
+    is.finite(plan$next_display_rule_number) &&
+    plan$next_display_rule_number > 0 &&
+    plan$next_display_rule_number == floor(plan$next_display_rule_number)
 
   if (!valid_structure) {
     bq_abort(
       "bq_error_invalid_plan",
       paste0(
         "`plan` has an invalid summary-plan structure; rebuild it with ",
-        "`plan_summary()` and `add_statistic()`."
+        "`plan_summary()`, `add_statistic()` and `add_display_rule()`."
       )
     )
   }
@@ -141,7 +160,24 @@ preflight.bq_plan_summary <- function(plan) {
     all(plan$statistic_assignments$statistic_id %in% plan$statistics$statistic_id) &&
     all(plan$statistic_assignments$var_id %in% plan$variables) &&
     identical(function_names, plan$statistics$statistic_id) &&
-    all(vapply(plan$statistic_functions, is.function, logical(1)))
+    all(vapply(plan$statistic_functions, is.function, logical(1))) &&
+    is.character(plan$display_rules$rule_id) &&
+    is.character(plan$display_rules$kind) &&
+    is.integer(plan$display_rules$max_n) &&
+    is.logical(plan$display_rules$display_statistics) &&
+    !anyNA(plan$display_rules) &&
+    !anyDuplicated(plan$display_rules$rule_id) &&
+    all(plan$display_rules$kind == "enumerate_values") &&
+    all(plan$display_rules$max_n > 0L) &&
+    is.character(plan$display_rule_assignments$rule_id) &&
+    is.character(plan$display_rule_assignments$var_id) &&
+    !anyNA(plan$display_rule_assignments) &&
+    !anyDuplicated(plan$display_rule_assignments$var_id) &&
+    all(
+      plan$display_rule_assignments$rule_id %in%
+        plan$display_rules$rule_id
+    ) &&
+    all(plan$display_rule_assignments$var_id %in% plan$variables)
 
   if (nrow(plan$statistics) > 0L) {
     valid_references <- valid_references &&
@@ -149,21 +185,33 @@ preflight.bq_plan_summary <- function(plan) {
       all(plan$statistics$statistic_id %in% plan$statistic_assignments$statistic_id)
   }
 
+  if (nrow(plan$display_rules) > 0L) {
+    valid_references <- valid_references &&
+      all(
+        plan$display_rules$rule_id %in%
+          plan$display_rule_assignments$rule_id
+      )
+  }
+
   if (!valid_references) {
     bq_abort(
       "bq_error_invalid_plan",
       paste0(
         "`plan` contains inconsistent registries or identifiers; rebuild it ",
-        "with `plan_summary()` and `add_statistic()`."
+        "with `plan_summary()`, `add_statistic()` and `add_display_rule()`."
       )
     )
   }
+
+  compiled_cells <- compile_summary_cells(plan)
 
   diagnostics <- tibble::tibble(
     severity = character(),
     code = character(),
     var_id = character(),
     statistic_id = character(),
+    rule_id = character(),
+    cell_id = character(),
     message = character()
   )
 
@@ -180,6 +228,8 @@ preflight.bq_plan_summary <- function(plan) {
           code = "missing_type",
           var_id = var_id,
           statistic_id = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
           message = sprintf(
             "Variable `%s` has no analytic type; set or infer it before analysis.",
             variable_name
@@ -194,6 +244,8 @@ preflight.bq_plan_summary <- function(plan) {
           code = "unknown_type",
           var_id = var_id,
           statistic_id = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
           message = sprintf(
             "Variable `%s` has type `unknown`; set an analytic type before analysis.",
             variable_name
@@ -214,6 +266,8 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_unit",
           var_id = var_id,
           statistic_id = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
           message = sprintf(
             "Variable `%s` has type `%s`, which cannot carry a measurement unit.",
             variable_name,
@@ -235,6 +289,8 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_rounding",
           var_id = var_id,
           statistic_id = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
           message = sprintf(
             paste0(
               "Variable `%s` has type `%s`, which cannot use a quantitative ",
@@ -248,6 +304,58 @@ preflight.bq_plan_summary <- function(plan) {
     }
   }
 
+  for (var_id in c(plan$group, plan$strata)) {
+    variable_row <- match(var_id, registry$var_id)
+    variable_name <- registry$name[variable_row]
+    missing_n <- sum(is.na(plan$data[[variable_name]]))
+
+    if (missing_n > 0L) {
+      diagnostics <- dplyr::bind_rows(
+        diagnostics,
+        tibble::tibble(
+          severity = "warning",
+          code = "missing_design_value",
+          var_id = var_id,
+          statistic_id = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
+          message = sprintf(
+            paste0(
+              "Variable `%s` has %d missing design value%s; these rows are ",
+              "retained in explicit cells."
+            ),
+            variable_name,
+            missing_n,
+            if (missing_n == 1L) "" else "s"
+          )
+        )
+      )
+    }
+  }
+
+  empty_leaf_cells <- compiled_cells$cells$cell_id[
+    compiled_cells$cells$n == 0L &
+      !compiled_cells$cells$overall_group &
+      !compiled_cells$cells$overall_strata
+  ]
+  for (cell_id in empty_leaf_cells) {
+    diagnostics <- dplyr::bind_rows(
+      diagnostics,
+      tibble::tibble(
+        severity = "warning",
+        code = "empty_cell",
+        var_id = NA_character_,
+        statistic_id = NA_character_,
+        rule_id = NA_character_,
+        cell_id = cell_id,
+        message = sprintf(
+          "Cell `%s` has no rows; inspect `cell_axes` before analysis.",
+          cell_id
+        )
+      )
+    )
+  }
+
   assigned_variables <- unique(plan$statistic_assignments$var_id)
   for (var_id in setdiff(plan$variables, assigned_variables)) {
     variable_name <- registry$name[match(var_id, registry$var_id)]
@@ -258,12 +366,52 @@ preflight.bq_plan_summary <- function(plan) {
         code = "missing_statistic",
         var_id = var_id,
         statistic_id = NA_character_,
+        rule_id = NA_character_,
+        cell_id = NA_character_,
         message = sprintf(
           "Variable `%s` has no assigned statistic; add one before analysis.",
           variable_name
         )
       )
     )
+  }
+
+  for (assignment_row in seq_len(nrow(plan$display_rule_assignments))) {
+    rule_id <- plan$display_rule_assignments$rule_id[assignment_row]
+    var_id <- plan$display_rule_assignments$var_id[assignment_row]
+    rule_kind <- plan$display_rules$kind[
+      match(rule_id, plan$display_rules$rule_id)
+    ]
+    variable_row <- match(var_id, registry$var_id)
+    variable_type <- registry$type[variable_row]
+
+    if (
+      rule_kind == "enumerate_values" &&
+        !is.na(variable_type) && variable_type != "unknown" &&
+        variable_type != "continuous"
+    ) {
+      variable_name <- registry$name[variable_row]
+      diagnostics <- dplyr::bind_rows(
+        diagnostics,
+        tibble::tibble(
+          severity = "error",
+          code = "incompatible_display_rule",
+          var_id = var_id,
+          statistic_id = NA_character_,
+          rule_id = rule_id,
+          cell_id = NA_character_,
+          message = sprintf(
+            paste0(
+              "Display rule `%s` requires a continuous variable, but `%s` ",
+              "has type `%s`."
+            ),
+            rule_kind,
+            variable_name,
+            variable_type
+          )
+        )
+      )
+    }
   }
 
   for (assignment_row in seq_len(nrow(plan$statistic_assignments))) {
@@ -291,6 +439,8 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_statistic",
           var_id = var_id,
           statistic_id = statistic_id,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
           message = sprintf(
             paste0(
               "Statistic `%s` requires a continuous variable, but `%s` has ",
@@ -309,7 +459,10 @@ preflight.bq_plan_summary <- function(plan) {
     list(
       analysis = "summary",
       ok = !any(diagnostics$severity == "error"),
-      diagnostics = diagnostics
+      diagnostics = diagnostics,
+      cells = compiled_cells$cells,
+      cell_axes = compiled_cells$cell_axes,
+      cell_rows = compiled_cells$cell_rows
     ),
     class = c("bq_preflight_summary", "bq_preflight")
   )
