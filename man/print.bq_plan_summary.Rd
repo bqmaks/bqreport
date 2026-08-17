@@ -15,6 +15,7 @@
 \code{x}, invisibly.
 }
 \description{
-Shows the fixed variable selections and raw Overall axes without printing
-the data stored inside the plan.
+Shows the fixed variable selections, raw Overall axes and registered
+statistics without printing the data or executable functions stored inside
+the plan.
 }

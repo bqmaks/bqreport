@@ -39,12 +39,20 @@ add_statistic <- function(plan, variables, statistic) {
   valid_statistic <- inherits(statistic, "bq_statistic") &&
     identical(names(statistic), expected_fields) &&
     is.character(statistic$kind) && length(statistic$kind) == 1L &&
+    !is.na(statistic$kind) && nzchar(statistic$kind) &&
     is.character(statistic$name) && length(statistic$name) == 1L &&
+    !is.na(statistic$name) && nzchar(statistic$name) &&
     is.character(statistic$components) && length(statistic$components) > 0L &&
+    !anyNA(statistic$components) && all(nzchar(statistic$components)) &&
+    !anyDuplicated(statistic$components) &&
     is.character(statistic$component_types) &&
     length(statistic$component_types) == length(statistic$components) &&
+    identical(names(statistic$component_types), statistic$components) &&
+    all(statistic$component_types %in% c("double", "integer")) &&
     is.character(statistic$source) && length(statistic$source) == 1L &&
+    !is.na(statistic$source) && nzchar(statistic$source) &&
     is.character(statistic$missing) && length(statistic$missing) == 1L &&
+    !is.na(statistic$missing) && nzchar(statistic$missing) &&
     is.function(statistic$fun)
 
   if (!valid_statistic) {

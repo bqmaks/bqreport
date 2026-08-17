@@ -21,14 +21,9 @@ labelled_data <- function() {
   variables$type <- c("continuous", "binary", "continuous")
   variables$event <- c(NA, "m", NA)
   variables$event_source <- c(NA, "explicit", NA)
-  variables$reference <- c(NA, "f", NA)
+  variables$reference <- NA_character_
   variables$type_source <- rep("explicit", 3)
   attr(data, "variables") <- variables
-  attr(data, "levels") <- tibble::tibble(
-    var_id = "v002",
-    value = c("f", "m"),
-    position = 1:2
-  )
 
   data
 }
@@ -44,4 +39,7 @@ expect_registry_aligned <- function(x) {
   testthat::expect_identical(names(x), variables_of(x)$name)
   testthat::expect_identical(nrow(variables_of(x)), ncol(x))
   testthat::expect_true(all(levels_of(x)$var_id %in% variables_of(x)$var_id))
+  testthat::expect_true(
+    attr(x, "next_var_number") > max(c(0L, as.integer(sub("^v", "", variables_of(x)$var_id))))
+  )
 }

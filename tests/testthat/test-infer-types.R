@@ -67,6 +67,15 @@ test_that("infer_types() passes max_levels to type inference", {
   expect_identical(variables_of(infer_types(data, max_levels = 3L))$type, "nominal")
 })
 
+test_that("infer_types() reports an invalid max_levels as a package error", {
+  data <- as_bq_data(tibble::tibble(category = letters[1:3]))
+
+  expect_error(
+    infer_types(data, max_levels = NA_integer_),
+    class = "bq_error_invalid_inference"
+  )
+})
+
 test_that("infer_types() validates data and selection", {
   data <- as_bq_data(tibble::tibble(x = 1, y = 2))
 

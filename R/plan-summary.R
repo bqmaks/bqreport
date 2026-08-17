@@ -160,8 +160,9 @@ plan_summary <- function(
 
 #' Print a summary analysis plan
 #'
-#' Shows the fixed variable selections and raw Overall axes without printing
-#' the data stored inside the plan.
+#' Shows the fixed variable selections, raw Overall axes and registered
+#' statistics without printing the data or executable functions stored inside
+#' the plan.
 #'
 #' @param x A `bq_plan_summary` object.
 #' @param ... Ignored.
@@ -182,6 +183,33 @@ print.bq_plan_summary <- function(x, ...) {
     "Overall: ", if (length(x$overall) == 0L) "none" else paste(x$overall, collapse = ", "), "\n",
     sep = ""
   )
+
+  if (nrow(x$statistics) == 0L) {
+    cat("Statistics: none\n")
+  } else {
+    cat("Statistics:\n")
+
+    for (statistic_id in x$statistics$statistic_id) {
+      statistic_name <- x$statistics$name[
+        match(statistic_id, x$statistics$statistic_id)
+      ]
+      component_names <- x$statistic_components$component[
+        x$statistic_components$statistic_id == statistic_id
+      ]
+      assigned_ids <- x$statistic_assignments$var_id[
+        x$statistic_assignments$statistic_id == statistic_id
+      ]
+      assigned_names <- registry$name[match(assigned_ids, registry$var_id)]
+
+      cat(
+        "  ", statistic_name,
+        ": ", paste(component_names, collapse = ", "),
+        " -> ", paste(assigned_names, collapse = ", "),
+        "\n",
+        sep = ""
+      )
+    }
+  }
 
   invisible(x)
 }

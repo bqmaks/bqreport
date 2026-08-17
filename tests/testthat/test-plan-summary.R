@@ -146,7 +146,8 @@ test_that("a summary plan prints its selections without printing data", {
       "Variables: outcome",
       "Group: treatment",
       "Strata: centre, sex",
-      "Overall: group, strata"
+      "Overall: group, strata",
+      "Statistics: none"
     )
   )
   expect_false(visibility$visible)
@@ -158,4 +159,31 @@ test_that("a summary plan prints absent design axes as none", {
   output <- capture.output(print(plan))
 
   expect_identical(output[3:5], c("Group: none", "Strata: none", "Overall: none"))
+  expect_identical(output[6], "Statistics: none")
+})
+
+test_that("a summary plan prints statistic components and assignments", {
+  plan <- plan_summary(labelled_data(), c(age, bmi))
+  robust <- continuous_statistic(
+    "robust",
+    function(x) data.frame(median = NA_real_, observed = NA_integer_)
+  )
+  average <- continuous_statistic(
+    "average",
+    function(x) data.frame(mean = NA_real_)
+  )
+  plan <- plan |>
+    add_statistic(c(age, bmi), robust) |>
+    add_statistic(age, average)
+
+  output <- capture.output(print(plan))
+
+  expect_identical(
+    output[6:8],
+    c(
+      "Statistics:",
+      "  robust: median, observed -> age, bmi",
+      "  average: mean -> age"
+    )
+  )
 })

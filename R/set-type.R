@@ -41,6 +41,24 @@ set_type <- function(data, variable, type) {
     is.character(type$reference) && length(type$reference) == 1L &&
     is.character(type$levels)
 
+  if (valid_type) {
+    valid_type <- switch(
+      type$type,
+      continuous = is.na(type$event) && is.na(type$reference) &&
+        length(type$levels) == 0L,
+      count = is.na(type$event) && is.na(type$reference) &&
+        length(type$levels) == 0L,
+      binary = !is.na(type$event) && is.na(type$reference) &&
+        length(type$levels) == 0L,
+      ordinal = is.na(type$event) && is.na(type$reference) &&
+        length(type$levels) >= 3L && !anyNA(type$levels) &&
+        !anyDuplicated(type$levels),
+      nominal = is.na(type$event) && !is.na(type$reference) &&
+        length(type$levels) == 0L,
+      FALSE
+    )
+  }
+
   if (!valid_type) {
     bq_abort(
       "bq_error_invalid_type_spec",

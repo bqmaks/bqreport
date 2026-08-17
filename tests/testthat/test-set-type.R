@@ -42,7 +42,11 @@ test_that("set_type() expands ordinal levels into their flat registry", {
 })
 
 test_that("set_type() replaces stale levels of the selected variable only", {
-  data <- labelled_data()
+  data <- set_type(
+    labelled_data(),
+    sex,
+    ordinal(c("f", "m", "not reported"))
+  )
   result <- set_type(data, sex, nominal("f"))
 
   expect_registry_aligned(result)
@@ -107,4 +111,44 @@ test_that("set_type() validates its data, specification and selection", {
   expect_error(set_type(data, missing, continuous()), class = "bq_error_invalid_selection")
   expect_error(set_type(data, c(age, bmi), continuous()), "exactly one column")
   expect_error(set_type(data, tidyselect::everything(), continuous()), "not 2")
+})
+
+test_that("set_type() rejects internally inconsistent specifications", {
+  data <- as_bq_data(data.frame(group = c("case", "control")))
+  malformed <- list(
+    structure(
+      list(
+        type = "continuous",
+        event = "case",
+        reference = NA_character_,
+        levels = character()
+      ),
+      class = "bq_type"
+    ),
+    structure(
+      list(
+        type = "binary",
+        event = NA_character_,
+        reference = NA_character_,
+        levels = character()
+      ),
+      class = "bq_type"
+    ),
+    structure(
+      list(
+        type = "ordinal",
+        event = NA_character_,
+        reference = NA_character_,
+        levels = c("low", "high")
+      ),
+      class = "bq_type"
+    )
+  )
+
+  for (specification in malformed) {
+    expect_error(
+      set_type(data, group, specification),
+      class = "bq_error_invalid_type_spec"
+    )
+  }
 })

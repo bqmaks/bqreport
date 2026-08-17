@@ -12,7 +12,8 @@ infer_types(data, variables = tidyselect::everything(), max_levels = 20L)
 \item{variables}{A tidyselect expression selecting one or more columns.
 Defaults to all columns.}
 
-\item{max_levels}{Largest number of categories still read as \code{"nominal"}.}
+\item{max_levels}{A positive whole number giving the largest number of
+categories still read as \code{"nominal"}.}
 }
 \value{
 \code{data} with inferred metadata added where type was missing.

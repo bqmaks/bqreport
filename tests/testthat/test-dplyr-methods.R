@@ -72,7 +72,7 @@ test_that("mutate() over an existing column invalidates its type only", {
   expect_identical(variables$type, c("continuous", "binary", NA_character_))
   expect_identical(variables$event, c(NA, "m", NA))
   expect_identical(variables$event_source, c(NA, "explicit", NA))
-  expect_identical(variables$reference, c(NA, "f", NA))
+  expect_identical(variables$reference, rep(NA_character_, 3))
   expect_identical(variables$type_source, c("explicit", "explicit", NA))
   # label and role state intent and are independent of the values.
   expect_identical(variables$label[3], "Body mass index")
@@ -82,7 +82,12 @@ test_that("mutate() over an existing column invalidates its type only", {
 })
 
 test_that("mutate() over a categorical column removes its levels", {
-  rewritten <- dplyr::mutate(labelled_data(), sex = toupper(sex))
+  data <- set_type(
+    labelled_data(),
+    sex,
+    ordinal(c("f", "m", "not reported"))
+  )
+  rewritten <- dplyr::mutate(data, sex = toupper(sex))
 
   expect_registry_aligned(rewritten)
   expect_identical(nrow(levels_of(rewritten)), 0L)
@@ -93,11 +98,74 @@ test_that("mutate() over a categorical column removes its levels", {
 })
 
 test_that("mutate() dropping a column drops its registry row", {
-  dropped <- dplyr::mutate(labelled_data(), sex = NULL)
+  data <- set_type(
+    labelled_data(),
+    sex,
+    ordinal(c("f", "m", "not reported"))
+  )
+  dropped <- dplyr::mutate(data, sex = NULL)
 
   expect_registry_aligned(dropped)
   expect_identical(variables_of(dropped)$var_id, c("v001", "v003"))
   expect_identical(nrow(levels_of(dropped)), 0L)
+})
+
+test_that("base replacement gives new columns fresh metadata", {
+  data <- labelled_data()
+
+  dollar <- data
+  dollar$waist <- c(80, 95, 88)
+  bracket <- data
+  bracket[["waist"]] <- c(80, 95, 88)
+  square <- data
+  square["waist"] <- list(c(80, 95, 88))
+
+  for (result in list(dollar, bracket, square)) {
+    expect_registry_aligned(result)
+    expect_identical(variables_of(result)$var_id[4], "v004")
+    expect_true(all(is.na(variables_of(result)[4, c("label", "role", "type")])))
+    expect_identical(attr(result, "next_var_number"), 5L)
+  }
+})
+
+test_that("add_column() cannot silently restore a stale registry", {
+  expect_error(
+    tibble::add_column(labelled_data(), waist = c(80, 95, 88)),
+    class = "bq_error_unsupported_operation"
+  )
+  expect_error(
+    tibble::add_column(labelled_data(), waist = c(80, 95, 88)),
+    "named replacement"
+  )
+})
+
+test_that("base replacement invalidates metadata of touched columns only", {
+  data <- labelled_data()
+
+  dollar <- data
+  dollar$sex <- toupper(dollar$sex)
+  bracket <- data
+  bracket[["sex"]] <- toupper(bracket$sex)
+  square <- data
+  square[1, "sex"] <- "m"
+
+  for (result in list(dollar, bracket, square)) {
+    expect_registry_aligned(result)
+    expect_identical(variables_of(result)$type, c("continuous", NA, "continuous"))
+    expect_identical(variables_of(result)$role, variables_of(data)$role)
+    expect_identical(variables_of(result)$label, variables_of(data)$label)
+    expect_identical(nrow(levels_of(result)), 0L)
+  }
+})
+
+test_that("base replacement removes registry metadata with a column", {
+  data <- labelled_data()
+  data[["sex"]] <- NULL
+
+  expect_registry_aligned(data)
+  expect_identical(variables_of(data)$var_id, c("v001", "v003"))
+  expect_identical(nrow(levels_of(data)), 0L)
+  expect_identical(attr(data, "next_var_number"), 4L)
 })
 
 test_that("columns arriving from joins and binds get blank rows", {
@@ -136,6 +204,16 @@ test_that("an identifier is never reused by a later column of the same name", {
   expect_identical(variables_of(restored)$role[3], NA_character_)
 })
 
+test_that("an identifier is never reused after the highest identifier is dropped", {
+  data <- as_bq_data(tibble::tibble(a = 1, b = 2))
+
+  result <- dplyr::mutate(dplyr::select(data, a), c = 3)
+
+  expect_registry_aligned(result)
+  expect_identical(variables_of(result)$var_id, c("v001", "v003"))
+  expect_identical(attr(result, "next_var_number"), 4L)
+})
+
 test_that("[ follows the columns and steps aside when it drops to a vector", {
   data <- labelled_data()
 
@@ -150,12 +228,20 @@ test_that("as_tibble() removes the class and the registry", {
   expect_false(inherits(plain, "bq_data"))
   expect_null(attr(plain, "variables"))
   expect_null(attr(plain, "levels"))
+  expect_null(attr(plain, "next_var_number"))
   expect_s3_class(plain, "tbl_df")
 })
 
 test_that("group_by() refuses to silently drop the registry", {
   expect_error(
     dplyr::group_by(labelled_data(), sex),
+    class = "bq_error_unsupported_operation"
+  )
+})
+
+test_that("rowwise() refuses to silently drop the bq_data class", {
+  expect_error(
+    dplyr::rowwise(labelled_data()),
     class = "bq_error_unsupported_operation"
   )
 })

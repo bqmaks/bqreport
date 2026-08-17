@@ -110,6 +110,16 @@ test_that("add_statistic() validates plan and statistic objects", {
     add_statistic(plan, age, "value"),
     class = "bq_error_invalid_statistic"
   )
+
+  malformed <- continuous_statistic(
+    "value",
+    function(x) data.frame(value = NA_real_)
+  )
+  malformed$components <- ""
+  expect_error(
+    add_statistic(plan, age, malformed),
+    class = "bq_error_invalid_statistic"
+  )
 })
 
 test_that("add_statistic() leaves type compatibility to preflight", {

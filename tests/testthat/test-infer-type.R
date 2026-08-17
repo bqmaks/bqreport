@@ -66,6 +66,15 @@ test_that("too many categories stay unknown", {
   expect_identical(infer_type(letters[1:5], max_levels = 3L), "unknown")
 })
 
+test_that("max_levels must be one positive whole number", {
+  for (max_levels in list(NA_integer_, -1L, 0L, 1.5, c(2L, 3L), "2")) {
+    expect_error(
+      infer_type(letters[1:3], max_levels = max_levels),
+      class = "bq_error_invalid_inference"
+    )
+  }
+})
+
 test_that("dates are recognised before their numeric payload", {
   expect_identical(infer_type(as.Date(c("2026-01-01", "2026-02-01"))), "date")
   expect_identical(

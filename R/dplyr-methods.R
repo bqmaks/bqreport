@@ -10,12 +10,17 @@
 #' @return A `bq_data` object.
 #' @exportS3Method dplyr::dplyr_reconstruct
 dplyr_reconstruct.bq_data <- function(data, template) {
-  variables <- reconcile_variables(attr(template, "variables"), names(data))
+  reconciled <- reconcile_variables(
+    attr(template, "variables"),
+    names(data),
+    attr(template, "next_var_number")
+  )
 
   new_bq_data(
     data,
-    variables,
-    reconcile_levels(attr(template, "levels"), variables$var_id)
+    reconciled$variables,
+    reconcile_levels(attr(template, "levels"), reconciled$variables$var_id),
+    reconciled$next_var_number
   )
 }
 
@@ -56,6 +61,144 @@ dplyr_col_modify.bq_data <- function(data, cols) {
   out
 }
 
+#' Restore metadata after a base replacement operation
+#'
+#' @param out Result returned by the next replacement method.
+#' @param template The `bq_data` object before replacement.
+#' @param rewritten_names Names of existing columns whose values may have
+#'   changed.
+#'
+#' @return A reconstructed `bq_data` object.
+#' @noRd
+restore_replaced_bq_data <- function(out, template, rewritten_names) {
+  old_variables <- attr(template, "variables")
+  rewritten_ids <- old_variables$var_id[old_variables$name %in% rewritten_names]
+  reconciled <- reconcile_variables(
+    old_variables,
+    names(out),
+    attr(template, "next_var_number")
+  )
+  variables <- reconciled$variables
+  rewritten <- variables$var_id %in% rewritten_ids
+  variables$type[rewritten] <- NA_character_
+  variables$event[rewritten] <- NA_character_
+  variables$event_source[rewritten] <- NA_character_
+  variables$reference[rewritten] <- NA_character_
+  variables$type_source[rewritten] <- NA_character_
+
+  levels <- reconcile_levels(attr(template, "levels"), variables$var_id)
+  levels <- levels[!levels$var_id %in% rewritten_ids, ]
+
+  new_bq_data(
+    tibble::as_tibble(out),
+    variables,
+    levels,
+    reconciled$next_var_number
+  )
+}
+
+#' Resolve a replacement subscript to existing column names
+#'
+#' @param names Existing column names.
+#' @param index A column subscript accepted by a data frame replacement method.
+#'
+#' @return Names of existing columns selected by `index`.
+#' @noRd
+replacement_names <- function(names, index) {
+  if (is.matrix(index)) {
+    return(names)
+  }
+
+  if (is.character(index)) {
+    return(unique(intersect(index, names)))
+  }
+
+  selected <- tryCatch(names[index], error = function(error) names)
+  unique(selected[!is.na(selected) & selected %in% names])
+}
+
+#' Replace a column with `$<-`
+#'
+#' New columns receive fresh identifiers. Replacing an existing column clears
+#' metadata that described its previous values.
+#'
+#' @param x A `bq_data` object.
+#' @param name Name of the column to replace.
+#' @param value Replacement value, or `NULL` to remove the column.
+#'
+#' @return A `bq_data` object.
+#' @export
+`$<-.bq_data` <- function(x, name, value) {
+  out <- NextMethod()
+  restore_replaced_bq_data(out, x, intersect(name, names(x)))
+}
+
+#' Replace a column with `[[<-`
+#'
+#' New columns receive fresh identifiers. Replacing existing values clears
+#' metadata that described their previous values.
+#'
+#' @param x A `bq_data` object.
+#' @param ... Column, or row and column, subscripts.
+#' @param value Replacement value, or `NULL` to remove a column.
+#'
+#' @return A `bq_data` object.
+#' @export
+`[[<-.bq_data` <- function(x, ..., value) {
+  indices <- list(...)
+  column_index <- indices[[length(indices)]]
+  rewritten_names <- replacement_names(names(x), column_index)
+  out <- NextMethod()
+
+  restore_replaced_bq_data(out, x, rewritten_names)
+}
+
+#' Replace values with `[<-`
+#'
+#' New columns receive fresh identifiers. Metadata is cleared for each
+#' existing column touched by either a column replacement or a row-and-column
+#' replacement.
+#'
+#' @param x A `bq_data` object.
+#' @param i Row or one-dimensional column subscript.
+#' @param j Column subscript for two-dimensional replacement.
+#' @param ... Passed on unchanged.
+#' @param value Replacement value.
+#'
+#' @return A `bq_data` object.
+#' @export
+`[<-.bq_data` <- function(x, i, j, ..., value) {
+  one_dimensional <- nargs() <= 3L
+  column_index <- if (one_dimensional) {
+    if (missing(i)) seq_along(x) else i
+  } else {
+    if (missing(j)) seq_along(x) else j
+  }
+
+  # add_column() inserts temporary columns by positions beyond ncol() and then
+  # restores every custom attribute from its original input. tibble exposes no
+  # class hook for that final restore, so allowing the call would silently put
+  # the old registry on the enlarged data.
+  if (
+    one_dimensional && is.numeric(column_index) &&
+      any(column_index > length(x), na.rm = TRUE)
+  ) {
+    bq_abort(
+      "bq_error_unsupported_operation",
+      paste0(
+        "Adding columns by numeric position is not supported on bq_data.\n",
+        "Use `dplyr::mutate()` or a named replacement instead; this also ",
+        "applies to `tibble::add_column()`."
+      )
+    )
+  }
+
+  rewritten_names <- replacement_names(names(x), column_index)
+  out <- NextMethod()
+
+  restore_replaced_bq_data(out, x, rewritten_names)
+}
+
 #' Subset a bq_data object
 #'
 #' `select()` and `relocate()` reach the object through `[`, not through
@@ -75,12 +218,17 @@ dplyr_col_modify.bq_data <- function(data, cols) {
     return(out)
   }
 
-  variables <- reconcile_variables(attr(x, "variables"), names(out))
+  reconciled <- reconcile_variables(
+    attr(x, "variables"),
+    names(out),
+    attr(x, "next_var_number")
+  )
 
   new_bq_data(
     out,
-    variables,
-    reconcile_levels(attr(x, "levels"), variables$var_id)
+    reconciled$variables,
+    reconcile_levels(attr(x, "levels"), reconciled$variables$var_id),
+    reconciled$next_var_number
   )
 }
 
@@ -129,6 +277,24 @@ group_by.bq_data <- function(.data, ...) {
   )
 }
 
+#' Reject rowwise grouping of bq_data
+#'
+#' @param data A `bq_data` object.
+#' @param ... Ignored.
+#'
+#' @return Never returns; always raises an error.
+#' @exportS3Method dplyr::rowwise
+rowwise.bq_data <- function(data, ...) {
+  bq_abort(
+    "bq_error_unsupported_operation",
+    paste0(
+      "`rowwise()` is not supported on bq_data: rowwise grouping would drop ",
+      "the bq_data class.\n",
+      "For manual data wrangling, call `as_tibble()` first."
+    )
+  )
+}
+
 #' Drop analytic metadata and return a plain tibble
 #'
 #' @param x A `bq_data` object.
@@ -139,6 +305,7 @@ group_by.bq_data <- function(.data, ...) {
 as_tibble.bq_data <- function(x, ...) {
   attr(x, "variables") <- NULL
   attr(x, "levels") <- NULL
+  attr(x, "next_var_number") <- NULL
   class(x) <- setdiff(class(x), "bq_data")
   x
 }

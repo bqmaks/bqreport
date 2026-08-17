@@ -33,7 +33,8 @@ as_bq_data <- function(data) {
   new_bq_data(
     data,
     new_variable_registry(names(data)),
-    new_level_registry()
+    new_level_registry(),
+    length(names(data)) + 1L
   )
 }
 
@@ -49,14 +50,17 @@ as_bq_data <- function(data) {
 #' @param data A data frame.
 #' @param variables A variable registry tibble.
 #' @param levels A level registry tibble.
+#' @param next_var_number Next number that may be issued as a variable
+#'   identifier.
 #'
 #' @return A `bq_data` object.
 #' @noRd
-new_bq_data <- function(data, variables, levels) {
+new_bq_data <- function(data, variables, levels, next_var_number) {
   tibble::new_tibble(
     data,
     variables = variables,
     levels = levels,
+    next_var_number = next_var_number,
     nrow = nrow(data),
     class = "bq_data"
   )

@@ -9,9 +9,10 @@ infer_type(x, max_levels = 20L)
 \arguments{
 \item{x}{A vector.}
 
-\item{max_levels}{Largest number of categories still read as \code{"nominal"}.
-Above it the column is left \code{"unknown"}, which keeps free text and
-identifiers out of the categorical analyses.}
+\item{max_levels}{A positive whole number giving the largest number of
+categories still read as \code{"nominal"}. Above it the column is left
+\code{"unknown"}, which keeps free text and identifiers out of the categorical
+analyses.}
 }
 \value{
 One of \code{"continuous"}, \code{"binary"}, \code{"ordinal"}, \code{"nominal"},

@@ -25,6 +25,7 @@ test_that("as_bq_data() gives every column one blank registry row", {
       position = integer()
     )
   )
+  expect_identical(attr(data, "next_var_number"), 3L)
 })
 
 test_that("as_bq_data() leaves an existing bq_data untouched", {
@@ -43,4 +44,5 @@ test_that("as_bq_data() accepts a frame without columns", {
 
   expect_identical(nrow(variables_of(data)), 0L)
   expect_identical(nrow(levels_of(data)), 0L)
+  expect_identical(attr(data, "next_var_number"), 1L)
 })

@@ -10,7 +10,8 @@ variables(data)
 \item{data}{A \code{bq_data} object.}
 }
 \value{
-A tibble with columns \code{var_id}, \code{name}, \code{label}, \code{role} and \code{type}.
+A tibble with columns \code{var_id}, \code{name}, \code{label}, \code{role}, \code{type},
+\code{event}, \code{event_source}, \code{reference} and \code{type_source}.
 }
 \description{
 Returns the analytic properties recorded for each column: one row per

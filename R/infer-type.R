@@ -20,9 +20,10 @@
 #' variable has. Call [droplevels()] first if unused levels are stale.
 #'
 #' @param x A vector.
-#' @param max_levels Largest number of categories still read as `"nominal"`.
-#'   Above it the column is left `"unknown"`, which keeps free text and
-#'   identifiers out of the categorical analyses.
+#' @param max_levels A positive whole number giving the largest number of
+#'   categories still read as `"nominal"`. Above it the column is left
+#'   `"unknown"`, which keeps free text and identifiers out of the categorical
+#'   analyses.
 #'
 #' @return One of `"continuous"`, `"binary"`, `"ordinal"`, `"nominal"`,
 #'   `"date"`, `"datetime"` or `"unknown"`. `"count"` is only ever set
@@ -50,6 +51,17 @@ infer_type <- function(x, max_levels = 20L) {
 #' @return A named list with `type`, `event`, `event_source` and `levels`.
 #' @noRd
 infer_type_metadata <- function(x, max_levels = 20L) {
+  if (
+    !is.numeric(max_levels) || length(max_levels) != 1L ||
+      is.na(max_levels) || !is.finite(max_levels) || max_levels <= 0 ||
+      max_levels != floor(max_levels)
+  ) {
+    bq_abort(
+      "bq_error_invalid_inference",
+      "`max_levels` must be one positive whole number."
+    )
+  }
+
   # A column without a single observation carries no evidence at all. This
   # also catches the empty columns that data exports tend to type as logical.
   if (all(is.na(x))) {

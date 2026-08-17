@@ -12,7 +12,8 @@
 #' @param data A `bq_data` object.
 #' @param variables A tidyselect expression selecting one or more columns.
 #'   Defaults to all columns.
-#' @param max_levels Largest number of categories still read as `"nominal"`.
+#' @param max_levels A positive whole number giving the largest number of
+#'   categories still read as `"nominal"`.
 #'
 #' @return `data` with inferred metadata added where type was missing.
 #' @export
