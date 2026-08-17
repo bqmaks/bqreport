@@ -11,7 +11,26 @@ test_that("plan_summary() records a minimal summary plan", {
       variables = c("v001", "v003"),
       group = character(),
       strata = character(),
-      overall = character()
+      overall = character(),
+      statistics = tibble::tibble(
+        statistic_id = character(),
+        name = character(),
+        kind = character(),
+        source = character(),
+        missing = character()
+      ),
+      statistic_components = tibble::tibble(
+        statistic_id = character(),
+        component = character(),
+        type = character(),
+        position = integer()
+      ),
+      statistic_assignments = tibble::tibble(
+        statistic_id = character(),
+        var_id = character()
+      ),
+      statistic_functions = list(),
+      next_statistic_number = 1L
     )
   )
 })

@@ -133,7 +133,26 @@ plan_summary <- function(
       variables = selected_variables$var_id,
       group = selected_group$var_id,
       strata = selected_strata$var_id,
-      overall = overall
+      overall = overall,
+      statistics = tibble::tibble(
+        statistic_id = character(),
+        name = character(),
+        kind = character(),
+        source = character(),
+        missing = character()
+      ),
+      statistic_components = tibble::tibble(
+        statistic_id = character(),
+        component = character(),
+        type = character(),
+        position = integer()
+      ),
+      statistic_assignments = tibble::tibble(
+        statistic_id = character(),
+        var_id = character()
+      ),
+      statistic_functions = list(),
+      next_statistic_number = 1L
     ),
     class = c("bq_plan_summary", "bq_plan")
   )

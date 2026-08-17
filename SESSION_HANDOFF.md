@@ -35,6 +35,10 @@
 - `R/plan-summary.R` — `plan_summary()`, минимальный план с анализируемыми
   переменными, group, strata и осями raw Overall; компактный print не выводит
   вложенные данные.
+- `R/continuous-statistic.R` — `continuous_statistic()`, декларация custom raw
+  функции с one-row data-frame prototype и пользовательской missing policy.
+- `R/add-statistic.R` — `add_statistic()`, регистрация specification, её
+  компонентов, назначений `var_id` и исполняемой функции в summary plan.
 - К `bq_data` добавлен плоский реестр уровней `var_id`, `value`, `position`;
   dplyr сохраняет его, удаляет строки исчезнувших переменных и очищает уровни
   переписанного через `mutate()` столбца.
@@ -44,7 +48,7 @@
 Экспортируются конструктор данных и accessor, конструкторы типов, явные
 сеттеры ролей и типов, `infer_type()` и `infer_types()`.
 
-430 тестов, `R CMD check` — Status: OK. Коммиты сессии: `d4650bc`,
+472 теста, `R CMD check` — Status: OK. Коммиты сессии: `d4650bc`,
 `d0243f4`, `6c9e384`; запушены в `origin/main`.
 
 ## Следующий шаг
