@@ -1,16 +1,16 @@
-#' Analysis data with a variable registry
+#' Analysis data with analytic metadata
 #'
 #' `as_bq_data()` turns a data frame into a `bq_data` object. The data itself
-#' stays an ordinary tibble; a registry of per-column analytic properties is
-#' attached next to it and carried along through the analysis.
+#' stays an ordinary tibble; metadata registries are attached next to it and
+#' carried along through the analysis.
 #'
 #' The registry starts out empty: every column gets a stable `var_id` and its
-#' current `name`, while `label`, `role` and `type` are `NA` until they are
-#' set explicitly or inferred.
+#' current `name`, while analytic properties are `NA` until they are set
+#' explicitly or inferred.
 #'
 #' @param data A data frame or tibble.
 #'
-#' @return A `bq_data` object: a tibble with a `variables` attribute.
+#' @return A `bq_data` object: a tibble with variable and level registries.
 #' @export
 #' @examples
 #' as_bq_data(data.frame(age = c(40, 55), sex = c("f", "m")))
@@ -30,7 +30,11 @@ as_bq_data <- function(data) {
   # relies on to address columns by name.
   data <- tibble::as_tibble(data)
 
-  new_bq_data(data, new_variable_registry(names(data)))
+  new_bq_data(
+    data,
+    new_variable_registry(names(data)),
+    new_level_registry()
+  )
 }
 
 #' Build a bq_data object from its parts
@@ -44,13 +48,15 @@ as_bq_data <- function(data) {
 #'
 #' @param data A data frame.
 #' @param variables A variable registry tibble.
+#' @param levels A level registry tibble.
 #'
 #' @return A `bq_data` object.
 #' @noRd
-new_bq_data <- function(data, variables) {
+new_bq_data <- function(data, variables, levels) {
   tibble::new_tibble(
     data,
     variables = variables,
+    levels = levels,
     nrow = nrow(data),
     class = "bq_data"
   )
@@ -72,6 +78,24 @@ new_variable_registry <- function(names) {
     name = names,
     label = NA_character_,
     role = NA_character_,
-    type = NA_character_
+    type = NA_character_,
+    event = NA_character_,
+    reference = NA_character_,
+    type_source = NA_character_
+  )
+}
+
+#' Build an empty level registry
+#'
+#' Levels live in a separate long table because a variable can have more than
+#' one level while the variable registry must remain one flat row per column.
+#'
+#' @return A tibble with no rows and the level registry columns.
+#' @noRd
+new_level_registry <- function() {
+  tibble::tibble(
+    var_id = character(),
+    value = character(),
+    position = integer()
   )
 }

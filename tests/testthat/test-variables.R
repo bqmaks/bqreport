@@ -4,7 +4,13 @@ test_that("variables() returns the registry as a plain tibble", {
 
   expect_identical(registry, variables_of(data))
   expect_s3_class(registry, c("tbl_df", "tbl", "data.frame"), exact = TRUE)
-  expect_identical(names(registry), c("var_id", "name", "label", "role", "type"))
+  expect_identical(
+    names(registry),
+    c(
+      "var_id", "name", "label", "role", "type", "event", "reference",
+      "type_source"
+    )
+  )
 })
 
 test_that("variables() refuses anything but a bq_data object", {

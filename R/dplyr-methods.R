@@ -10,16 +10,19 @@
 #' @return A `bq_data` object.
 #' @exportS3Method dplyr::dplyr_reconstruct
 dplyr_reconstruct.bq_data <- function(data, template) {
+  variables <- reconcile_variables(attr(template, "variables"), names(data))
+
   new_bq_data(
     data,
-    reconcile_variables(attr(template, "variables"), names(data))
+    variables,
+    reconcile_levels(attr(template, "levels"), variables$var_id)
   )
 }
 
-#' Invalidate the analytic type of columns rewritten by mutate()
+#' Invalidate value-dependent metadata after mutate()
 #'
-#' `type` describes the values of a column, so overwriting those values makes
-#' the recorded type stale and it has to be inferred again. `label` and `role`
+#' `type`, its source, event, reference and declared levels describe the values
+#' of a column, so overwriting those values makes them stale. `label` and `role`
 #' state the analyst's intent, are independent of the values, and are kept.
 #'
 #' @param data The `bq_data` object being modified.
@@ -31,6 +34,9 @@ dplyr_col_modify.bq_data <- function(data, cols) {
   # Determined before the change, while the registry still describes the old
   # columns: names not listed here belong to columns that did not exist yet.
   rewritten <- intersect(names(cols), attr(data, "variables")$name)
+  rewritten_ids <- attr(data, "variables")$var_id[
+    attr(data, "variables")$name %in% rewritten
+  ]
 
   # NextMethod() rebuilds the columns and reconstructs the registry from the
   # template; the invalidation below is applied to that result.
@@ -38,7 +44,12 @@ dplyr_col_modify.bq_data <- function(data, cols) {
 
   variables <- attr(out, "variables")
   variables$type[variables$name %in% rewritten] <- NA_character_
+  variables$event[variables$name %in% rewritten] <- NA_character_
+  variables$reference[variables$name %in% rewritten] <- NA_character_
+  variables$type_source[variables$name %in% rewritten] <- NA_character_
   attr(out, "variables") <- variables
+  levels <- attr(out, "levels")
+  attr(out, "levels") <- levels[!levels$var_id %in% rewritten_ids, ]
 
   out
 }
@@ -62,7 +73,13 @@ dplyr_col_modify.bq_data <- function(data, cols) {
     return(out)
   }
 
-  new_bq_data(out, reconcile_variables(attr(x, "variables"), names(out)))
+  variables <- reconcile_variables(attr(x, "variables"), names(out))
+
+  new_bq_data(
+    out,
+    variables,
+    reconcile_levels(attr(x, "levels"), variables$var_id)
+  )
 }
 
 #' Rename the columns of a bq_data object
@@ -110,7 +127,7 @@ group_by.bq_data <- function(.data, ...) {
   )
 }
 
-#' Drop the registry and return a plain tibble
+#' Drop analytic metadata and return a plain tibble
 #'
 #' @param x A `bq_data` object.
 #' @param ... Ignored.
@@ -119,6 +136,7 @@ group_by.bq_data <- function(.data, ...) {
 #' @exportS3Method tibble::as_tibble
 as_tibble.bq_data <- function(x, ...) {
   attr(x, "variables") <- NULL
+  attr(x, "levels") <- NULL
   class(x) <- setdiff(class(x), "bq_data")
   x
 }

@@ -9,6 +9,7 @@ test_that("row verbs leave the registry alone", {
   )) {
     expect_registry_aligned(result)
     expect_identical(variables_of(result), variables_of(data))
+    expect_identical(levels_of(result), levels_of(data))
   }
 })
 
@@ -19,6 +20,7 @@ test_that("select() keeps the rows of the columns it kept, in their new order", 
   expect_registry_aligned(kept)
   expect_identical(variables_of(kept)$var_id, c("v003", "v001"))
   expect_identical(variables_of(kept)$type, c("continuous", "continuous"))
+  expect_identical(nrow(levels_of(kept)), 0L)
 
   dropped <- dplyr::select(data, -sex)
   expect_identical(variables_of(dropped)$var_id, c("v001", "v003"))
@@ -40,6 +42,7 @@ test_that("rename() renames a registry row instead of replacing it", {
   expect_identical(variables_of(renamed)$var_id, c("v001", "v002", "v003"))
   expect_identical(variables_of(renamed)$label[1], "Age, years")
   expect_identical(variables_of(renamed)$role[1], "predictor")
+  expect_identical(levels_of(renamed), levels_of(labelled_data()))
 })
 
 test_that("rename() survives a preceding select()", {
@@ -57,6 +60,7 @@ test_that("mutate() gives a new column a blank row with a fresh identifier", {
   expect_identical(variables_of(added)$var_id[4], "v004")
   expect_identical(variables_of(added)$type[4], NA_character_)
   expect_identical(variables_of(added)$role[4], NA_character_)
+  expect_identical(variables_of(added)$type_source[4], NA_character_)
 })
 
 test_that("mutate() over an existing column invalidates its type only", {
@@ -66,10 +70,24 @@ test_that("mutate() over an existing column invalidates its type only", {
   expect_registry_aligned(rewritten)
   # type describes the values, which have just changed.
   expect_identical(variables$type, c("continuous", "binary", NA_character_))
+  expect_identical(variables$event, c(NA, "m", NA))
+  expect_identical(variables$reference, c(NA, "f", NA))
+  expect_identical(variables$type_source, c("explicit", "explicit", NA))
   # label and role state intent and are independent of the values.
   expect_identical(variables$label[3], "Body mass index")
   expect_identical(variables$role[3], "outcome")
   expect_identical(variables$var_id[3], "v003")
+  expect_identical(levels_of(rewritten), levels_of(labelled_data()))
+})
+
+test_that("mutate() over a categorical column removes its levels", {
+  rewritten <- dplyr::mutate(labelled_data(), sex = toupper(sex))
+
+  expect_registry_aligned(rewritten)
+  expect_identical(nrow(levels_of(rewritten)), 0L)
+  expect_identical(variables_of(rewritten)$event[2], NA_character_)
+  expect_identical(variables_of(rewritten)$reference[2], NA_character_)
+  expect_identical(variables_of(rewritten)$type_source[2], NA_character_)
 })
 
 test_that("mutate() dropping a column drops its registry row", {
@@ -77,6 +95,7 @@ test_that("mutate() dropping a column drops its registry row", {
 
   expect_registry_aligned(dropped)
   expect_identical(variables_of(dropped)$var_id, c("v001", "v003"))
+  expect_identical(nrow(levels_of(dropped)), 0L)
 })
 
 test_that("columns arriving from joins and binds get blank rows", {
@@ -102,6 +121,7 @@ test_that("bind_rows() keeps the registry of the first argument", {
 
   expect_registry_aligned(bound)
   expect_identical(variables_of(bound), variables_of(data))
+  expect_identical(levels_of(bound), levels_of(data))
 })
 
 test_that("an identifier is never reused by a later column of the same name", {
@@ -127,6 +147,7 @@ test_that("as_tibble() removes the class and the registry", {
 
   expect_false(inherits(plain, "bq_data"))
   expect_null(attr(plain, "variables"))
+  expect_null(attr(plain, "levels"))
   expect_s3_class(plain, "tbl_df")
 })
 

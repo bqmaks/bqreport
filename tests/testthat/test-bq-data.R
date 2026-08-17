@@ -10,7 +10,18 @@ test_that("as_bq_data() gives every column one blank registry row", {
       name = c("age", "sex"),
       label = NA_character_,
       role = NA_character_,
-      type = NA_character_
+      type = NA_character_,
+      event = NA_character_,
+      reference = NA_character_,
+      type_source = NA_character_
+    )
+  )
+  expect_identical(
+    levels_of(data),
+    tibble::tibble(
+      var_id = character(),
+      value = character(),
+      position = integer()
     )
   )
 })
@@ -27,5 +38,8 @@ test_that("as_bq_data() rejects anything that is not a data frame", {
 })
 
 test_that("as_bq_data() accepts a frame without columns", {
-  expect_identical(nrow(variables_of(as_bq_data(data.frame()))), 0L)
+  data <- as_bq_data(data.frame())
+
+  expect_identical(nrow(variables_of(data)), 0L)
+  expect_identical(nrow(levels_of(data)), 0L)
 })

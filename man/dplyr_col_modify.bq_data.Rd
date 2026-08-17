@@ -2,7 +2,7 @@
 % Please edit documentation in R/dplyr-methods.R
 \name{dplyr_col_modify.bq_data}
 \alias{dplyr_col_modify.bq_data}
-\title{Invalidate the analytic type of columns rewritten by mutate()}
+\title{Invalidate value-dependent metadata after mutate()}
 \usage{
 \method{dplyr_col_modify}{bq_data}(data, cols)
 }
@@ -15,7 +15,7 @@
 A \code{bq_data} object.
 }
 \description{
-\code{type} describes the values of a column, so overwriting those values makes
-the recorded type stale and it has to be inferred again. \code{label} and \code{role}
+\code{type}, its source, event, reference and declared levels describe the values
+of a column, so overwriting those values makes them stale. \code{label} and \code{role}
 state the analyst's intent, are independent of the values, and are kept.
 }

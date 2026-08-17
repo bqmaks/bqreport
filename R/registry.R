@@ -28,6 +28,17 @@ reconcile_variables <- function(variables, names) {
   out
 }
 
+#' Remove levels whose variables no longer exist
+#'
+#' @param levels The level registry.
+#' @param var_ids Identifiers present in the reconciled variable registry.
+#'
+#' @return A level registry containing only existing variables.
+#' @noRd
+reconcile_levels <- function(levels, var_ids) {
+  levels[levels$var_id %in% var_ids, ]
+}
+
 #' Generate identifiers that no existing column uses
 #'
 #' Numbering continues past the highest id ever issued for this object rather
