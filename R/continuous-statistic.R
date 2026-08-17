@@ -14,6 +14,9 @@
 #' @param name A single, non-missing, non-empty identifier for the statistic.
 #' @param fun A function of one vector that returns a one-row data frame with
 #'   numeric or integer columns.
+#' @param scale Either one of `"variable"`, `"count"` and `"dimensionless"`
+#'   for every component, or a named character vector assigning one scale to
+#'   each returned component. A `"count"` component must use integer storage.
 #'
 #' @return A `bq_continuous_statistic` specification.
 #' @export
@@ -23,12 +26,13 @@
 #'   function(x) {
 #'     data.frame(
 #'       median = if (length(x) == 0L) NA_real_ else stats::median(x, na.rm = TRUE),
-#'       mad = if (length(x) == 0L) NA_real_ else stats::mad(x, na.rm = TRUE)
+#'       observed = sum(!is.na(x))
 #'     )
-#'   }
+#'   },
+#'   scale = c(median = "variable", observed = "count")
 #' )
 #' robust
-continuous_statistic <- function(name, fun) {
+continuous_statistic <- function(name, fun, scale = "variable") {
   if (
     !is.character(name) || length(name) != 1L || is.na(name) ||
       !nzchar(name)
@@ -102,12 +106,55 @@ continuous_statistic <- function(name, fun) {
     )
   }
 
+  allowed_scales <- c("variable", "count", "dimensionless")
+  valid_scale <- is.character(scale) && length(scale) > 0L &&
+    !anyNA(scale) && all(scale %in% allowed_scales)
+
+  if (valid_scale && length(scale) == 1L) {
+    if (!is.null(names(scale)) && !identical(names(scale), names(prototype))) {
+      valid_scale <- FALSE
+    } else {
+      scale <- stats::setNames(rep(scale, ncol(prototype)), names(prototype))
+    }
+  } else if (valid_scale) {
+    valid_scale <- identical(names(scale), names(prototype))
+  }
+
+  if (!valid_scale) {
+    bq_abort(
+      "bq_error_invalid_statistic",
+      paste0(
+        "`scale` must be one of \"variable\", \"count\" and ",
+        "\"dimensionless\", or a named value for every returned component."
+      )
+    )
+  }
+
+  component_types <- vapply(prototype, typeof, character(1))
+  count_components <- scale == "count"
+  if (any(count_components & component_types != "integer")) {
+    component <- names(prototype)[which(count_components & component_types != "integer")[1L]]
+    bq_abort(
+      "bq_error_invalid_statistic",
+      sprintf("Count component `%s` must use integer storage.", component)
+    )
+  }
+
   structure(
     list(
       kind = "continuous_statistic",
       name = name,
       components = names(prototype),
-      component_types = vapply(prototype, typeof, character(1)),
+      component_types = component_types,
+      component_scales = scale,
+      component_rounding = stats::setNames(
+        rep(NA_character_, ncol(prototype)),
+        names(prototype)
+      ),
+      component_digits = stats::setNames(
+        rep(NA_integer_, ncol(prototype)),
+        names(prototype)
+      ),
       source = "custom_raw",
       missing = "user",
       fun = fun

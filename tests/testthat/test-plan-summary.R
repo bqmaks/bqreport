@@ -23,6 +23,9 @@ test_that("plan_summary() records a minimal summary plan", {
         statistic_id = character(),
         component = character(),
         type = character(),
+        scale = character(),
+        rounding = character(),
+        digits = integer(),
         position = integer()
       ),
       statistic_assignments = tibble::tibble(

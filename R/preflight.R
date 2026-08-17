@@ -50,7 +50,8 @@ preflight.bq_plan_summary <- function(plan) {
     "statistic_id", "name", "kind", "source", "missing"
   )
   component_fields <- c(
-    "statistic_id", "component", "type", "position"
+    "statistic_id", "component", "type", "scale", "rounding", "digits",
+    "position"
   )
   assignment_fields <- c("statistic_id", "var_id")
   display_rule_fields <- c(
@@ -150,10 +151,44 @@ preflight.bq_plan_summary <- function(plan) {
     is.character(plan$statistic_components$statistic_id) &&
     is.character(plan$statistic_components$component) &&
     is.character(plan$statistic_components$type) &&
+    is.character(plan$statistic_components$scale) &&
+    is.character(plan$statistic_components$rounding) &&
+    is.integer(plan$statistic_components$digits) &&
     is.integer(plan$statistic_components$position) &&
-    !anyNA(plan$statistic_components) &&
+    !anyNA(
+      plan$statistic_components[
+        c("statistic_id", "component", "type", "scale", "position")
+      ]
+    ) &&
     all(plan$statistic_components$statistic_id %in% plan$statistics$statistic_id) &&
     all(plan$statistic_components$type %in% c("double", "integer")) &&
+    all(
+      plan$statistic_components$scale %in%
+        c("variable", "count", "dimensionless")
+    ) &&
+    all(
+      plan$statistic_components$scale != "count" |
+        plan$statistic_components$type == "integer"
+    ) &&
+    all(
+      is.na(plan$statistic_components$rounding) |
+        plan$statistic_components$rounding %in% c("decimal", "significant")
+    ) &&
+    all(
+      is.na(plan$statistic_components$rounding) ==
+        is.na(plan$statistic_components$digits)
+    ) &&
+    all(
+      is.na(plan$statistic_components$digits) |
+        (plan$statistic_components$rounding == "decimal" &
+          plan$statistic_components$digits >= 0L) |
+        (plan$statistic_components$rounding == "significant" &
+          plan$statistic_components$digits >= 1L)
+    ) &&
+    all(
+      plan$statistic_components$scale != "count" |
+        is.na(plan$statistic_components$rounding)
+    ) &&
     is.character(plan$statistic_assignments$statistic_id) &&
     is.character(plan$statistic_assignments$var_id) &&
     !anyNA(plan$statistic_assignments) &&
@@ -210,6 +245,7 @@ preflight.bq_plan_summary <- function(plan) {
     code = character(),
     var_id = character(),
     statistic_id = character(),
+    component = character(),
     rule_id = character(),
     cell_id = character(),
     message = character()
@@ -228,6 +264,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "missing_type",
           var_id = var_id,
           statistic_id = NA_character_,
+          component = NA_character_,
           rule_id = NA_character_,
           cell_id = NA_character_,
           message = sprintf(
@@ -244,6 +281,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "unknown_type",
           var_id = var_id,
           statistic_id = NA_character_,
+          component = NA_character_,
           rule_id = NA_character_,
           cell_id = NA_character_,
           message = sprintf(
@@ -266,6 +304,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_unit",
           var_id = var_id,
           statistic_id = NA_character_,
+          component = NA_character_,
           rule_id = NA_character_,
           cell_id = NA_character_,
           message = sprintf(
@@ -289,6 +328,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_rounding",
           var_id = var_id,
           statistic_id = NA_character_,
+          component = NA_character_,
           rule_id = NA_character_,
           cell_id = NA_character_,
           message = sprintf(
@@ -317,6 +357,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "missing_design_value",
           var_id = var_id,
           statistic_id = NA_character_,
+          component = NA_character_,
           rule_id = NA_character_,
           cell_id = NA_character_,
           message = sprintf(
@@ -346,6 +387,7 @@ preflight.bq_plan_summary <- function(plan) {
         code = "empty_cell",
         var_id = NA_character_,
         statistic_id = NA_character_,
+        component = NA_character_,
         rule_id = NA_character_,
         cell_id = cell_id,
         message = sprintf(
@@ -366,11 +408,45 @@ preflight.bq_plan_summary <- function(plan) {
         code = "missing_statistic",
         var_id = var_id,
         statistic_id = NA_character_,
+        component = NA_character_,
         rule_id = NA_character_,
         cell_id = NA_character_,
         message = sprintf(
           "Variable `%s` has no assigned statistic; add one before analysis.",
           variable_name
+        )
+      )
+    )
+  }
+
+  missing_rounding_rows <- which(
+    plan$statistic_components$scale == "dimensionless" &
+      is.na(plan$statistic_components$rounding)
+  )
+  for (component_row in missing_rounding_rows) {
+    statistic_id <- plan$statistic_components$statistic_id[component_row]
+    component <- plan$statistic_components$component[component_row]
+    statistic_name <- plan$statistics$name[
+      match(statistic_id, plan$statistics$statistic_id)
+    ]
+    diagnostics <- dplyr::bind_rows(
+      diagnostics,
+      tibble::tibble(
+        severity = "error",
+        code = "missing_component_rounding",
+        var_id = NA_character_,
+        statistic_id = statistic_id,
+        component = component,
+        rule_id = NA_character_,
+        cell_id = NA_character_,
+        message = sprintf(
+          paste0(
+            "Dimensionless component `%s` of statistic `%s` has no rounding ",
+            "policy; set it with `set_component_rounding()` before adding ",
+            "the statistic to a plan."
+          ),
+          component,
+          statistic_name
         )
       )
     )
@@ -398,6 +474,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_display_rule",
           var_id = var_id,
           statistic_id = NA_character_,
+          component = NA_character_,
           rule_id = rule_id,
           cell_id = NA_character_,
           message = sprintf(
@@ -439,6 +516,7 @@ preflight.bq_plan_summary <- function(plan) {
           code = "incompatible_statistic",
           var_id = var_id,
           statistic_id = statistic_id,
+          component = NA_character_,
           rule_id = NA_character_,
           cell_id = NA_character_,
           message = sprintf(

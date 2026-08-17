@@ -34,7 +34,8 @@ add_statistic <- function(plan, variables, statistic) {
   }
 
   expected_fields <- c(
-    "kind", "name", "components", "component_types", "source", "missing", "fun"
+    "kind", "name", "components", "component_types", "component_scales",
+    "component_rounding", "component_digits", "source", "missing", "fun"
   )
   valid_statistic <- inherits(statistic, "bq_statistic") &&
     identical(names(statistic), expected_fields) &&
@@ -49,6 +50,42 @@ add_statistic <- function(plan, variables, statistic) {
     length(statistic$component_types) == length(statistic$components) &&
     identical(names(statistic$component_types), statistic$components) &&
     all(statistic$component_types %in% c("double", "integer")) &&
+    is.character(statistic$component_scales) &&
+    length(statistic$component_scales) == length(statistic$components) &&
+    identical(names(statistic$component_scales), statistic$components) &&
+    all(
+      statistic$component_scales %in%
+        c("variable", "count", "dimensionless")
+    ) &&
+    all(
+      statistic$component_scales != "count" |
+        statistic$component_types == "integer"
+    ) &&
+    is.character(statistic$component_rounding) &&
+    length(statistic$component_rounding) == length(statistic$components) &&
+    identical(names(statistic$component_rounding), statistic$components) &&
+    all(
+      is.na(statistic$component_rounding) |
+        statistic$component_rounding %in% c("decimal", "significant")
+    ) &&
+    is.integer(statistic$component_digits) &&
+    length(statistic$component_digits) == length(statistic$components) &&
+    identical(names(statistic$component_digits), statistic$components) &&
+    all(
+      is.na(statistic$component_rounding) ==
+        is.na(statistic$component_digits)
+    ) &&
+    all(
+      is.na(statistic$component_digits) |
+        (statistic$component_rounding == "decimal" &
+          statistic$component_digits >= 0L) |
+        (statistic$component_rounding == "significant" &
+          statistic$component_digits >= 1L)
+    ) &&
+    all(
+      statistic$component_scales != "count" |
+        is.na(statistic$component_rounding)
+    ) &&
     is.character(statistic$source) && length(statistic$source) == 1L &&
     !is.na(statistic$source) && nzchar(statistic$source) &&
     is.character(statistic$missing) && length(statistic$missing) == 1L &&
@@ -106,6 +143,9 @@ add_statistic <- function(plan, variables, statistic) {
       statistic_id = rep(statistic_id, length(statistic$components)),
       component = statistic$components,
       type = unname(statistic$component_types),
+      scale = unname(statistic$component_scales),
+      rounding = unname(statistic$component_rounding),
+      digits = unname(statistic$component_digits),
       position = seq_along(statistic$components)
     )
   )

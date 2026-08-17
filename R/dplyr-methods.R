@@ -20,6 +20,10 @@ dplyr_reconstruct.bq_data <- function(data, template) {
     data,
     reconciled$variables,
     reconcile_levels(attr(template, "levels"), reconciled$variables$var_id),
+    reconcile_summary_formats(
+      attr(template, "summary_formats"),
+      reconciled$variables$var_id
+    ),
     reconciled$next_var_number
   )
 }
@@ -99,6 +103,10 @@ restore_replaced_bq_data <- function(out, template, rewritten_names) {
     tibble::as_tibble(out),
     variables,
     levels,
+    reconcile_summary_formats(
+      attr(template, "summary_formats"),
+      variables$var_id
+    ),
     reconciled$next_var_number
   )
 }
@@ -234,6 +242,10 @@ replacement_names <- function(names, index) {
     out,
     reconciled$variables,
     reconcile_levels(attr(x, "levels"), reconciled$variables$var_id),
+    reconcile_summary_formats(
+      attr(x, "summary_formats"),
+      reconciled$variables$var_id
+    ),
     reconciled$next_var_number
   )
 }
@@ -311,6 +323,7 @@ rowwise.bq_data <- function(data, ...) {
 as_tibble.bq_data <- function(x, ...) {
   attr(x, "variables") <- NULL
   attr(x, "levels") <- NULL
+  attr(x, "summary_formats") <- NULL
   attr(x, "next_var_number") <- NULL
   class(x) <- setdiff(class(x), "bq_data")
   x

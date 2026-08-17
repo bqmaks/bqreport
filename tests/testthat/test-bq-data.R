@@ -28,6 +28,15 @@ test_that("as_bq_data() gives every column one blank registry row", {
       position = integer()
     )
   )
+  expect_identical(
+    formats_of(data),
+    tibble::tibble(
+      var_id = character(),
+      format_name = character(),
+      template = character(),
+      position = integer()
+    )
+  )
   expect_identical(attr(data, "next_var_number"), 3L)
 })
 
@@ -47,5 +56,6 @@ test_that("as_bq_data() accepts a frame without columns", {
 
   expect_identical(nrow(variables_of(data)), 0L)
   expect_identical(nrow(levels_of(data)), 0L)
+  expect_identical(nrow(formats_of(data)), 0L)
   expect_identical(attr(data, "next_var_number"), 1L)
 })

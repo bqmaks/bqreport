@@ -24,6 +24,7 @@ test_that("preflight() accepts a ready continuous summary plan", {
         code = character(),
         var_id = character(),
         statistic_id = character(),
+        component = character(),
         rule_id = character(),
         cell_id = character(),
         message = character()
@@ -225,6 +226,39 @@ test_that("preflight() reports incompatible display rules", {
   expect_identical(diagnostic$rule_id, "r001")
 })
 
+test_that("preflight() requires rounding for dimensionless components", {
+  data <- as_bq_data(tibble::tibble(value = c(1, 2)))
+  data <- set_type(data, value, continuous())
+  statistic <- continuous_statistic(
+    "ratio",
+    function(x) data.frame(ratio = NA_real_),
+    scale = "dimensionless"
+  )
+  plan <- plan_summary(data, value)
+  plan <- add_statistic(plan, value, statistic)
+
+  missing_result <- preflight(plan)
+
+  expect_false(missing_result$ok)
+  expect_identical(
+    missing_result$diagnostics$code,
+    "missing_component_rounding"
+  )
+  expect_identical(missing_result$diagnostics$statistic_id, "s001")
+  expect_identical(missing_result$diagnostics$component, "ratio")
+
+  statistic <- set_component_rounding(
+    statistic,
+    "ratio",
+    3,
+    "significant"
+  )
+  plan <- plan_summary(data, value)
+  plan <- add_statistic(plan, value, statistic)
+
+  expect_true(preflight(plan)$ok)
+})
+
 test_that("preflight() rejects non-plans and damaged plan structures", {
   expect_error(
     preflight(labelled_data()),
@@ -238,6 +272,16 @@ test_that("preflight() rejects non-plans and damaged plan structures", {
 
   plan <- plan_summary(labelled_data(), age)
   plan$display_rules <- plan$display_rules[, -1]
+
+  expect_error(preflight(plan), class = "bq_error_invalid_plan")
+
+  statistic <- continuous_statistic(
+    "mean",
+    function(x) data.frame(mean = NA_real_)
+  )
+  plan <- plan_summary(labelled_data(), age)
+  plan <- add_statistic(plan, age, statistic)
+  plan$statistic_components$scale <- "distance"
 
   expect_error(preflight(plan), class = "bq_error_invalid_plan")
 })

@@ -19,10 +19,31 @@ test_that("continuous_statistic() records a fixed data frame prototype", {
       name = "custom_centre",
       components = c("centre", "observed"),
       component_types = c(centre = "double", observed = "integer"),
+      component_scales = c(centre = "variable", observed = "variable"),
+      component_rounding = c(centre = NA_character_, observed = NA_character_),
+      component_digits = c(centre = NA_integer_, observed = NA_integer_),
       source = "custom_raw",
       missing = "user",
       fun = fun
     )
+  )
+})
+
+test_that("continuous_statistic() records component scales", {
+  specification <- continuous_statistic(
+    "summary",
+    function(x) {
+      data.frame(
+        mean = if (length(x) == 0L) NA_real_ else mean(x),
+        observed = sum(!is.na(x))
+      )
+    },
+    scale = c(mean = "variable", observed = "count")
+  )
+
+  expect_identical(
+    specification$component_scales,
+    c(mean = "variable", observed = "count")
   )
 })
 
@@ -106,4 +127,32 @@ test_that("continuous_statistic() accepts only plain numeric result columns", {
       class = "bq_error_invalid_statistic"
     )
   }
+})
+
+test_that("continuous_statistic() validates component scales", {
+  fun <- function(x) data.frame(mean = NA_real_, observed = NA_integer_)
+  invalid_scales <- list(
+    NA_character_,
+    character(),
+    "distance",
+    c("variable", "count"),
+    c(mean = "variable"),
+    c(observed = "count", mean = "variable")
+  )
+
+  for (scale in invalid_scales) {
+    expect_error(
+      continuous_statistic("summary", fun, scale = scale),
+      class = "bq_error_invalid_statistic"
+    )
+  }
+
+  expect_error(
+    continuous_statistic(
+      "mean",
+      function(x) data.frame(mean = NA_real_),
+      scale = "count"
+    ),
+    class = "bq_error_invalid_statistic"
+  )
 })

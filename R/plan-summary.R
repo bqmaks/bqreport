@@ -145,6 +145,9 @@ plan_summary <- function(
         statistic_id = character(),
         component = character(),
         type = character(),
+        scale = character(),
+        rounding = character(),
+        digits = integer(),
         position = integer()
       ),
       statistic_assignments = tibble::tibble(

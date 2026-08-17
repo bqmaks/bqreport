@@ -4,7 +4,11 @@ test_that("add_statistic() stores one specification for several variables", {
     centre = if (length(x) == 0L) NA_real_ else mean(x, na.rm = TRUE),
     observed = sum(!is.na(x))
   )
-  statistic <- continuous_statistic("custom_centre", fun)
+  statistic <- continuous_statistic(
+    "custom_centre",
+    fun,
+    scale = c(centre = "variable", observed = "count")
+  )
   result <- add_statistic(plan, c(age, bmi), statistic)
 
   expect_identical(
@@ -23,6 +27,9 @@ test_that("add_statistic() stores one specification for several variables", {
       statistic_id = rep("s001", 2),
       component = c("centre", "observed"),
       type = c("double", "integer"),
+      scale = c("variable", "count"),
+      rounding = c(NA_character_, NA_character_),
+      digits = c(NA_integer_, NA_integer_),
       position = 1:2
     )
   )

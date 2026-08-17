@@ -44,6 +44,17 @@ reconcile_levels <- function(levels, var_ids) {
   levels[levels$var_id %in% var_ids, ]
 }
 
+#' Remove summary formats whose variables no longer exist
+#'
+#' @param summary_formats The summary format registry.
+#' @param var_ids Identifiers present in the reconciled variable registry.
+#'
+#' @return A summary format registry containing only existing variables.
+#' @noRd
+reconcile_summary_formats <- function(summary_formats, var_ids) {
+  summary_formats[summary_formats$var_id %in% var_ids, ]
+}
+
 #' Generate identifiers that no existing column uses
 #'
 #' Numbering continues past the highest id ever issued for this object rather

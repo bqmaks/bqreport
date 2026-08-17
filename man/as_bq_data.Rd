@@ -10,7 +10,8 @@ as_bq_data(data)
 \item{data}{A data frame or tibble.}
 }
 \value{
-A \code{bq_data} object: a tibble with variable and level registries.
+A \code{bq_data} object: a tibble with variable, level and summary format
+registries.
 }
 \description{
 \code{as_bq_data()} turns a data frame into a \code{bq_data} object. The data itself

@@ -4,13 +4,17 @@
 \alias{continuous_statistic}
 \title{Declare a custom continuous statistic}
 \usage{
-continuous_statistic(name, fun)
+continuous_statistic(name, fun, scale = "variable")
 }
 \arguments{
 \item{name}{A single, non-missing, non-empty identifier for the statistic.}
 
 \item{fun}{A function of one vector that returns a one-row data frame with
 numeric or integer columns.}
+
+\item{scale}{Either one of \code{"variable"}, \code{"count"} and \code{"dimensionless"}
+for every component, or a named character vector assigning one scale to
+each returned component. A \code{"count"} component must use integer storage.}
 }
 \value{
 A \code{bq_continuous_statistic} specification.
@@ -34,9 +38,10 @@ robust <- continuous_statistic(
   function(x) {
     data.frame(
       median = if (length(x) == 0L) NA_real_ else stats::median(x, na.rm = TRUE),
-      mad = if (length(x) == 0L) NA_real_ else stats::mad(x, na.rm = TRUE)
+      observed = sum(!is.na(x))
     )
-  }
+  },
+  scale = c(median = "variable", observed = "count")
 )
 robust
 }
