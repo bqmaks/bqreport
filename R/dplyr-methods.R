@@ -26,10 +26,10 @@ dplyr_reconstruct.bq_data <- function(data, template) {
 
 #' Invalidate value-dependent metadata after mutate()
 #'
-#' `type`, its source, event, event source, reference and declared levels
-#' describe the values of a column, so overwriting those values makes them
-#' stale. `label` and `role` state the analyst's intent, are independent of the
-#' values, and are kept.
+#' `type`, its source, event, event source, reference, declared levels, unit and
+#' rounding policy describe the values of a column, so overwriting those values
+#' makes them stale. `label` and `role` state the analyst's intent, are
+#' independent of the values, and are kept.
 #'
 #' @param data The `bq_data` object being modified.
 #' @param cols Named list of new column values, `NULL` meaning removal.
@@ -54,6 +54,9 @@ dplyr_col_modify.bq_data <- function(data, cols) {
   variables$event_source[variables$name %in% rewritten] <- NA_character_
   variables$reference[variables$name %in% rewritten] <- NA_character_
   variables$type_source[variables$name %in% rewritten] <- NA_character_
+  variables$unit[variables$name %in% rewritten] <- NA_character_
+  variables$rounding[variables$name %in% rewritten] <- NA_character_
+  variables$digits[variables$name %in% rewritten] <- NA_integer_
   attr(out, "variables") <- variables
   levels <- attr(out, "levels")
   attr(out, "levels") <- levels[!levels$var_id %in% rewritten_ids, ]
@@ -85,6 +88,9 @@ restore_replaced_bq_data <- function(out, template, rewritten_names) {
   variables$event_source[rewritten] <- NA_character_
   variables$reference[rewritten] <- NA_character_
   variables$type_source[rewritten] <- NA_character_
+  variables$unit[rewritten] <- NA_character_
+  variables$rounding[rewritten] <- NA_character_
+  variables$digits[rewritten] <- NA_integer_
 
   levels <- reconcile_levels(attr(template, "levels"), variables$var_id)
   levels <- levels[!levels$var_id %in% rewritten_ids, ]

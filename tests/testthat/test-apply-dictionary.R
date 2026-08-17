@@ -39,6 +39,55 @@ test_that("missing dictionary fields leave existing metadata unchanged", {
   expect_identical(levels_of(result), levels_of(data))
 })
 
+test_that("apply_dictionary() records units and rounding policies", {
+  data <- labelled_data()
+  dictionary <- tibble::tibble(
+    name = c("age", "bmi"),
+    unit = c("years", "kg/m^2"),
+    rounding = c("decimal", "significant"),
+    digits = c(0, 3)
+  )
+
+  result <- apply_dictionary(data, dictionary)
+
+  expect_identical(variables_of(result)$unit, c("years", NA, "kg/m^2"))
+  expect_identical(
+    variables_of(result)$rounding,
+    c("decimal", NA, "significant")
+  )
+  expect_identical(variables_of(result)$digits, c(0L, NA, 3L))
+})
+
+test_that("apply_dictionary() validates units and rounding policies", {
+  data <- labelled_data()
+
+  expect_error(
+    apply_dictionary(data, tibble::tibble(name = "age", unit = "")),
+    class = "bq_error_invalid_dictionary"
+  )
+  expect_error(
+    apply_dictionary(
+      data,
+      tibble::tibble(name = "age", rounding = "decimal")
+    ),
+    "both `rounding` and `digits`"
+  )
+  expect_error(
+    apply_dictionary(
+      data,
+      tibble::tibble(name = "age", rounding = "significant", digits = 0)
+    ),
+    class = "bq_error_invalid_dictionary"
+  )
+  expect_error(
+    apply_dictionary(
+      data,
+      tibble::tibble(name = "age", rounding = "fixed", digits = 1)
+    ),
+    class = "bq_error_invalid_dictionary"
+  )
+})
+
 test_that("dictionary decisions replace inferred decisions", {
   data <- infer_types(as_bq_data(tibble::tibble(group = c("alpha", "zeta"))))
   result <- apply_dictionary(

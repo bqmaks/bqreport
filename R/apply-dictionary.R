@@ -1,10 +1,10 @@
 #' Apply a variable dictionary
 #'
 #' Applies flat, name-keyed metadata to a `bq_data` object. The dictionary may
-#' contain `label`, `role`, `type`, `event` and `reference` in addition to the
-#' required `name` column. Missing values mean "leave this field unchanged".
-#' Ordered categories are supplied in a second flat table with one row per
-#' level.
+#' contain `label`, `role`, `type`, `event`, `reference`, `unit`, `rounding`
+#' and `digits` in addition to the required `name` column. Missing values mean
+#' "leave this field unchanged". Ordered categories are supplied in a second
+#' flat table with one row per level.
 #'
 #' Dictionary type decisions replace inferred or default decisions, but never
 #' silently replace an explicit decision made through a setter.
@@ -12,7 +12,9 @@
 #' @param data A `bq_data` object.
 #' @param dictionary A data frame with one row per variable and a required
 #'   character column `name`. Optional columns are `label`, `role`, `type`,
-#'   `event` and `reference`.
+#'   `event`, `reference`, `unit`, `rounding` and `digits`. A non-missing
+#'   rounding policy requires both `rounding` and `digits`; `rounding` is either
+#'   `"decimal"` or `"significant"`.
 #' @param level_dictionary `NULL`, or a data frame with columns `name`, `value`
 #'   and `position`. It is required for ordinal types in `dictionary`.
 #'
@@ -25,7 +27,10 @@
 #'   label = c("Age, years", "Study group"),
 #'   role = c("predictor", "outcome"),
 #'   type = c("continuous", "binary"),
-#'   event = c(NA, "case")
+#'   event = c(NA, "case"),
+#'   unit = c("years", NA),
+#'   rounding = c("decimal", NA),
+#'   digits = c(0, NA)
 #' )
 #' apply_dictionary(data, dictionary)
 apply_dictionary <- function(data, dictionary, level_dictionary = NULL) {
@@ -43,14 +48,20 @@ apply_dictionary <- function(data, dictionary, level_dictionary = NULL) {
     )
   }
 
-  allowed_columns <- c("name", "label", "role", "type", "event", "reference")
+  allowed_columns <- c(
+    "name", "label", "role", "type", "event", "reference", "unit",
+    "rounding", "digits"
+  )
   unknown_columns <- setdiff(names(dictionary), allowed_columns)
 
   if (length(unknown_columns) > 0L) {
     bq_abort(
       "bq_error_invalid_dictionary",
       sprintf(
-        "Dictionary column `%s` is not supported; use only name, label, role, type, event and reference.",
+        paste0(
+          "Dictionary column `%s` is not supported; use only name, label, ",
+          "role, type, event, reference, unit, rounding and digits."
+        ),
         unknown_columns[1L]
       )
     )
@@ -63,7 +74,10 @@ apply_dictionary <- function(data, dictionary, level_dictionary = NULL) {
     )
   }
 
-  character_columns <- intersect(c("name", "label", "role", "type"), names(dictionary))
+  character_columns <- intersect(
+    c("name", "label", "role", "type", "unit", "rounding"),
+    names(dictionary)
+  )
   invalid_character <- character_columns[
     !vapply(dictionary[character_columns], is.character, logical(1))
   ]
@@ -89,6 +103,79 @@ apply_dictionary <- function(data, dictionary, level_dictionary = NULL) {
       "bq_error_invalid_dictionary",
       sprintf("Dictionary column `%s` must be an atomic vector.", invalid_scalar[1L])
     )
+  }
+
+  if ("unit" %in% names(dictionary)) {
+    invalid_unit <- !is.na(dictionary$unit) & dictionary$unit == ""
+
+    if (any(invalid_unit)) {
+      bq_abort(
+        "bq_error_invalid_dictionary",
+        "Dictionary `unit` values must be non-empty when supplied."
+      )
+    }
+  }
+
+  if ("digits" %in% names(dictionary) && !is.numeric(dictionary$digits)) {
+    bq_abort(
+      "bq_error_invalid_dictionary",
+      "Dictionary column `digits` must be numeric."
+    )
+  }
+
+  if ("rounding" %in% names(dictionary)) {
+    invalid_rounding <- setdiff(
+      stats::na.omit(dictionary$rounding),
+      c("decimal", "significant")
+    )
+
+    if (length(invalid_rounding) > 0L) {
+      bq_abort(
+        "bq_error_invalid_dictionary",
+        sprintf(
+          "Rounding method `%s` is not supported in `dictionary`.",
+          invalid_rounding[1L]
+        )
+      )
+    }
+  }
+
+  has_rounding <- if ("rounding" %in% names(dictionary)) {
+    !is.na(dictionary$rounding)
+  } else {
+    rep(FALSE, nrow(dictionary))
+  }
+  has_digits <- if ("digits" %in% names(dictionary)) {
+    !is.na(dictionary$digits)
+  } else {
+    rep(FALSE, nrow(dictionary))
+  }
+
+  if (any(xor(has_rounding, has_digits))) {
+    bq_abort(
+      "bq_error_invalid_dictionary",
+      "Dictionary rounding policies require both `rounding` and `digits`."
+    )
+  }
+
+  if (any(has_digits)) {
+    supplied_digits <- dictionary$digits[has_digits]
+    supplied_methods <- dictionary$rounding[has_rounding]
+    invalid_digits <- !is.finite(supplied_digits) |
+      supplied_digits != floor(supplied_digits) |
+      supplied_digits > .Machine$integer.max |
+      (supplied_methods == "decimal" & supplied_digits < 0) |
+      (supplied_methods == "significant" & supplied_digits < 1)
+
+    if (any(invalid_digits)) {
+      bq_abort(
+        "bq_error_invalid_dictionary",
+        paste0(
+          "Dictionary `digits` must be non-negative for decimal rounding and ",
+          "positive for significant rounding."
+        )
+      )
+    }
   }
 
   if (anyNA(dictionary$name) || any(dictionary$name == "")) {
@@ -159,6 +246,15 @@ apply_dictionary <- function(data, dictionary, level_dictionary = NULL) {
 
     if ("role" %in% names(dictionary) && !is.na(dictionary$role[dictionary_row])) {
       registry$role[registry_row] <- dictionary$role[dictionary_row]
+    }
+
+    if ("unit" %in% names(dictionary) && !is.na(dictionary$unit[dictionary_row])) {
+      registry$unit[registry_row] <- dictionary$unit[dictionary_row]
+    }
+
+    if (has_rounding[dictionary_row]) {
+      registry$rounding[registry_row] <- dictionary$rounding[dictionary_row]
+      registry$digits[registry_row] <- as.integer(dictionary$digits[dictionary_row])
     }
 
     dictionary_type <- if ("type" %in% names(dictionary)) {

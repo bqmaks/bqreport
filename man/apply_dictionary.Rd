@@ -11,7 +11,9 @@ apply_dictionary(data, dictionary, level_dictionary = NULL)
 
 \item{dictionary}{A data frame with one row per variable and a required
 character column \code{name}. Optional columns are \code{label}, \code{role}, \code{type},
-\code{event} and \code{reference}.}
+\code{event}, \code{reference}, \code{unit}, \code{rounding} and \code{digits}. A non-missing
+rounding policy requires both \code{rounding} and \code{digits}; \code{rounding} is either
+\code{"decimal"} or \code{"significant"}.}
 
 \item{level_dictionary}{\code{NULL}, or a data frame with columns \code{name}, \code{value}
 and \code{position}. It is required for ordinal types in \code{dictionary}.}
@@ -21,10 +23,10 @@ and \code{position}. It is required for ordinal types in \code{dictionary}.}
 }
 \description{
 Applies flat, name-keyed metadata to a \code{bq_data} object. The dictionary may
-contain \code{label}, \code{role}, \code{type}, \code{event} and \code{reference} in addition to the
-required \code{name} column. Missing values mean "leave this field unchanged".
-Ordered categories are supplied in a second flat table with one row per
-level.
+contain \code{label}, \code{role}, \code{type}, \code{event}, \code{reference}, \code{unit}, \code{rounding}
+and \code{digits} in addition to the required \code{name} column. Missing values mean
+"leave this field unchanged". Ordered categories are supplied in a second
+flat table with one row per level.
 }
 \details{
 Dictionary type decisions replace inferred or default decisions, but never
@@ -37,7 +39,10 @@ dictionary <- data.frame(
   label = c("Age, years", "Study group"),
   role = c("predictor", "outcome"),
   type = c("continuous", "binary"),
-  event = c(NA, "case")
+  event = c(NA, "case"),
+  unit = c("years", NA),
+  rounding = c("decimal", NA),
+  digits = c(0, NA)
 )
 apply_dictionary(data, dictionary)
 }

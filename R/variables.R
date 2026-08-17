@@ -10,7 +10,8 @@
 #' @param data A `bq_data` object.
 #'
 #' @return A tibble with columns `var_id`, `name`, `label`, `role`, `type`,
-#'   `event`, `event_source`, `reference` and `type_source`.
+#'   `event`, `event_source`, `reference`, `type_source`, `unit`, `rounding`
+#'   and `digits`.
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55), sex = c("f", "m")))

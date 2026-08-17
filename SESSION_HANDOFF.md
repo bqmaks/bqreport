@@ -33,6 +33,9 @@
 - `R/set-role.R` — `set_role()`, установка одной из ролей `outcome`,
   `predictor`, `group`, `id` для одного или нескольких столбцов, и удобная
   обёртки `set_outcome()` и `set_predictor()`.
+- `R/set-format.R` — `set_unit()` и `set_rounding()`, запись единиц измерения и
+  политики представления (`decimal` / `significant` + `digits`) без изменения
+  исходных чисел.
 - `R/apply-dictionary.R` — `apply_dictionary()`, применение основного плоского
   словаря по имени и отдельного ordinal level dictionary с приоритетом над
   inferred/default и защитой explicit.
@@ -47,25 +50,29 @@
   функции с one-row data-frame prototype и пользовательской missing policy.
 - `R/add-statistic.R` — `add_statistic()`, регистрация specification, её
   компонентов, назначений `var_id` и исполняемой функции в summary plan.
+- `R/preflight.R` — generic `preflight()` и метод summary-плана; повреждённая
+  структура плана отвергается, а аналитические проблемы возвращаются плоской
+  таблицей diagnostics. Сейчас проверяются missing/unknown types, отсутствие
+  statistic, несовместимость continuous statistic с типом переменной и
+  применение unit/rounding к неколичественным переменным.
 - К `bq_data` добавлен плоский реестр уровней `var_id`, `value`, `position`;
   dplyr сохраняет его, удаляет строки исчезнувших переменных и очищает уровни
   переписанного через `mutate()` столбца.
 
 Реестр сейчас: `var_id`, `name`, `label`, `role`, `type`, `event`,
-`event_source`, `reference`, `type_source`.
+`event_source`, `reference`, `type_source`, `unit`, `rounding`, `digits`.
 Экспортируются конструктор данных и accessor, конструкторы типов, явные
 сеттеры ролей и типов, `infer_type()` и `infer_types()`.
 
-578 тестов, `R CMD check` — Status: OK. Коммиты `d4650bc`, `d0243f4`,
+644 теста, `R CMD check` — Status: OK. Коммиты `d4650bc`, `d0243f4`,
 `6c9e384` запушены в `origin/main`; локальная ветка содержит более новые
 коммиты.
 
 ## Следующий шаг
 
-Спроектировать preflight для `bq_plan_summary`: проверить целостность плоских
-реестров плана, наличие типов у анализируемых переменных и совместимость
-назначенных statistics с аналитическими типами. После preflight — движок raw
-continuous summaries с проверкой runtime-схемы пользовательских функций.
+Спроектировать и построить плоский реестр вычислительных ячеек для leaf
+`group × strata` и запрошенных raw Overall. После компиляции ячеек — движок
+raw continuous summaries с проверкой runtime-схемы пользовательских функций.
 
 ## Известные пробелы
 

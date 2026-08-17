@@ -86,7 +86,10 @@ new_variable_registry <- function(names) {
     event = NA_character_,
     event_source = NA_character_,
     reference = NA_character_,
-    type_source = NA_character_
+    type_source = NA_character_,
+    unit = NA_character_,
+    rounding = NA_character_,
+    digits = NA_integer_
   )
 }
 

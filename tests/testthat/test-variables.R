@@ -8,7 +8,7 @@ test_that("variables() returns the registry as a plain tibble", {
     names(registry),
     c(
       "var_id", "name", "label", "role", "type", "event", "event_source",
-      "reference", "type_source"
+      "reference", "type_source", "unit", "rounding", "digits"
     )
   )
 })

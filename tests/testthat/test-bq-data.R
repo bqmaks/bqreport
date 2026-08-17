@@ -14,7 +14,10 @@ test_that("as_bq_data() gives every column one blank registry row", {
       event = NA_character_,
       event_source = NA_character_,
       reference = NA_character_,
-      type_source = NA_character_
+      type_source = NA_character_,
+      unit = NA_character_,
+      rounding = NA_character_,
+      digits = NA_integer_
     )
   )
   expect_identical(

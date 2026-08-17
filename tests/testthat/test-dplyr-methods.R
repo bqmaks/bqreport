@@ -63,8 +63,11 @@ test_that("mutate() gives a new column a blank row with a fresh identifier", {
   expect_identical(variables_of(added)$type_source[4], NA_character_)
 })
 
-test_that("mutate() over an existing column invalidates its type only", {
-  rewritten <- dplyr::mutate(labelled_data(), bmi = round(bmi))
+test_that("mutate() invalidates value-dependent metadata only", {
+  data <- labelled_data()
+  data <- set_unit(data, bmi, "kg/m^2")
+  data <- set_rounding(data, bmi, 1)
+  rewritten <- dplyr::mutate(data, bmi = round(bmi))
   variables <- variables_of(rewritten)
 
   expect_registry_aligned(rewritten)
@@ -74,6 +77,9 @@ test_that("mutate() over an existing column invalidates its type only", {
   expect_identical(variables$event_source, c(NA, "explicit", NA))
   expect_identical(variables$reference, rep(NA_character_, 3))
   expect_identical(variables$type_source, c("explicit", "explicit", NA))
+  expect_identical(variables$unit, rep(NA_character_, 3))
+  expect_identical(variables$rounding, rep(NA_character_, 3))
+  expect_identical(variables$digits, rep(NA_integer_, 3))
   # label and role state intent and are independent of the values.
   expect_identical(variables$label[3], "Body mass index")
   expect_identical(variables$role[3], "outcome")
