@@ -11,20 +11,40 @@
 - `R/registry.R` — согласование реестра со столбцами, выдача идентификаторов.
 - `R/dplyr-methods.R` — сохранение метаданных через dplyr.
 - `R/variables.R` — `variables()`, чтение реестра.
+- `R/variable-levels.R` — `variable_levels()`, чтение плоского реестра уровней.
 - `R/print.R` — заголовок со сводкой по ролям.
 - `R/infer-type.R` — `infer_type()`, вывод аналитического типа из вектора.
+  Внутренний `infer_type_metadata()` одновременно возвращает event, его
+  источник и объявленный порядок ordinal levels.
+- `R/infer-types.R` — `infer_types()`, применение вывода к неразмеченным
+  столбцам без перезаписи уже принятого решения.
 - `R/type-constructors.R` — `continuous()`, `count()`, `binary(event)`,
   `ordinal(levels)` и `nominal(reference)`, декларативные спецификации класса
   `bq_type`.
+- `R/set-type.R` — `set_type()`, запись явной спецификации одного столбца в
+  плоские реестры с проверкой event, reference и ordinal levels.
+- `R/set-role.R` — `set_role()`, установка одной из ролей `outcome`,
+  `predictor`, `group`, `id` для одного или нескольких столбцов, и удобная
+  обёртки `set_outcome()` и `set_predictor()`.
+- `R/apply-dictionary.R` — `apply_dictionary()`, применение основного плоского
+  словаря по имени и отдельного ordinal level dictionary с приоритетом над
+  inferred/default и защитой explicit.
+- `R/selectors.R` — внутренний `resolve_variables()`, немедленно связывающий
+  tidyselect-выбор со стабильными `var_id`; на него переведены `set_type()` и
+  `set_role()` с его обёртками, а также `infer_types()`.
+- `R/plan-summary.R` — `plan_summary()`, минимальный план с анализируемыми
+  переменными, group, strata и осями raw Overall; компактный print не выводит
+  вложенные данные.
 - К `bq_data` добавлен плоский реестр уровней `var_id`, `value`, `position`;
   dplyr сохраняет его, удаляет строки исчезнувших переменных и очищает уровни
   переписанного через `mutate()` столбца.
 
 Реестр сейчас: `var_id`, `name`, `label`, `role`, `type`, `event`,
-`reference`, `type_source`.
-Экспортируются `as_bq_data()`, `variables()`, `infer_type()`.
+`event_source`, `reference`, `type_source`.
+Экспортируются конструктор данных и accessor, конструкторы типов, явные
+сеттеры ролей и типов, `infer_type()` и `infer_types()`.
 
-204 теста, `R CMD check` — Status: OK. Коммиты сессии: `d4650bc`,
+430 тестов, `R CMD check` — Status: OK. Коммиты сессии: `d4650bc`,
 `d0243f4`, `6c9e384`; запушены в `origin/main`.
 
 ## Следующий шаг
@@ -34,12 +54,8 @@
 - Конструкторы типов должны раскрываться в плоские колонки реестра (не
   list-column: реестр должен оставаться обычной таблицей, чтобы его можно было
   задавать словарём).
-- Вывод типа должен заодно предлагать `event` для `binary`, когда кодировка
-  однозначна (`1`, `TRUE`) — тогда явно выбирать уровень придётся только для
-  произвольных двухуровневых переменных.
-- `type_source` (`explicit` / `inferred` / `dictionary` / `default`) — явно
-  заданное значение автовывод не перезаписывает.
-- Сеттеры `set_role()`, `set_type()`, `set_outcome()`, `set_predictor()`.
+- `type_source` (`explicit` / `inferred` / `dictionary` / `default`) хранит
+  происхождение решения; автовывод уже не перезаписывает установленный тип.
 
 Дальше по маршруту: `apply_dictionary()` (метаданные таблицей — требование
 пользователя), селекторы, план, движок описательных, сравнение групп.
@@ -53,4 +69,3 @@
 - Порог `max_levels = 20` в `infer_type()` произволен.
 - Кодировка 1/2 (частая в выгрузках SPSS) не распознаётся как двухуровневая.
 - `haven_labelled` не обрабатывается: `labelled` в зависимости не входит.
-- Ролей пока нет словаря; в заголовке они сортируются по алфавиту.

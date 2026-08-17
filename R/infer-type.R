@@ -34,73 +34,164 @@
 #' infer_type(factor(c("f", "m")))
 #' infer_type(factor(c("low", "mid", "high"), ordered = TRUE))
 infer_type <- function(x, max_levels = 20L) {
+  infer_type_metadata(x, max_levels)$type
+}
+
+#' Infer value-dependent analytic metadata
+#'
+#' Computes the type decision used by [infer_type()] together with metadata
+#' that has to be inferred from the same values. An event dictated by a known
+#' coding is marked `"inferred"`; an event chosen only by category order is
+#' marked `"default"`.
+#'
+#' @param x A vector.
+#' @param max_levels Largest number of categories still read as `"nominal"`.
+#'
+#' @return A named list with `type`, `event`, `event_source` and `levels`.
+#' @noRd
+infer_type_metadata <- function(x, max_levels = 20L) {
   # A column without a single observation carries no evidence at all. This
   # also catches the empty columns that data exports tend to type as logical.
   if (all(is.na(x))) {
-    return("unknown")
+    return(list(
+      type = "unknown",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = character()
+    ))
   }
 
   # Dates store a number underneath, so they have to be recognised before any
   # numeric rule can claim them.
   if (inherits(x, "Date")) {
-    return("date")
+    return(list(
+      type = "date",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = character()
+    ))
   }
 
   if (inherits(x, c("POSIXct", "POSIXlt"))) {
-    return("datetime")
+    return(list(
+      type = "datetime",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = character()
+    ))
   }
 
   if (is.logical(x)) {
-    return("binary")
+    return(list(
+      type = "binary",
+      event = "TRUE",
+      event_source = "inferred",
+      levels = character()
+    ))
   }
 
   if (is.factor(x) || is.character(x)) {
-    return(infer_categorical_type(x, max_levels))
+    return(infer_categorical_metadata(x, max_levels))
   }
 
   if (is.numeric(x)) {
     observed <- unique(x[!is.na(x)])
 
     if (all(observed %in% c(0, 1))) {
-      return("binary")
+      return(list(
+        type = "binary",
+        event = "1",
+        event_source = "inferred",
+        levels = character()
+      ))
     }
 
-    return("continuous")
+    return(list(
+      type = "continuous",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = character()
+    ))
   }
 
-  "unknown"
+  list(
+    type = "unknown",
+    event = NA_character_,
+    event_source = NA_character_,
+    levels = character()
+  )
 }
 
-#' Classify a factor or character column by its categories
+#' Infer metadata for a factor or character column
 #'
 #' @param x A factor or character vector.
 #' @param max_levels Largest number of categories still read as `"nominal"`.
 #'
-#' @return A type name.
+#' @return A named metadata list.
 #' @noRd
-infer_categorical_type <- function(x, max_levels) {
+infer_categorical_metadata <- function(x, max_levels) {
   categories <- if (is.factor(x)) levels(x) else unique(x[!is.na(x)])
 
   # A 0/1 or TRUE/FALSE coding, usually logical data that lost its type on
   # import through a CSV. Named here so that it stays binary even when only
   # one of the two values occurs, which counting categories would miss.
-  if (all(categories %in% c("0", "1")) || all(categories %in% c("FALSE", "TRUE"))) {
-    return("binary")
+  if (all(categories %in% c("0", "1"))) {
+    return(list(
+      type = "binary",
+      event = "1",
+      event_source = "inferred",
+      levels = character()
+    ))
+  }
+
+  if (all(categories %in% c("FALSE", "TRUE"))) {
+    return(list(
+      type = "binary",
+      event = "TRUE",
+      event_source = "inferred",
+      levels = character()
+    ))
   }
 
   # An order over two categories states nothing the two categories do not
   # already state, so it does not make the column ordinal.
   if (is.ordered(x) && length(categories) >= 3L) {
-    return("ordinal")
+    return(list(
+      type = "ordinal",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = categories
+    ))
   }
 
   if (length(categories) == 2L) {
-    return("binary")
+    ordered_categories <- if (is.factor(x)) {
+      categories
+    } else {
+      sort(enc2utf8(categories), method = "radix")
+    }
+
+    return(list(
+      type = "binary",
+      event = ordered_categories[2L],
+      event_source = "default",
+      levels = character()
+    ))
   }
 
   if (length(categories) <= max_levels) {
-    return("nominal")
+    return(list(
+      type = "nominal",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = character()
+    ))
   }
 
-  "unknown"
+  list(
+    type = "unknown",
+    event = NA_character_,
+    event_source = NA_character_,
+    levels = character()
+  )
 }

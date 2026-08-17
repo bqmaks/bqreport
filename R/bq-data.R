@@ -80,6 +80,7 @@ new_variable_registry <- function(names) {
     role = NA_character_,
     type = NA_character_,
     event = NA_character_,
+    event_source = NA_character_,
     reference = NA_character_,
     type_source = NA_character_
   )

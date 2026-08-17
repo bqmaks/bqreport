@@ -15,7 +15,8 @@
 A \code{bq_data} object.
 }
 \description{
-\code{type}, its source, event, reference and declared levels describe the values
-of a column, so overwriting those values makes them stale. \code{label} and \code{role}
-state the analyst's intent, are independent of the values, and are kept.
+\code{type}, its source, event, event source, reference and declared levels
+describe the values of a column, so overwriting those values makes them
+stale. \code{label} and \code{role} state the analyst's intent, are independent of the
+values, and are kept.
 }

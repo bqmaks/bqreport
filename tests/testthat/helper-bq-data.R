@@ -20,6 +20,7 @@ labelled_data <- function() {
   variables$role <- c("predictor", "group", "outcome")
   variables$type <- c("continuous", "binary", "continuous")
   variables$event <- c(NA, "m", NA)
+  variables$event_source <- c(NA, "explicit", NA)
   variables$reference <- c(NA, "f", NA)
   variables$type_source <- rep("explicit", 3)
   attr(data, "variables") <- variables

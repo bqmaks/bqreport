@@ -71,6 +71,7 @@ test_that("mutate() over an existing column invalidates its type only", {
   # type describes the values, which have just changed.
   expect_identical(variables$type, c("continuous", "binary", NA_character_))
   expect_identical(variables$event, c(NA, "m", NA))
+  expect_identical(variables$event_source, c(NA, "explicit", NA))
   expect_identical(variables$reference, c(NA, "f", NA))
   expect_identical(variables$type_source, c("explicit", "explicit", NA))
   # label and role state intent and are independent of the values.
@@ -86,6 +87,7 @@ test_that("mutate() over a categorical column removes its levels", {
   expect_registry_aligned(rewritten)
   expect_identical(nrow(levels_of(rewritten)), 0L)
   expect_identical(variables_of(rewritten)$event[2], NA_character_)
+  expect_identical(variables_of(rewritten)$event_source[2], NA_character_)
   expect_identical(variables_of(rewritten)$reference[2], NA_character_)
   expect_identical(variables_of(rewritten)$type_source[2], NA_character_)
 })
