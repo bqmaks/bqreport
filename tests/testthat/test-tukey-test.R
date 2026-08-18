@@ -49,7 +49,7 @@ test_that("tukey_test() matches stats::TukeyHSD", {
 
   expect_named(
     result,
-    c("comparisons", "sample_flow")
+    c("analysis", "specification", "comparisons", "sample_flow")
   )
   expect_equal(
     result$comparisons$estimate, unname(direct[, "diff"]), tolerance = 1e-12
@@ -75,7 +75,7 @@ test_that("tukey_test() matches stats::TukeyHSD", {
     result$comparisons$conf_high, unname(direct[, "upr"]), tolerance = 1e-12
   )
   expect_equal(
-    result$comparisons$p_value, unname(direct[, "p adj"]), tolerance = 1e-12
+    result$comparisons$p_value_adjusted, unname(direct[, "p adj"]), tolerance = 1e-12
   )
   expect_identical(
     result$comparisons$reference_value,

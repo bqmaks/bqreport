@@ -23,42 +23,24 @@
 #'   group = rep(c("new", "control", "other"), each = 3)
 #' )
 tukey_test <- function(conf_level = 0.95) {
-  if (
-    !is.numeric(conf_level) || length(conf_level) != 1L ||
-      is.na(conf_level) || !is.finite(conf_level) ||
-      conf_level <= 0 || conf_level >= 1
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`conf_level` must be one finite number strictly between zero and one."
-    )
-  }
+  conf_level <- check_conf_level(conf_level)
 
   specification <- list(
     kind = "tukey_test",
     family = "pairwise",
     estimand = "mean_difference",
     p_adjust_method = "tukey_single_step",
-    conf_level = as.double(conf_level)
+    conf_level = conf_level
   )
   capabilities <- list(
     outcome_types = "continuous",
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
     supplied_results = "comparison_family",
-    supplied_extractors = character(),
     suggested_dependencies = character()
   )
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(data, context, "tukey_test")
+    prepared <- prepare_engine_input(data, context, "tukey_test")
     used <- prepared$used
     model_data <- data.frame(
       .outcome = data$.outcome[used],
@@ -102,7 +84,7 @@ tukey_test <- function(conf_level = 0.95) {
     estimate <- unname(as.double(tukey_result[, "diff"]))
     conf_low <- unname(as.double(tukey_result[, "lwr"]))
     conf_high <- unname(as.double(tukey_result[, "upr"]))
-    p_value <- unname(as.double(tukey_result[, "p adj"]))
+    p_value_adjusted <- unname(as.double(tukey_result[, "p adj"]))
     residual_df <- unname(as.double(stats::df.residual(fit)))
     residual_variance <- unname(as.double(stats::deviance(fit) / residual_df))
     n_used <- table(factor(model_data$.group, levels = group_values))
@@ -114,11 +96,11 @@ tukey_test <- function(conf_level = 0.95) {
     std_error <- sqrt(2) * tukey_scale
     statistic <- abs(estimate) / tukey_scale
     valid_result <- all(is.finite(c(
-      estimate, std_error, conf_low, conf_high, p_value, statistic,
+      estimate, std_error, conf_low, conf_high, p_value_adjusted, statistic,
       residual_df, residual_variance
     ))) && residual_df > 0 && residual_variance > 0 &&
       all(std_error > 0) && all(conf_low <= conf_high) &&
-      all(p_value >= 0 & p_value <= 1)
+      all(p_value_adjusted >= 0 & p_value_adjusted <= 1)
     if (!valid_result) {
       bq_abort(
         "bq_error_analysis_runtime",
@@ -154,17 +136,19 @@ tukey_test <- function(conf_level = 0.95) {
       effect_conf_level = rep(NA_real_, expected_rows),
       effect_interval_scope = rep(NA_character_, expected_rows),
       effect_ci_method = rep(NA_character_, expected_rows),
+      effect_ci_clamped = rep(NA, expected_rows),
       statistic = statistic,
       statistic_type = rep("studentized_range", expected_rows),
       df = rep(residual_df, expected_rows),
-      p_value = p_value,
-      p_value_raw = rep(NA_real_, expected_rows),
+      p_value = rep(NA_real_, expected_rows),
+      p_value_adjusted = p_value_adjusted,
       p_adjust_method = rep("tukey_single_step", expected_rows),
       conf_low = conf_low,
       conf_high = conf_high,
       conf_level = rep(specification$conf_level, expected_rows),
       interval_scope = rep("familywise_simultaneous", expected_rows),
       ci_method = rep("tukey_studentized_range", expected_rows),
+      ci_clamped = rep(FALSE, expected_rows),
       inference = rep("analytical", expected_rows),
       variance_assumption = rep("equal", expected_rows),
       exact_requested = rep(NA_character_, expected_rows),

@@ -79,9 +79,9 @@ test_that("dunn_test() selects and adjusts each declared family", {
     }
 
     expect_equal(result$comparisons$statistic, direct_statistic, tolerance = 1e-12)
-    expect_equal(result$comparisons$p_value_raw, direct_p, tolerance = 1e-12)
+    expect_equal(result$comparisons$p_value, direct_p, tolerance = 1e-12)
     expect_equal(
-      result$comparisons$p_value,
+      result$comparisons$p_value_adjusted,
       stats::p.adjust(direct_p, method = "holm"),
       tolerance = 1e-12
     )
@@ -90,6 +90,6 @@ test_that("dunn_test() selects and adjusts each declared family", {
       result$comparisons$engine,
       rep("PMCMRplus::kwAllPairsDunnTest", nrow(pairs))
     )
-    expect_named(result, c("comparisons", "sample_flow"))
+    expect_named(result, c("analysis", "specification", "comparisons", "sample_flow"))
   }
 })

@@ -95,9 +95,9 @@ test_that("mann_whitney_family() adjusts only the declared family", {
       vapply(direct, function(test) unname(test$estimate), double(1)),
       tolerance = 1e-12
     )
-    expect_equal(result$comparisons$p_value_raw, raw_p, tolerance = 1e-12)
+    expect_equal(result$comparisons$p_value, raw_p, tolerance = 1e-12)
     expect_equal(
-      result$comparisons$p_value,
+      result$comparisons$p_value_adjusted,
       stats::p.adjust(raw_p, method = "holm"),
       tolerance = 1e-12
     )
@@ -124,7 +124,7 @@ test_that("mann_whitney_family() adjusts only the declared family", {
     expect_identical(result$comparisons$family, rep(declaration$family, nrow(pairs)))
     expect_identical(result$comparisons$exact_requested, rep("asymptotic", nrow(pairs)))
     expect_identical(result$comparisons$exact_used, rep(FALSE, nrow(pairs)))
-    expect_named(result, c("comparisons", "sample_flow"))
+    expect_named(result, c("analysis", "specification", "comparisons", "sample_flow"))
   }
 })
 

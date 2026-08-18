@@ -78,7 +78,7 @@ test_that("extended moments do not fall back for small samples", {
 test_that("continuous_descriptives_extended() passes preflight", {
   skip_if_not_installed("datawizard")
   data <- as_bq_data(tibble::tibble(value = c(1, 2, 4, 8)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 1)
   plan <- plan_summary(data) |>
     add_statistic(value, continuous_descriptives_extended())

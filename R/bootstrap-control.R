@@ -33,74 +33,25 @@ bootstrap_control <- function(
   seed = NULL,
   weight_type = NULL
 ) {
-  if (
-    !is.character(method) || length(method) != 1L || is.na(method) ||
-      !method %in% c("ordinary", "fractional")
-  ) {
-    bq_abort(
-      "bq_error_invalid_bootstrap_control",
-      "`method` must be either \"ordinary\" or \"fractional\"."
-    )
-  }
-
-  if (
-    !is.numeric(iterations) || length(iterations) != 1L ||
-      is.na(iterations) || !is.finite(iterations) || iterations <= 0 ||
-      iterations != floor(iterations) || iterations > .Machine$integer.max
-  ) {
-    bq_abort(
-      "bq_error_invalid_bootstrap_control",
-      paste0(
-        "`iterations` must be one positive whole number no greater than ",
-        ".Machine$integer.max."
-      )
-    )
-  }
-
-  allowed_conf_types <- c("bca", "percentile", "basic")
-  if (
-    !is.character(conf_type) || length(conf_type) != 1L ||
-      is.na(conf_type) || !conf_type %in% allowed_conf_types
-  ) {
-    bq_abort(
-      "bq_error_invalid_bootstrap_control",
-      paste0(
-        "`conf_type` must be one of \"bca\", \"percentile\" and \"basic\"."
-      )
-    )
-  }
-
-  if (
-    !is.null(seed) && (
-      !is.numeric(seed) || length(seed) != 1L || is.na(seed) ||
-        !is.finite(seed) || seed < 0 || seed != floor(seed) ||
-        seed > .Machine$integer.max
-    )
-  ) {
-    bq_abort(
-      "bq_error_invalid_bootstrap_control",
-      paste0(
-        "`seed` must be NULL or one non-negative whole number no greater ",
-        "than .Machine$integer.max."
-      )
-    )
+  class <- "bq_error_invalid_bootstrap_control"
+  check_choice(method, "method", c("ordinary", "fractional"), class = class)
+  iterations <- check_whole(iterations, "iterations", lower = 1, class = class)
+  check_choice(
+    conf_type, "conf_type", c("bca", "percentile", "basic"), class = class
+  )
+  if (!is.null(seed)) {
+    seed <- check_whole(seed, "seed", lower = 0, class = class)
   }
 
   if (method == "ordinary" && !is.null(weight_type)) {
-    bq_abort(
-      "bq_error_invalid_bootstrap_control",
-      "`weight_type` must be NULL for an ordinary bootstrap."
-    )
+    bq_abort(class, "`weight_type` must be NULL for an ordinary bootstrap.")
   }
   if (method == "fractional") {
     if (is.null(weight_type)) {
       weight_type <- "exponential"
-    } else if (
-      !is.character(weight_type) || length(weight_type) != 1L ||
-        is.na(weight_type) || !identical(weight_type, "exponential")
-    ) {
+    } else if (!identical(weight_type, "exponential")) {
       bq_abort(
-        "bq_error_invalid_bootstrap_control",
+        class,
         paste0(
           "`weight_type` must be NULL or \"exponential\" for a fractional ",
           "bootstrap."
@@ -113,11 +64,76 @@ bootstrap_control <- function(
     list(
       method = method,
       engine = if (method == "ordinary") "boot" else "fwb",
-      iterations = as.integer(iterations),
+      iterations = iterations,
       conf_type = conf_type,
-      seed = if (is.null(seed)) NULL else as.integer(seed),
+      seed = seed,
       weight_type = weight_type
     ),
     class = "bq_bootstrap_control"
   )
+}
+
+#' Require a valid bootstrap specification and its engine
+#'
+#' Analytic constructors accept `bootstrap = NULL` or a specification built by
+#' [bootstrap_control()]. The structure is re-checked here rather than trusted
+#' from the class alone, because a specification is plain data that a user can
+#' edit after construction. The engine package is required at declaration
+#' time: a missing engine is a configuration error, not a runtime surprise.
+#'
+#' @param bootstrap `NULL` or a `bq_bootstrap_control` object.
+#'
+#' @return `bootstrap`, invisibly.
+#' @noRd
+check_bootstrap_control <- function(bootstrap) {
+  if (is.null(bootstrap)) {
+    return(invisible(NULL))
+  }
+  valid <- identical(class(bootstrap), "bq_bootstrap_control") &&
+    identical(
+      names(bootstrap),
+      c("method", "engine", "iterations", "conf_type", "seed", "weight_type")
+    ) &&
+    is.character(bootstrap$method) && length(bootstrap$method) == 1L &&
+    !is.na(bootstrap$method) &&
+    bootstrap$method %in% c("ordinary", "fractional") &&
+    identical(
+      bootstrap$engine,
+      if (identical(bootstrap$method, "ordinary")) "boot" else "fwb"
+    ) &&
+    is.integer(bootstrap$iterations) && length(bootstrap$iterations) == 1L &&
+    !is.na(bootstrap$iterations) && bootstrap$iterations > 0L &&
+    is.character(bootstrap$conf_type) && length(bootstrap$conf_type) == 1L &&
+    !is.na(bootstrap$conf_type) &&
+    bootstrap$conf_type %in% c("bca", "percentile", "basic") &&
+    (is.null(bootstrap$seed) || (
+      is.integer(bootstrap$seed) && length(bootstrap$seed) == 1L &&
+        !is.na(bootstrap$seed) && bootstrap$seed >= 0L
+    )) &&
+    if (identical(bootstrap$method, "ordinary")) {
+      is.null(bootstrap$weight_type)
+    } else {
+      identical(bootstrap$weight_type, "exponential")
+    }
+  if (!valid) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`bootstrap` must be NULL or a valid `bootstrap_control()` specification."
+    )
+  }
+  if (!requireNamespace(bootstrap$engine, quietly = TRUE)) {
+    bq_abort(
+      "bq_error_missing_dependency",
+      sprintf(
+        "%s bootstrap requires the suggested package `%s`.",
+        if (bootstrap$method == "ordinary") {
+          "Ordinary"
+        } else {
+          "Fractional weighted"
+        },
+        bootstrap$engine
+      )
+    )
+  }
+  invisible(bootstrap)
 }

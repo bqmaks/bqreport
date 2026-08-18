@@ -3,8 +3,8 @@ test_that("run_analysis() computes raw continuous summaries by cell", {
     value = c(3, NA, 1, 2),
     treatment = factor(c("A", "A", "B", "B"), levels = c("A", "B"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, treatment, binary("B"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, treatment, type_binary("B"))
   statistic <- continuous_statistic(
     "observed_values",
     function(x) {
@@ -56,8 +56,8 @@ test_that("run_analysis() computes raw Overall from its member rows", {
     value = c(1, NA, 3),
     treatment = factor(c("A", "A", "B"), levels = c("A", "B"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, treatment, binary("B"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, treatment, type_binary("B"))
   statistic <- continuous_statistic(
     "total",
     function(x) data.frame(total = sum(x, na.rm = TRUE))
@@ -82,8 +82,8 @@ test_that("run_analysis() executes statistics for empty cells", {
     value = c(1, 2),
     treatment = factor(c("A", "A"), levels = c("A", "B"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, treatment, binary("B"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, treatment, type_binary("B"))
   statistic <- continuous_statistic(
     "length",
     function(x) data.frame(length = length(x))
@@ -104,7 +104,7 @@ test_that("run_analysis() executes statistics for empty cells", {
 
 test_that("run_analysis() keeps raw values despite display metadata", {
   data <- as_bq_data(tibble::tibble(value = 1.25))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, digits = 0L)
   statistic <- continuous_statistic(
     "mean",
@@ -123,7 +123,7 @@ test_that("run_analysis() keeps raw values despite display metadata", {
 
 test_that("run_analysis() uses the declared continuous model frame", {
   data <- as_bq_data(tibble::tibble(value = factor(c("2.5", "1.5"))))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   plan <- plan_summary(data) |>
     add_statistic(value) |>
     add_display_rule(value, enumerate_values())
@@ -156,7 +156,7 @@ test_that("run_analysis() stops before computing a plan that fails preflight", {
 
 test_that("run_analysis() wraps errors raised by a statistic", {
   data <- as_bq_data(tibble::tibble(value = 1))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   statistic <- continuous_statistic(
     "failure",
     function(x) {
@@ -183,7 +183,7 @@ test_that("run_analysis() wraps errors raised by a statistic", {
 
 test_that("run_analysis() rejects runtime component type changes", {
   data <- as_bq_data(tibble::tibble(value = 1))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   statistic <- continuous_statistic(
     "unstable",
     function(x) {
@@ -215,7 +215,7 @@ test_that("run_analysis() validates the complete runtime schema", {
 
   for (runtime_output in runtime_outputs) {
     data <- as_bq_data(tibble::tibble(value = 1))
-    data <- set_type(data, value, continuous())
+    data <- set_type(data, value, type_continuous())
     statistic <- continuous_statistic(
       "unstable",
       local({

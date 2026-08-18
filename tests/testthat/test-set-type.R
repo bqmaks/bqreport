@@ -1,6 +1,6 @@
 test_that("set_type() records an explicit type without changing the data", {
   data <- as_bq_data(data.frame(age = c(40, 55, 61)))
-  result <- set_type(data, age, continuous())
+  result <- set_type(data, age, type_continuous())
 
   expect_registry_aligned(result)
   expect_identical(tibble::as_tibble(result), tibble::as_tibble(data))
@@ -15,8 +15,8 @@ test_that("set_type() records an explicit type without changing the data", {
 test_that("set_type() records binary event and nominal reference", {
   data <- as_bq_data(data.frame(group = factor("case", levels = c("control", "case"))))
 
-  binary_data <- set_type(data, group, binary("case"))
-  nominal_data <- set_type(data, group, nominal("control"))
+  binary_data <- set_type(data, group, type_binary("case"))
+  nominal_data <- set_type(data, group, type_nominal("control"))
 
   expect_identical(variables_of(binary_data)$event, "case")
   expect_identical(variables_of(binary_data)$event_source, "explicit")
@@ -28,7 +28,7 @@ test_that("set_type() records binary event and nominal reference", {
 
 test_that("set_type() expands ordinal levels into their flat registry", {
   data <- as_bq_data(data.frame(severity = c("low", "high")))
-  result <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+  result <- set_type(data, severity, type_ordinal(c("low", "medium", "high")))
 
   expect_registry_aligned(result)
   expect_identical(
@@ -45,9 +45,9 @@ test_that("set_type() replaces stale levels of the selected variable only", {
   data <- set_type(
     labelled_data(),
     sex,
-    ordinal(c("f", "m", "not reported"))
+    type_ordinal(c("f", "m", "not reported"))
   )
-  result <- set_type(data, sex, nominal("f"))
+  result <- set_type(data, sex, type_nominal("f"))
 
   expect_registry_aligned(result)
   expect_identical(nrow(levels_of(result)), 0L)
@@ -60,8 +60,8 @@ test_that("set_type() replaces stale levels of the selected variable only", {
 test_that("set_type() uses declared factor levels when validating categories", {
   data <- as_bq_data(data.frame(group = factor("case", levels = c("control", "case"))))
 
-  expect_no_error(set_type(data, group, nominal("control")))
-  expect_no_error(set_type(data, group, binary("control")))
+  expect_no_error(set_type(data, group, type_nominal("control")))
+  expect_no_error(set_type(data, group, type_binary("control")))
 })
 
 test_that("set_type() rejects metadata that is incompatible with the column", {
@@ -71,20 +71,20 @@ test_that("set_type() rejects metadata that is incompatible with the column", {
   ))
 
   expect_error(
-    set_type(data, group, binary("absent")),
+    set_type(data, group, type_binary("absent")),
     class = "bq_error_type_mismatch"
   )
-  expect_error(set_type(data, group, binary("absent")), "variable `group`")
+  expect_error(set_type(data, group, type_binary("absent")), "variable `group`")
   expect_error(
-    set_type(data, group, nominal("absent")),
-    class = "bq_error_type_mismatch"
-  )
-  expect_error(
-    set_type(data, severity, ordinal(c("low", "medium", "severe"))),
+    set_type(data, group, type_nominal("absent")),
     class = "bq_error_type_mismatch"
   )
   expect_error(
-    set_type(data, severity, ordinal(c("low", "medium", "severe"))),
+    set_type(data, severity, type_ordinal(c("low", "medium", "severe"))),
+    class = "bq_error_type_mismatch"
+  )
+  expect_error(
+    set_type(data, severity, type_ordinal(c("low", "medium", "severe"))),
     'level "high"'
   )
 })
@@ -93,7 +93,7 @@ test_that("set_type() validates its data, specification and selection", {
   data <- as_bq_data(data.frame(age = 40, bmi = 22))
 
   expect_error(
-    set_type(tibble::tibble(age = 40), age, continuous()),
+    set_type(tibble::tibble(age = 40), age, type_continuous()),
     class = "bq_error_invalid_data"
   )
   expect_error(set_type(data, age, "continuous"), class = "bq_error_invalid_type_spec")
@@ -108,9 +108,9 @@ test_that("set_type() validates its data, specification and selection", {
     class = "bq_type"
   )
   expect_error(set_type(data, age, unknown), class = "bq_error_invalid_type_spec")
-  expect_error(set_type(data, missing, continuous()), class = "bq_error_invalid_selection")
-  expect_error(set_type(data, c(age, bmi), continuous()), "exactly one column")
-  expect_error(set_type(data, tidyselect::everything(), continuous()), "not 2")
+  expect_error(set_type(data, missing, type_continuous()), class = "bq_error_invalid_selection")
+  expect_error(set_type(data, c(age, bmi), type_continuous()), "exactly one column")
+  expect_error(set_type(data, tidyselect::everything(), type_continuous()), "not 2")
 })
 
 test_that("set_type() rejects internally inconsistent specifications", {

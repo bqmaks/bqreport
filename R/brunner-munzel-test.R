@@ -35,230 +35,33 @@ brunner_munzel_test <- function(
   bootstrap = NULL,
   conf_level = 0.95
 ) {
-  if (
-    !requireNamespace("TOSTER", quietly = TRUE) ||
-      utils::packageVersion("TOSTER") < "0.9.0"
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "`brunner_munzel_test()` requires the suggested package ",
-        "`TOSTER` version 0.9.0 or later."
-      )
-    )
-  }
-  allowed_hypotheses <- c(
-    "two_sided", "equivalence", "noninferiority", "superiority"
+  check_dependency("TOSTER", "`brunner_munzel_test()`", "0.9.0")
+  check_choice(
+    inference, "inference", c("asymptotic", "logit", "permutation")
   )
-  if (
-    !is.character(hypothesis) || length(hypothesis) != 1L ||
-      is.na(hypothesis) || !hypothesis %in% allowed_hypotheses
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`hypothesis` must be one of \"two_sided\", \"equivalence\", ",
-        "\"noninferiority\" and \"superiority\"."
-      )
-    )
-  }
-  if (
-    !is.character(inference) || length(inference) != 1L ||
-      is.na(inference) ||
-      !inference %in% c("asymptotic", "logit", "permutation")
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`inference` must be \"asymptotic\", \"logit\" or ",
-        "\"permutation\"."
-      )
-    )
-  }
-  valid_permutation <- is.null(permutation) || (
-    identical(class(permutation), "bq_permutation_control") &&
-      identical(
-        names(permutation),
-        c("sampling", "iterations", "p_method", "seed")
-      ) &&
-      identical(permutation$sampling, "random") &&
-      is.integer(permutation$iterations) &&
-      length(permutation$iterations) == 1L &&
-      !is.na(permutation$iterations) && permutation$iterations > 0L &&
-      identical(permutation$p_method, "plusone") &&
-      (is.null(permutation$seed) || (
-        is.integer(permutation$seed) && length(permutation$seed) == 1L &&
-          !is.na(permutation$seed) && permutation$seed >= 0L
-      ))
-  )
-  if (!valid_permutation) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`permutation` must be NULL or a valid specification from ",
-        "`permutation_control()`."
-      )
-    )
-  }
-  if (inference == "permutation" && is.null(permutation)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`permutation` must be supplied by `permutation_control()` when ",
-        "`inference = \"permutation\"`."
-      )
-    )
-  }
-  if (inference != "permutation" && !is.null(permutation)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`permutation` must be NULL unless `inference = \"permutation\"`."
-    )
-  }
-  valid_bootstrap <- is.null(bootstrap) || (
-    identical(class(bootstrap), "bq_bootstrap_control") &&
-      identical(
-        names(bootstrap),
-        c("method", "engine", "iterations", "conf_type", "seed", "weight_type")
-      ) &&
-      is.character(bootstrap$method) && length(bootstrap$method) == 1L &&
-      !is.na(bootstrap$method) &&
-      bootstrap$method %in% c("ordinary", "fractional") &&
-      identical(
-        bootstrap$engine,
-        if (identical(bootstrap$method, "ordinary")) "boot" else "fwb"
-      ) &&
-      is.integer(bootstrap$iterations) && length(bootstrap$iterations) == 1L &&
-      !is.na(bootstrap$iterations) && bootstrap$iterations > 0L &&
-      is.character(bootstrap$conf_type) && length(bootstrap$conf_type) == 1L &&
-      !is.na(bootstrap$conf_type) &&
-      bootstrap$conf_type %in% c("bca", "percentile", "basic") &&
-      (is.null(bootstrap$seed) || (
-        is.integer(bootstrap$seed) && length(bootstrap$seed) == 1L &&
-          !is.na(bootstrap$seed) && bootstrap$seed >= 0L
-      )) &&
-      if (identical(bootstrap$method, "ordinary")) {
-        is.null(bootstrap$weight_type)
-      } else {
-        identical(bootstrap$weight_type, "exponential")
-      }
-  )
-  if (!valid_bootstrap) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`bootstrap` must be NULL or a valid specification from `bootstrap_control()`."
-    )
-  }
-  if (
-    !is.null(bootstrap) && bootstrap$method == "ordinary" &&
-      !requireNamespace("boot", quietly = TRUE)
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      "Ordinary bootstrap requires the suggested package `boot`."
-    )
-  }
-  if (
-    !is.null(bootstrap) && bootstrap$method == "fractional" &&
-      !requireNamespace("fwb", quietly = TRUE)
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      "Fractional weighted bootstrap requires the suggested package `fwb`."
-    )
-  }
-  if (
-    !is.numeric(conf_level) || length(conf_level) != 1L ||
-      is.na(conf_level) || !is.finite(conf_level) ||
-      conf_level <= 0 || conf_level >= 1 ||
-      hypothesis == "equivalence" && conf_level <= 0.5
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`conf_level` must be finite and strictly between zero and one, ",
-        "and greater than 0.5 for equivalence."
-      )
-    )
-  }
-
-  margin_lower <- margin_upper <- NA_real_
-  if (hypothesis == "two_sided") {
-    if (!is.null(margin)) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        "`margin` must be NULL for a two-sided test."
-      )
-    }
-  } else if (hypothesis == "equivalence") {
-    scalar <- is.numeric(margin) && length(margin) == 1L &&
-      !is.na(margin) && is.finite(margin) && margin > 0 && margin < 0.5
-    bounds <- is.numeric(margin) && length(margin) == 2L &&
-      identical(names(margin), c("lower", "upper")) && !anyNA(margin) &&
-      all(is.finite(margin)) && margin[["lower"]] < 0 &&
-      margin[["upper"]] > 0 && margin[["lower"]] > -0.5 &&
-      margin[["upper"]] < 0.5
-    if (!scalar && !bounds) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        paste0(
-          "Equivalence `margin` must define deviations that place both ",
-          "bounds strictly between zero and one."
-        )
-      )
-    }
-    margin_lower <- if (scalar) -as.double(margin) else margin[["lower"]]
-    margin_upper <- if (scalar) as.double(margin) else margin[["upper"]]
-  } else {
-    positive_required <- hypothesis == "noninferiority"
-    valid_margin <- is.numeric(margin) && length(margin) == 1L &&
-      !is.na(margin) && is.finite(margin) && margin < 0.5 &&
-      if (positive_required) margin > 0 else margin >= 0
-    if (!valid_margin) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        paste0(
-          "Directional `margin` must be one ",
-          if (positive_required) "positive" else "non-negative",
-          " finite number smaller than 0.5."
-        )
-      )
-    }
-    margin_lower <- if (positive_required) -as.double(margin) else as.double(margin)
-  }
-
+  check_permutation_control(permutation, inference)
+  check_bootstrap_control(bootstrap)
+  # The relative effect lives in (0, 1), so any margin around 0.5 must keep
+  # both bounds strictly inside that interval.
+  resolved <- resolve_hypothesis(hypothesis, margin, benefit, max_margin = 0.5)
+  margin_lower <- resolved$margin_lower
+  margin_upper <- resolved$margin_upper
+  benefit <- resolved$benefit
   directional <- hypothesis %in% c("noninferiority", "superiority")
-  if (directional) {
-    if (
-      !is.character(benefit) || length(benefit) != 1L || is.na(benefit) ||
-        !benefit %in% c("higher", "lower")
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        "`benefit` must be \"higher\" or \"lower\" for a directional test."
-      )
-    }
-  } else if (!is.null(benefit)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`benefit` must be NULL for two-sided and equivalence tests."
-    )
-  }
+  conf_level <- check_conf_level(conf_level, hypothesis)
 
   specification <- list(
     kind = "brunner_munzel_test", hypothesis = hypothesis,
     margin_lower = margin_lower, margin_upper = margin_upper,
-    benefit = if (is.null(benefit)) NA_character_ else benefit,
+    benefit = benefit,
     inference = inference, permutation = permutation, bootstrap = bootstrap,
-    conf_level = as.double(conf_level)
+    conf_level = conf_level
   )
   capabilities <- list(
-    outcome_types = c("continuous", "ordinal"), outcomes_per_analysis = 1L,
-    requires_group = TRUE, group_min_levels = 2L, group_max_levels = 2L,
-    max_strata = 0L, supports_covariates = FALSE, supports_weights = FALSE,
-    supports_clusters = FALSE, supports_matched_sets = FALSE,
-    provides_fits = FALSE, supplied_results = "test",
-    supplied_extractors = character(),
+    outcome_types = c("continuous", "ordinal"),
+    group_min_levels = 2L,
+    group_max_levels = 2L,
+    supplied_results = "test",
     suggested_dependencies = c(
       "TOSTER (>= 0.9.0)",
       if (!is.null(bootstrap)) bootstrap$engine else character()
@@ -266,79 +69,14 @@ brunner_munzel_test <- function(
   )
 
   analysis_function <- function(data, context) {
-    if (
-      !tibble::is_tibble(data) ||
-        !identical(names(data), c(".row_id", ".outcome", ".group")) ||
-        anyNA(data$.row_id) || anyDuplicated(data$.row_id) ||
-        !is.numeric(data$.outcome) || is.object(data$.outcome) ||
-        !is.null(dim(data$.outcome)) || !is.factor(data$.group) ||
-        anyNA(data$.group)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        paste0(
-          "`data` for `brunner_munzel_test()` must contain valid `.row_id`, ",
-          "plain numeric `.outcome` and factor `.group` columns."
-        )
-      )
-    }
-    required_context <- c(
-      "analysis_id", "test_id", "outcome_var_id", "group_var_id",
-      "strata_var_id", "reference_value", "group_levels"
+    prepared <- prepare_engine_input(
+      data, context, "brunner_munzel_test",
+      group_levels = c(2L, 2L), reference = TRUE
     )
-    if (!is.list(context) || !identical(names(context), required_context)) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`context` for `brunner_munzel_test()` has an invalid schema."
-      )
-    }
-    scalar_ids <- context[c(
-      "analysis_id", "test_id", "outcome_var_id", "group_var_id",
-      "reference_value"
-    )]
-    if (
-      !all(vapply(scalar_ids, function(value) {
-        is.character(value) && length(value) == 1L &&
-          !is.na(value) && nzchar(value)
-      }, logical(1))) ||
-        !is.character(context$strata_var_id) ||
-        length(context$strata_var_id) != 1L || !is.na(context$strata_var_id)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "IDs and the reference group in `context` are invalid."
-      )
-    }
-    group_values <- levels(data$.group)
-    if (
-      length(group_values) != 2L ||
-        !context$reference_value %in% group_values ||
-        !tibble::is_tibble(context$group_levels) ||
-        !identical(names(context$group_levels), c("var_id", "value", "position")) ||
-        !identical(context$group_levels$value, group_values) ||
-        !identical(context$group_levels$position, 1:2) ||
-        !identical(context$group_levels$var_id, rep(context$group_var_id, 2L))
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`brunner_munzel_test()` requires exactly two consistently declared groups."
-      )
-    }
-    comparison_value <- setdiff(group_values, context$reference_value)
-    missing_outcome <- is.na(data$.outcome)
-    n_total <- vapply(group_values, function(value) {
-      sum(data$.group == value)
-    }, integer(1))
-    n_missing <- vapply(group_values, function(value) {
-      sum(data$.group == value & missing_outcome)
-    }, integer(1))
-    n_used <- n_total - n_missing
-    if (any(n_used == 0L)) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`brunner_munzel_test()` requires an observed outcome in both groups."
-      )
-    }
+    group_values <- prepared$group_values
+    comparison_value <- prepared$comparison_value
+    missing_outcome <- prepared$missing_outcome
+    n_used <- prepared$n_used
     comparison <- data$.outcome[
       data$.group == comparison_value & !missing_outcome
     ]
@@ -665,12 +403,7 @@ brunner_munzel_test <- function(
       estimate = double(), std_error = double(), conf_low = double(),
       conf_high = double()
     )
-    sample_flow <- tibble::tibble(
-      analysis_id = rep(context$analysis_id, 2L),
-      outcome_var_id = rep(context$outcome_var_id, 2L),
-      group_value = group_values, n_total = unname(n_total),
-      n_missing = unname(n_missing), n_used = unname(n_used)
-    )
+    sample_flow <- prepared$sample_flow
     list(tests = tests, estimates = estimates, sample_flow = sample_flow)
   }
 

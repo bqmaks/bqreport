@@ -9,19 +9,7 @@
 #' @return A `bq_games_howell_test` analytic function.
 #' @export
 games_howell_test <- function() {
-  if (
-    !requireNamespace("PMCMRplus", quietly = TRUE) ||
-      utils::packageVersion("PMCMRplus") < "1.9.12"
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "`games_howell_test()` requires the suggested package `PMCMRplus` ",
-        "version 1.9.12 or later; install it with ",
-        "`install.packages(\"PMCMRplus\")`."
-      )
-    )
-  }
+  check_dependency("PMCMRplus", "`games_howell_test()`", "1.9.12")
 
   specification <- list(
     kind = "games_howell_test",
@@ -31,23 +19,13 @@ games_howell_test <- function() {
   )
   capabilities <- list(
     outcome_types = "continuous",
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
-    comparison_families = "pairwise",
     supplied_results = "comparison_family",
-    supplied_extractors = character(),
     suggested_dependencies = "PMCMRplus (>= 1.9.12)"
   )
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(data, context, "games_howell_test")
+    prepared <- prepare_engine_input(data, context, "games_howell_test")
     group_values <- prepared$group_values
     pairs <- compile_comparison_family(group_values, "pairwise")
     comparison_n <- nrow(pairs)
@@ -65,14 +43,14 @@ games_howell_test <- function() {
         )
       }
     )
-    statistic <- p_value <- numeric(comparison_n)
+    statistic <- p_value_adjusted <- numeric(comparison_n)
     for (position in seq_len(comparison_n)) {
       later_value <- pairs$comparison_value[[position]]
       earlier_value <- pairs$reference_value[[position]]
       statistic[[position]] <- unname(as.double(
         engine_result$statistic[later_value, earlier_value]
       ))
-      p_value[[position]] <- unname(as.double(
+      p_value_adjusted[[position]] <- unname(as.double(
         engine_result$p.value[later_value, earlier_value]
       ))
     }
@@ -98,8 +76,8 @@ games_howell_test <- function() {
       )
     }, double(1))
     valid_result <- all(is.finite(c(
-      estimate, statistic, df, p_value
-    ))) && all(df > 0) && all(p_value >= 0 & p_value <= 1)
+      estimate, statistic, df, p_value_adjusted
+    ))) && all(df > 0) && all(p_value_adjusted >= 0 & p_value_adjusted <= 1)
     if (!valid_result) {
       bq_abort(
         "bq_error_analysis_runtime",
@@ -132,11 +110,12 @@ games_howell_test <- function() {
       effect_conf_level = rep(NA_real_, comparison_n),
       effect_interval_scope = rep(NA_character_, comparison_n),
       effect_ci_method = rep(NA_character_, comparison_n),
+      effect_ci_clamped = rep(NA, comparison_n),
       statistic = statistic,
       statistic_type = rep("t", comparison_n),
       df = df,
-      p_value = p_value,
-      p_value_raw = rep(NA_real_, comparison_n),
+      p_value = rep(NA_real_, comparison_n),
+      p_value_adjusted = p_value_adjusted,
       p_adjust_method = rep(
         "games_howell_studentized_range", comparison_n
       ),
@@ -145,6 +124,7 @@ games_howell_test <- function() {
       conf_level = rep(NA_real_, comparison_n),
       interval_scope = rep("not_computed", comparison_n),
       ci_method = rep("not_computed", comparison_n),
+      ci_clamped = rep(NA, comparison_n),
       inference = rep("analytical", comparison_n),
       variance_assumption = rep("unequal", comparison_n),
       exact_requested = rep(NA_character_, comparison_n),

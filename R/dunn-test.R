@@ -24,79 +24,25 @@ dunn_test <- function(
   reference = NULL,
   p_adjust = "holm"
 ) {
-  allowed_families <- c("pairwise", "reference", "consecutive")
-  if (
-    !is.character(comparisons) || length(comparisons) != 1L ||
-      is.na(comparisons) || !comparisons %in% allowed_families
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`comparisons` must be \"pairwise\", \"reference\" or \"consecutive\"."
-    )
-  }
-  if (comparisons == "reference") {
-    if (
-      !is.character(reference) || length(reference) != 1L ||
-        is.na(reference) || !nzchar(reference)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        "`reference` must be one non-empty group value for a reference family."
-      )
-    }
-  } else if (!is.null(reference)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`reference` must be NULL unless `comparisons = \"reference\"`."
-    )
-  }
-  if (
-    !is.character(p_adjust) || length(p_adjust) != 1L || is.na(p_adjust) ||
-      !p_adjust %in% stats::p.adjust.methods
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`p_adjust` must be one method supported by `stats::p.adjust()`."
-    )
-  }
-  if (
-    !requireNamespace("PMCMRplus", quietly = TRUE) ||
-      utils::packageVersion("PMCMRplus") < "1.9.12"
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "`dunn_test()` requires the suggested package `PMCMRplus` version ",
-        "1.9.12 or later; install it with `install.packages(\"PMCMRplus\")`."
-      )
-    )
-  }
+  reference <- check_comparison_family(comparisons, reference)
+  check_p_adjust(p_adjust)
+  check_dependency("PMCMRplus", "`dunn_test()`", "1.9.12")
 
   specification <- list(
     kind = "dunn_test",
     family = comparisons,
-    reference = if (is.null(reference)) NA_character_ else reference,
+    reference = reference,
     p_adjust_method = p_adjust
   )
   capabilities <- list(
     outcome_types = c("continuous", "ordinal"),
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
-    comparison_families = allowed_families,
     supplied_results = "comparison_family",
-    supplied_extractors = character(),
     suggested_dependencies = "PMCMRplus (>= 1.9.12)"
   )
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(data, context, "dunn_test")
+    prepared <- prepare_engine_input(data, context, "dunn_test")
     group_values <- prepared$group_values
     family_reference <- if (specification$family == "reference") {
       specification$reference
@@ -148,14 +94,14 @@ dunn_test <- function(
     estimate <- unname(
       mean_rank[pairs$comparison_value] - mean_rank[pairs$reference_value]
     )
-    p_value <- stats::p.adjust(
+    p_value_adjusted <- stats::p.adjust(
       p_value_raw,
       method = specification$p_adjust_method
     )
     valid_result <- all(is.finite(c(
-      estimate, statistic, p_value_raw, p_value
+      estimate, statistic, p_value_raw, p_value_adjusted
     ))) && all(p_value_raw >= 0 & p_value_raw <= 1) &&
-      all(p_value >= 0 & p_value <= 1)
+      all(p_value_adjusted >= 0 & p_value_adjusted <= 1)
     if (!valid_result) {
       bq_abort(
         "bq_error_analysis_runtime",
@@ -188,17 +134,19 @@ dunn_test <- function(
       effect_conf_level = rep(NA_real_, comparison_n),
       effect_interval_scope = rep(NA_character_, comparison_n),
       effect_ci_method = rep(NA_character_, comparison_n),
+      effect_ci_clamped = rep(NA, comparison_n),
       statistic = statistic,
       statistic_type = rep("z", comparison_n),
       df = rep(NA_real_, comparison_n),
-      p_value = unname(as.double(p_value)),
-      p_value_raw = p_value_raw,
+      p_value = p_value_raw,
+      p_value_adjusted = unname(as.double(p_value_adjusted)),
       p_adjust_method = rep(specification$p_adjust_method, comparison_n),
       conf_low = rep(NA_real_, comparison_n),
       conf_high = rep(NA_real_, comparison_n),
       conf_level = rep(NA_real_, comparison_n),
       interval_scope = rep("not_computed", comparison_n),
       ci_method = rep("not_computed", comparison_n),
+      ci_clamped = rep(NA, comparison_n),
       inference = rep("analytical", comparison_n),
       variance_assumption = rep("not_applicable", comparison_n),
       exact_requested = rep(NA_character_, comparison_n),

@@ -40,112 +40,33 @@ t_family <- function(
   p_adjust = "holm",
   conf_level = 0.95
 ) {
-  allowed_families <- c("pairwise", "reference", "consecutive")
-  if (
-    !is.character(comparisons) || length(comparisons) != 1L ||
-      is.na(comparisons) || !comparisons %in% allowed_families
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`comparisons` must be \"pairwise\", \"reference\" or \"consecutive\"."
-    )
+  reference <- check_comparison_family(comparisons, reference)
+  check_flag(var_equal, "var_equal")
+  check_choice(effect_size, "effect_size", c("none", "cohens_d", "hedges_g"))
+  if (effect_size != "none") {
+    check_dependency("effectsize", "The requested `t_family()` effect size")
   }
-  if (comparisons == "reference") {
-    if (
-      !is.character(reference) || length(reference) != 1L ||
-        is.na(reference) || !nzchar(reference)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        "`reference` must be one non-empty group value for a reference family."
-      )
-    }
-  } else if (!is.null(reference)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`reference` must be NULL unless `comparisons = \"reference\"`."
-    )
-  }
-  if (!is.logical(var_equal) || length(var_equal) != 1L || is.na(var_equal)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`var_equal` must be either TRUE or FALSE."
-    )
-  }
-  if (
-    !is.character(effect_size) || length(effect_size) != 1L ||
-      is.na(effect_size) ||
-      !effect_size %in% c("none", "cohens_d", "hedges_g")
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`effect_size` must be one of \"none\", \"cohens_d\" and \"hedges_g\"."
-    )
-  }
-  if (
-    effect_size != "none" &&
-      !requireNamespace("effectsize", quietly = TRUE)
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "The requested `t_family()` effect size requires the suggested ",
-        "package `effectsize`; install it with ",
-        "`install.packages(\"effectsize\")`."
-      )
-    )
-  }
-  if (
-    !is.character(p_adjust) || length(p_adjust) != 1L || is.na(p_adjust) ||
-      !p_adjust %in% stats::p.adjust.methods
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`p_adjust` must be one method supported by `stats::p.adjust()`: ",
-        paste(stats::p.adjust.methods, collapse = ", "), "."
-      )
-    )
-  }
-  if (
-    !is.numeric(conf_level) || length(conf_level) != 1L ||
-      is.na(conf_level) || !is.finite(conf_level) ||
-      conf_level <= 0 || conf_level >= 1
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`conf_level` must be one finite number strictly between zero and one."
-    )
-  }
+  check_p_adjust(p_adjust)
+  conf_level <- check_conf_level(conf_level)
 
   specification <- list(
     kind = "t_family",
     family = comparisons,
-    reference = if (is.null(reference)) NA_character_ else reference,
+    reference = reference,
     var_equal = var_equal,
     effect_size = effect_size,
     p_adjust_method = p_adjust,
-    conf_level = as.double(conf_level)
+    conf_level = conf_level
   )
   capabilities <- list(
     outcome_types = "continuous",
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
-    comparison_families = allowed_families,
     supplied_results = if (effect_size == "none") {
       "comparison_family"
     } else {
       c("comparison_family", "pairwise_effect_size")
     },
-    supplied_extractors = character(),
     suggested_dependencies = if (effect_size == "none") {
       character()
     } else {
@@ -153,7 +74,7 @@ t_family <- function(
     }
   )
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(data, context, "t_family")
+    prepared <- prepare_engine_input(data, context, "t_family")
     group_values <- prepared$group_values
     family_reference <- if (specification$family == "reference") {
       specification$reference
@@ -265,7 +186,7 @@ t_family <- function(
     conf_high <- vapply(test_results, function(result) {
       unname(as.double(result$conf.int[[2L]]))
     }, double(1))
-    p_value <- stats::p.adjust(
+    p_value_adjusted <- stats::p.adjust(
       p_value_raw,
       method = specification$p_adjust_method
     )
@@ -311,11 +232,11 @@ t_family <- function(
       effect_ci_method <- rep("noncentral_t", comparison_n)
     }
     valid_result <- all(is.finite(c(
-      estimate, std_error, statistic, df, p_value_raw, p_value,
+      estimate, std_error, statistic, df, p_value_raw, p_value_adjusted,
       conf_low, conf_high
     ))) && all(std_error > 0) && all(df > 0) &&
       all(p_value_raw >= 0 & p_value_raw <= 1) &&
-      all(p_value >= 0 & p_value <= 1) && all(conf_low <= conf_high)
+      all(p_value_adjusted >= 0 & p_value_adjusted <= 1) && all(conf_low <= conf_high)
     if (specification$effect_size != "none") {
       valid_result <- valid_result && all(is.finite(c(
         effect_size_value, effect_conf_low, effect_conf_high,
@@ -357,17 +278,19 @@ t_family <- function(
       effect_conf_level = effect_conf_level,
       effect_interval_scope = effect_interval_scope,
       effect_ci_method = effect_ci_method,
+      effect_ci_clamped = ifelse(is.na(effect_ci_method), NA, FALSE),
       statistic = statistic,
       statistic_type = rep("t", comparison_n),
       df = df,
-      p_value = unname(as.double(p_value)),
-      p_value_raw = p_value_raw,
+      p_value = p_value_raw,
+      p_value_adjusted = unname(as.double(p_value_adjusted)),
       p_adjust_method = rep(specification$p_adjust_method, comparison_n),
       conf_low = conf_low,
       conf_high = conf_high,
       conf_level = rep(specification$conf_level, comparison_n),
       interval_scope = rep("individual_unadjusted", comparison_n),
       ci_method = rep("student_t_individual", comparison_n),
+      ci_clamped = rep(FALSE, comparison_n),
       inference = rep("analytical", comparison_n),
       variance_assumption = rep(
         if (specification$var_equal) "equal" else "unequal",

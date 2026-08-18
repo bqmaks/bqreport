@@ -21,6 +21,6 @@ records the order independently of the current row arrangement.
 data <- as_bq_data(data.frame(
   severity = c("low", "high")
 ))
-data <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+data <- set_type(data, severity, type_ordinal(c("low", "medium", "high")))
 variable_levels(data)
 }

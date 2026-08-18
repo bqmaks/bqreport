@@ -1,5 +1,30 @@
 # bqreport 0.0.0.9000
 
+## Review follow-up
+
+- Type constructors are now `type_continuous()`, `type_count()`,
+  `type_binary()`, `type_ordinal()` and `type_nominal()`; the bare names
+  collided with `dplyr::count()`.
+- `run_comparison()` accepts tidyselect column selections when `data` is
+  supplied, sorts numeric groups numerically, rejects ordinal outcomes for
+  providers that do not declare them, and returns a `bq_result_comparison`
+  carrying the executed `specification`.
+- In `comparisons`, `p_value` is the unadjusted value and `p_value_adjusted`
+  the family-adjusted one. New `ci_clamped` and `effect_ci_clamped` columns
+  mark intervals truncated at the boundary of a bounded estimand; the
+  Brunner-Munzel family previously dropped that flag.
+- The `test` column of `tests` names the procedure only (`welch_t`,
+  `hodges_lehmann`, `kruskal_wallis`, ...); `inference` records how it was
+  evaluated.
+- Provider `capabilities` keep only the fields something reads.
+- Replacing a subset of rows in a `bq_data` column keeps its metadata;
+  `cbind()` and `merge()` are rejected instead of silently dropping the
+  registry.
+- Preflight, result and table objects print compact summaries;
+  `as_tibble()` on a composed table gives a wide layout for inspection.
+- Shared validation helpers replace per-provider copies of argument, engine
+  input and control-specification checks.
+
 ## Comparison analyses
 
 - Added standalone multiple-comparison providers with a common `comparisons`

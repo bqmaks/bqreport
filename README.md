@@ -24,15 +24,20 @@ analysis
 
 result <- run_comparison(
   analysis,
-  outcome = "response",
-  group = "arm",
+  outcome = response,
+  group = arm,
   data = trial,
   reference = "control"
 )
 
+result
 result$tests
 result$sample_flow
 ```
+
+With `data`, `outcome` and `group` accept tidyselect syntax: bare column
+names or character strings. Every result carries the executed `specification`
+next to its tables.
 
 The same runner accepts vectors directly:
 
@@ -82,8 +87,8 @@ reference_result <- run_comparison(
     var_equal = FALSE,
     p_adjust = "holm"
   ),
-  outcome = "response",
-  group = "arm",
+  outcome = response,
+  group = arm,
   data = trial3
 )
 
@@ -93,8 +98,8 @@ consecutive_result <- run_comparison(
     exact = "auto",
     p_adjust = "holm"
   ),
-  outcome = "response",
-  group = "arm",
+  outcome = response,
+  group = arm,
   data = trial3
 )
 
@@ -104,10 +109,13 @@ consecutive_result$comparisons
 
 All estimates and statistics are oriented as `comparison - reference`.
 Factor levels determine the orientation of pairwise comparisons and define
-which levels are adjacent for a consecutive family. Character groups use
-ascending lexicographic order regardless of their order of appearance.
+which levels are adjacent for a consecutive family. Other group vectors are
+sorted: character groups lexicographically, numeric groups ascending.
 Multiplicity correction applies only to the declared family; it is not
-conditional on or coupled to a separate omnibus analysis.
+conditional on or coupled to a separate omnibus analysis. In `comparisons`,
+`p_value` is always the unadjusted value and `p_value_adjusted` the
+family-adjusted one; `ci_clamped` marks intervals truncated at the boundary of
+a bounded estimand.
 
 The specialized procedures can be declared directly:
 
@@ -132,8 +140,8 @@ data <- as_bq_data(data.frame(
   age = c(40, 55, 61, NA),
   arm = c("control", "control", "new", "new")
 ))
-data <- set_type(data, age, continuous())
-data <- set_type(data, arm, binary("new"))
+data <- set_type(data, age, type_continuous())
+data <- set_type(data, arm, type_binary("new"))
 data <- set_rounding(data, age, digits = 1)
 
 plan <- plan_summary(data, group = arm) |>
@@ -141,10 +149,18 @@ plan <- plan_summary(data, group = arm) |>
 
 preflight(plan)
 result <- run_analysis(plan)
+table <- compose_table(format_presentation(prepare_presentation(result)))
+table
+tibble::as_tibble(table)
 ```
 
 The plan is the source of analytic decisions. Computation, diagnostics,
 formatting and renderer-neutral table composition remain separate stages.
+`compose_table()` returns flat registries; printing it, or calling
+`as_tibble()`, lays them out as one wide tibble for inspection.
+
+Analytic types are declared with `type_continuous()`, `type_count()`,
+`type_binary()`, `type_ordinal()` and `type_nominal()`.
 
 ## Development checks
 

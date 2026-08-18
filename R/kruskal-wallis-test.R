@@ -25,101 +25,11 @@ kruskal_wallis_test <- function(
   conf_level = 0.95,
   bootstrap = NULL
 ) {
-  if (
-    !is.character(effect_size) || length(effect_size) != 1L ||
-      is.na(effect_size) ||
-      !effect_size %in% c("none", "rank_epsilon_squared")
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`effect_size` must be either \"none\" or \"rank_epsilon_squared\"."
-    )
-  }
-  if (
-    !is.character(inference) || length(inference) != 1L || is.na(inference) ||
-      !inference %in% c("analytical", "permutation")
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`inference` must be either \"analytical\" or \"permutation\"."
-    )
-  }
-  valid_permutation <- is.null(permutation) || (
-    identical(class(permutation), "bq_permutation_control") &&
-      identical(
-        names(permutation), c("sampling", "iterations", "p_method", "seed")
-      ) &&
-      identical(permutation$sampling, "random") &&
-      is.integer(permutation$iterations) && length(permutation$iterations) == 1L &&
-      !is.na(permutation$iterations) && permutation$iterations > 0L &&
-      identical(permutation$p_method, "plusone") &&
-      (is.null(permutation$seed) || (
-        is.integer(permutation$seed) && length(permutation$seed) == 1L &&
-          !is.na(permutation$seed) && permutation$seed >= 0L
-      ))
-  )
-  if (!valid_permutation) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`permutation` must be NULL or a valid `permutation_control()` specification."
-    )
-  }
-  if (inference == "permutation" && is.null(permutation)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`permutation` is required when `inference = \"permutation\"`."
-    )
-  }
-  if (inference != "permutation" && !is.null(permutation)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`permutation` must be NULL unless `inference = \"permutation\"`."
-    )
-  }
-  if (
-    !is.numeric(conf_level) || length(conf_level) != 1L ||
-      is.na(conf_level) || !is.finite(conf_level) ||
-      conf_level <= 0 || conf_level >= 1
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`conf_level` must be one finite number strictly between zero and one."
-    )
-  }
-  valid_bootstrap <- is.null(bootstrap) || (
-    identical(class(bootstrap), "bq_bootstrap_control") &&
-      identical(
-        names(bootstrap),
-        c("method", "engine", "iterations", "conf_type", "seed", "weight_type")
-      ) &&
-      is.character(bootstrap$method) && length(bootstrap$method) == 1L &&
-      !is.na(bootstrap$method) &&
-      bootstrap$method %in% c("ordinary", "fractional") &&
-      identical(
-        bootstrap$engine,
-        if (identical(bootstrap$method, "ordinary")) "boot" else "fwb"
-      ) &&
-      is.integer(bootstrap$iterations) && length(bootstrap$iterations) == 1L &&
-      !is.na(bootstrap$iterations) && bootstrap$iterations > 0L &&
-      is.character(bootstrap$conf_type) && length(bootstrap$conf_type) == 1L &&
-      !is.na(bootstrap$conf_type) &&
-      bootstrap$conf_type %in% c("bca", "percentile", "basic") &&
-      (is.null(bootstrap$seed) || (
-        is.integer(bootstrap$seed) && length(bootstrap$seed) == 1L &&
-          !is.na(bootstrap$seed) && bootstrap$seed >= 0L
-      )) &&
-      if (identical(bootstrap$method, "ordinary")) {
-        is.null(bootstrap$weight_type)
-      } else {
-        identical(bootstrap$weight_type, "exponential")
-      }
-  )
-  if (!valid_bootstrap) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`bootstrap` must be NULL or a specification from `bootstrap_control()`."
-    )
-  }
+  check_choice(effect_size, "effect_size", c("none", "rank_epsilon_squared"))
+  check_choice(inference, "inference", c("analytical", "permutation"))
+  check_permutation_control(permutation, inference)
+  conf_level <- check_conf_level(conf_level)
+  check_bootstrap_control(bootstrap)
   if (!is.null(bootstrap) && bootstrap$method == "fractional") {
     bq_abort(
       "bq_error_invalid_analysis_function",
@@ -135,164 +45,31 @@ kruskal_wallis_test <- function(
       "`bootstrap` requires `effect_size = \"rank_epsilon_squared\"`."
     )
   }
-  if (!is.null(bootstrap) && !requireNamespace("boot", quietly = TRUE)) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "Bootstrap confidence intervals require the suggested package ",
-        "`boot`; install it with `install.packages(\"boot\")`."
-      )
-    )
-  }
 
   specification <- list(
     kind = "kruskal_wallis_test",
     effect_size = effect_size,
     inference = inference,
     permutation = permutation,
-    conf_level = as.double(conf_level),
+    conf_level = conf_level,
     bootstrap = bootstrap
   )
   capabilities <- list(
     outcome_types = c("continuous", "ordinal"),
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
     supplied_results = if (effect_size == "none") "omnibus_test" else c("omnibus_test", "effect_size"),
-    supplied_extractors = character(),
     suggested_dependencies = if (is.null(bootstrap)) character() else "boot"
   )
 
   analysis_function <- function(data, context) {
-    if (
-      !tibble::is_tibble(data) ||
-        !identical(names(data), c(".row_id", ".outcome", ".group"))
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        paste0(
-          "`data` for `kruskal_wallis_test()` must be a tibble with columns ",
-          "`.row_id`, `.outcome` and `.group`, in that order."
-        )
-      )
-    }
-    if (
-      anyNA(data$.row_id) || anyDuplicated(data$.row_id) ||
-        !is.atomic(data$.row_id) || !is.null(dim(data$.row_id))
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`.row_id` must contain unique, non-missing atomic values."
-      )
-    }
-    if (
-      !is.numeric(data$.outcome) || is.object(data$.outcome) ||
-        !is.null(dim(data$.outcome))
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`.outcome` must be one plain numeric vector."
-      )
-    }
-    if (!is.factor(data$.group) || anyNA(data$.group)) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`.group` must be a factor without missing values."
-      )
-    }
-
-    required_context <- c(
-      "analysis_id", "test_id", "estimate_id", "outcome_var_id",
-      "group_var_id", "strata_var_id", "group_levels"
+    prepared <- prepare_engine_input(
+      data, context, "kruskal_wallis_test",
+      estimate_id = if (effect_size == "none") "missing" else "required"
     )
-    if (!is.list(context) || !identical(names(context), required_context)) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        paste0(
-          "`context` for `kruskal_wallis_test()` must contain ",
-          "`analysis_id`, `test_id`, `estimate_id`, `outcome_var_id`, ",
-          "`group_var_id`, `strata_var_id` and `group_levels`, in that order."
-        )
-      )
-    }
-    ids <- context[c("analysis_id", "test_id", "outcome_var_id", "group_var_id")]
-    valid_ids <- vapply(ids, function(x) {
-      is.character(x) && length(x) == 1L && !is.na(x) && nzchar(x)
-    }, logical(1))
-    if (!all(valid_ids)) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "Analysis, test and variable IDs must be non-empty character scalars."
-      )
-    }
-    valid_estimate_id <- is.character(context$estimate_id) &&
-      length(context$estimate_id) == 1L &&
-      if (effect_size == "none") is.na(context$estimate_id) else
-        !is.na(context$estimate_id) && nzchar(context$estimate_id)
-    if (!valid_estimate_id) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        paste0(
-          "`estimate_id` must be NA when no effect size is requested and a ",
-          "non-empty character scalar otherwise."
-        )
-      )
-    }
-    if (
-      !is.character(context$strata_var_id) ||
-        length(context$strata_var_id) != 1L || !is.na(context$strata_var_id)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`strata_var_id` must be NA because `kruskal_wallis_test()` does not support strata."
-      )
-    }
-    if (
-      !tibble::is_tibble(context$group_levels) ||
-        !identical(names(context$group_levels), c("var_id", "value", "position")) ||
-        !is.character(context$group_levels$var_id) ||
-        !is.character(context$group_levels$value) ||
-        !is.integer(context$group_levels$position) ||
-        anyNA(context$group_levels) ||
-        !identical(context$group_levels$var_id, rep(context$group_var_id, nrow(context$group_levels))) ||
-        !identical(context$group_levels$position, seq_len(nrow(context$group_levels))) ||
-        !identical(context$group_levels$value, levels(data$.group))
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`group_levels` must describe every `.group` level once, in factor order, for `group_var_id`."
-      )
-    }
-    if (nlevels(data$.group) < 2L) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`kruskal_wallis_test()` requires at least two declared group levels."
-      )
-    }
-
-    group_values <- levels(data$.group)
-    missing_outcome <- is.na(data$.outcome)
-    n_total <- vapply(group_values, function(x) sum(data$.group == x), integer(1))
-    n_missing <- vapply(group_values, function(x) sum(data$.group == x & missing_outcome), integer(1))
-    n_used <- n_total - n_missing
-    if (any(n_used == 0L)) {
-      group_value <- group_values[which(n_used == 0L)[1L]]
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        sprintf(
-          "Group level `%s` has no observed outcome values; provide data for every declared level.",
-          group_value
-        )
-      )
-    }
-
+    group_values <- prepared$group_values
+    missing_outcome <- prepared$missing_outcome
+    n_used <- prepared$n_used
     used <- !missing_outcome
     test_result <- tryCatch(
       stats::kruskal.test(data$.outcome[used], data$.group[used]),
@@ -373,9 +150,7 @@ kruskal_wallis_test <- function(
       test_id = context$test_id,
       analysis_id = context$analysis_id,
       outcome_var_id = context$outcome_var_id,
-      test = if (specification$inference == "permutation") {
-        "kruskal_wallis_permutation"
-      } else "kruskal_wallis",
+      test = "kruskal_wallis",
       statistic = unname(as.double(test_result$statistic)),
       df = if (specification$inference == "permutation") NA_real_ else
         unname(as.double(test_result$parameter)),
@@ -525,13 +300,7 @@ kruskal_wallis_test <- function(
         bootstrap_seed = if (is.null(bootstrap) || is.null(bootstrap$seed)) NA_integer_ else bootstrap$seed
       )
     }
-    sample_flow <- tibble::tibble(
-      analysis_id = rep(context$analysis_id, length(group_values)),
-      outcome_var_id = rep(context$outcome_var_id, length(group_values)),
-      group_value = group_values,
-      n_total = unname(n_total), n_missing = unname(n_missing),
-      n_used = unname(n_used)
-    )
+    sample_flow <- prepared$sample_flow
     list(tests = tests, estimates = estimates, sample_flow = sample_flow)
   }
 

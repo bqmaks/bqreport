@@ -19,23 +19,14 @@
 #' @examples
 #' if (requireNamespace("datawizard", quietly = TRUE)) {
 #'   data <- as_bq_data(data.frame(age = c(40, 55, 61, NA)))
-#'   data <- set_type(data, age, continuous())
+#'   data <- set_type(data, age, type_continuous())
 #'   data <- set_rounding(data, age, 1)
 #'   plan <- plan_summary(data) |>
 #'     add_statistic(age, continuous_descriptives_extended())
 #'   run_analysis(plan)
 #' }
 continuous_descriptives_extended <- function() {
-  if (!requireNamespace("datawizard", quietly = TRUE)) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "`continuous_descriptives_extended()` requires the suggested ",
-        "package `datawizard`; install it with ",
-        "`install.packages(\"datawizard\")`."
-      )
-    )
-  }
+  check_dependency("datawizard", "`continuous_descriptives_extended()`")
 
   basic_fun <- continuous_descriptives()$fun
   statistic <- continuous_statistic(

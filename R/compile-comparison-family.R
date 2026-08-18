@@ -55,9 +55,10 @@ compile_comparison_family <- function(
   positions <- if (family == "pairwise") {
     utils::combn(seq_along(group_values), 2L)
   } else if (family == "reference") {
-    comparison_positions <- setdiff(seq_along(group_values), match(reference, group_values))
+    reference_position <- match(reference, group_values)
+    comparison_positions <- setdiff(seq_along(group_values), reference_position)
     rbind(
-      rep(match(reference, group_values), length(comparison_positions)),
+      rep(reference_position, length(comparison_positions)),
       comparison_positions
     )
   } else {
@@ -75,4 +76,62 @@ compile_comparison_family <- function(
     comparison_value = group_values[positions[2L, ]],
     direction = rep("comparison_minus_reference", comparison_n)
   )
+}
+
+#' Validate a declared comparison family and its reference
+#'
+#' The three declarable families and the rule that a reference value belongs
+#' to the reference family alone are shared by every provider that lets the
+#' analyst choose the family.
+#'
+#' @param comparisons Family name.
+#' @param reference Reference group value or `NULL`.
+#'
+#' @return `reference` as recorded in a specification: the value, or `NA`.
+#' @noRd
+check_comparison_family <- function(comparisons, reference) {
+  check_choice(
+    comparisons, "comparisons", c("pairwise", "reference", "consecutive")
+  )
+  if (comparisons == "reference") {
+    if (
+      !is.character(reference) || length(reference) != 1L ||
+        is.na(reference) || !nzchar(reference)
+    ) {
+      bq_abort(
+        "bq_error_invalid_analysis_function",
+        "`reference` must be one non-empty group value for a reference family."
+      )
+    }
+    return(reference)
+  }
+  if (!is.null(reference)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`reference` must be NULL unless `comparisons = \"reference\"`."
+    )
+  }
+  NA_character_
+}
+
+#' Validate a p-value adjustment method
+#'
+#' @param p_adjust Method name.
+#'
+#' @return `p_adjust`, invisibly.
+#' @noRd
+check_p_adjust <- function(p_adjust) {
+  if (
+    !is.character(p_adjust) || length(p_adjust) != 1L || is.na(p_adjust) ||
+      !p_adjust %in% stats::p.adjust.methods
+  ) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      paste0(
+        "`p_adjust` must be one method supported by `stats::p.adjust()`: ",
+        paste(stats::p.adjust.methods, collapse = ", "), "."
+      )
+    )
+  }
+  invisible(p_adjust)
 }

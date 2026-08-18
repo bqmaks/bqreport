@@ -31,18 +31,9 @@ test_that("mann_whitney_test() returns an inspectable analytic function", {
     attr(analysis, "capabilities"),
     list(
       outcome_types = c("continuous", "ordinal"),
-      outcomes_per_analysis = 1L,
-      requires_group = TRUE,
       group_min_levels = 2L,
       group_max_levels = 2L,
-      max_strata = 0L,
-      supports_covariates = FALSE,
-      supports_weights = FALSE,
-      supports_clusters = FALSE,
-      supports_matched_sets = FALSE,
-      provides_fits = FALSE,
       supplied_results = "test",
-      supplied_extractors = character(),
       suggested_dependencies = character()
     )
   )
@@ -121,6 +112,7 @@ mann_whitney_input <- function(outcome, group, reference_value) {
     context = list(
       analysis_id = "a001",
       test_id = "t001",
+      estimate_id = NA_character_,
       outcome_var_id = "v001",
       group_var_id = "v002",
       strata_var_id = NA_character_,
@@ -374,7 +366,7 @@ test_that("mann_whitney_test() validates prepared input and group design", {
   )
   expect_error(
     analysis(input$data, input$context),
-    "exactly two",
+    "exactly 2",
     class = "bq_error_invalid_analysis_input"
   )
 })
@@ -388,7 +380,7 @@ test_that("mann_whitney_test() requires observations in both groups", {
 
   expect_error(
     mann_whitney_test()(input$data, input$context),
-    "observed outcome in both groups",
+    "has no observed outcome values",
     class = "bq_error_invalid_analysis_input"
   )
 })
@@ -418,7 +410,7 @@ test_that("mann_whitney_test() performs declared randomization inference", {
   expect_equal(result$tests$estimate, unname(direct$estimate), tolerance = 1e-12)
   expect_equal(result$tests$statistic, unname(direct$statistic), tolerance = 1e-12)
   expect_equal(result$tests$p_value, direct$p.value, tolerance = 1e-12)
-  expect_identical(result$tests$test, "hodges_lehmann_permutation_test")
+  expect_identical(result$tests$test, "hodges_lehmann")
   expect_identical(result$tests$inference, "permutation")
   expect_true(is.na(result$tests$exact_requested))
   expect_true(is.na(result$tests$exact_used))

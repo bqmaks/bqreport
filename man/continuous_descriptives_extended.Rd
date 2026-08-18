@@ -28,7 +28,7 @@ places. This policy can be replaced with \code{\link[=set_component_rounding]{se
 \examples{
 if (requireNamespace("datawizard", quietly = TRUE)) {
   data <- as_bq_data(data.frame(age = c(40, 55, 61, NA)))
-  data <- set_type(data, age, continuous())
+  data <- set_type(data, age, type_continuous())
   data <- set_rounding(data, age, 1)
   plan <- plan_summary(data) |>
     add_statistic(age, continuous_descriptives_extended())

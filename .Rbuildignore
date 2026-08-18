@@ -4,6 +4,6 @@
 ^\.github$
 ^\.git$
 ^AGENTS\.md$
-^README\.md$
 ^SESSION_HANDOFF\.md$
 ^snowflake\.log$
+^ROADMAP\.md$

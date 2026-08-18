@@ -7,18 +7,15 @@
 run_comparison(analysis, outcome, group, data = NULL, reference = NULL)
 }
 \arguments{
-\item{analysis}{A comparison specification created by \code{\link[=t_test]{t_test()}},
-\code{\link[=mann_whitney_test]{mann_whitney_test()}}, \code{\link[=brunner_munzel_test]{brunner_munzel_test()}},
-\code{\link[=kruskal_wallis_test]{kruskal_wallis_test()}}, \code{\link[=oneway_anova]{oneway_anova()}}, \code{\link[=tukey_test]{tukey_test()}} or
-\code{\link[=t_family]{t_family()}}, \code{\link[=mann_whitney_family]{mann_whitney_family()}},
-\code{\link[=brunner_munzel_family]{brunner_munzel_family()}}, \code{\link[=dunn_test]{dunn_test()}}, \code{\link[=dunnett_test]{dunnett_test()}} or
-\code{\link[=games_howell_test]{games_howell_test()}}.}
+\item{analysis}{A comparison specification such as \code{\link[=t_test]{t_test()}},
+\code{\link[=oneway_anova]{oneway_anova()}}, \code{\link[=t_family]{t_family()}} or \code{\link[=tukey_test]{tukey_test()}}: any function created by
+the comparison constructors of this package.}
 
-\item{outcome}{A numeric outcome vector, or its column name when \code{data} is
-supplied. Ordered factors are represented by their declared positions;
+\item{outcome}{A numeric outcome vector, or a column selection when \code{data}
+is supplied. Ordered factors are represented by their declared positions;
 other factor or character values must contain numeric representations.}
 
-\item{group}{A group vector, or its column name when \code{data} is supplied.}
+\item{group}{A group vector, or a column selection when \code{data} is supplied.}
 
 \item{data}{\code{NULL}, or an ordinary data frame or tibble.}
 
@@ -27,9 +24,11 @@ must be \code{NULL} when the selected analysis declares its comparison family
 internally.}
 }
 \value{
-Two-group and omnibus tests return \code{tests}, \code{estimates} and
-\code{sample_flow} tables. Comparison-family providers are separate analytic
-entities and return only \code{comparisons} and \code{sample_flow}.
+A \code{bq_result_comparison} object: a list holding the executed
+\code{specification} and the provider's result tables. Two-group and
+omnibus tests supply \code{tests}, \code{estimates} and \code{sample_flow}.
+Comparison-family providers are separate analytic entities and supply
+only \code{comparisons} and \code{sample_flow}.
 }
 \description{
 Executes one terminal comparison specification without creating \code{bq_data}
@@ -39,10 +38,10 @@ context inputs.
 }
 \details{
 When \code{data} is \code{NULL}, \code{outcome} and \code{group} are vectors. When \code{data} is a
-data frame, they are single column names supplied as character strings.
-Existing factor level order is preserved. Character group values are
-ordered lexicographically; other atomic vectors follow their first
-appearance.
+data frame, they select one column each with tidyselect syntax: a bare
+column name or a character string. Existing factor level order is
+preserved; other group vectors are ordered by \code{sort()}, so character values
+are lexicographic and numeric values ascending.
 }
 \examples{
 run_comparison(
@@ -57,7 +56,7 @@ trial <- data.frame(
   arm = rep(c("new", "control"), each = 3)
 )
 run_comparison(
-  mann_whitney_test(), trial$response, trial$arm,
+  mann_whitney_test(), response, arm, data = trial,
   reference = "control"
 )
 }

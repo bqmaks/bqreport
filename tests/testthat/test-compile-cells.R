@@ -63,7 +63,7 @@ test_that("compile_summary_cells() uses the declared ordinal domain", {
     value = c(10, 20),
     severity = c("high", "low")
   ))
-  data <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+  data <- set_type(data, severity, type_ordinal(c("low", "medium", "high")))
   plan <- plan_summary(data, group = severity)
 
   compiled <- compile_summary_cells(plan)

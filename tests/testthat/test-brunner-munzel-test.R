@@ -5,8 +5,9 @@ brunner_munzel_input <- function(outcome, group, reference_value) {
       .row_id = seq_along(outcome), .outcome = outcome, .group = group
     ),
     context = list(
-      analysis_id = "a001", test_id = "t001", outcome_var_id = "v001",
-      group_var_id = "v002", strata_var_id = NA_character_,
+      analysis_id = "a001", test_id = "t001", estimate_id = NA_character_,
+      outcome_var_id = "v001", group_var_id = "v002",
+      strata_var_id = NA_character_,
       reference_value = reference_value,
       group_levels = tibble::tibble(
         var_id = rep("v002", 2L), value = levels(group), position = 1:2

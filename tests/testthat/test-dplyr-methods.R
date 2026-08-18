@@ -106,7 +106,7 @@ test_that("mutate() over a categorical column removes its levels", {
   data <- set_type(
     labelled_data(),
     sex,
-    ordinal(c("f", "m", "not reported"))
+    type_ordinal(c("f", "m", "not reported"))
   )
   rewritten <- dplyr::mutate(data, sex = toupper(sex))
 
@@ -122,7 +122,7 @@ test_that("mutate() dropping a column drops its registry row", {
   data <- set_type(
     labelled_data(),
     sex,
-    ordinal(c("f", "m", "not reported"))
+    type_ordinal(c("f", "m", "not reported"))
   )
   dropped <- dplyr::mutate(data, sex = NULL)
 
@@ -160,7 +160,7 @@ test_that("add_column() cannot silently restore a stale registry", {
   )
 })
 
-test_that("base replacement invalidates metadata of touched columns only", {
+test_that("base replacement invalidates metadata of replaced columns only", {
   data <- labelled_data()
 
   dollar <- data
@@ -168,15 +168,47 @@ test_that("base replacement invalidates metadata of touched columns only", {
   bracket <- data
   bracket[["sex"]] <- toupper(bracket$sex)
   square <- data
-  square[1, "sex"] <- "m"
+  square[, "sex"] <- toupper(square$sex)
+  one_dimensional <- data
+  one_dimensional["sex"] <- list(toupper(data$sex))
 
-  for (result in list(dollar, bracket, square)) {
+  for (result in list(dollar, bracket, square, one_dimensional)) {
     expect_registry_aligned(result)
     expect_identical(variables_of(result)$type, c("continuous", NA, "continuous"))
     expect_identical(variables_of(result)$role, variables_of(data)$role)
     expect_identical(variables_of(result)$label, variables_of(data)$label)
     expect_identical(nrow(levels_of(result)), 0L)
   }
+})
+
+test_that("replacing a subset of rows keeps the registry", {
+  data <- labelled_data()
+  data <- set_type(data, sex, type_ordinal(c("f", "m", "x")))
+
+  by_name <- data
+  by_name[1, "sex"] <- "m"
+  by_position <- data
+  by_position[2:3, 2] <- "f"
+  by_condition <- data
+  by_condition[by_condition$age > 50, "age"] <- NA
+
+  for (result in list(by_name, by_position, by_condition)) {
+    expect_registry_aligned(result)
+    expect_identical(variables_of(result), variables_of(data))
+    expect_identical(levels_of(result), levels_of(data))
+    expect_identical(formats_of(result), formats_of(data))
+  }
+  expect_identical(by_condition$age, c(40, NA, NA))
+})
+
+test_that("cbind() and merge() are rejected instead of dropping metadata", {
+  data <- labelled_data()
+
+  expect_error(cbind(data, waist = 1:3), class = "bq_error_unsupported_operation")
+  expect_error(
+    merge(data, data.frame(sex = c("f", "m"), centre = c("A", "B"))),
+    class = "bq_error_unsupported_operation"
+  )
 })
 
 test_that("base replacement removes registry metadata with a column", {

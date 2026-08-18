@@ -1,6 +1,6 @@
 test_that("variable_levels() returns the flat level registry", {
   data <- as_bq_data(tibble::tibble(severity = c("low", "high")))
-  data <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+  data <- set_type(data, severity, type_ordinal(c("low", "medium", "high")))
 
   registry <- variable_levels(data)
 

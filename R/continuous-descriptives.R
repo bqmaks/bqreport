@@ -14,7 +14,7 @@
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55, NA)))
-#' data <- set_type(data, age, continuous())
+#' data <- set_type(data, age, type_continuous())
 #' data <- set_rounding(data, age, 1)
 #' plan <- plan_summary(data) |>
 #'   add_statistic(age)

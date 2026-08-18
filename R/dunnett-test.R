@@ -11,27 +11,14 @@
 #' @return A `bq_dunnett_test` analytic function.
 #' @export
 dunnett_test <- function(reference) {
-  if (
-    missing(reference) || !is.character(reference) ||
-      length(reference) != 1L || is.na(reference) || !nzchar(reference)
-  ) {
+  if (missing(reference)) {
     bq_abort(
       "bq_error_invalid_analysis_function",
       "`reference` must be one non-empty group value."
     )
   }
-  if (
-    !requireNamespace("PMCMRplus", quietly = TRUE) ||
-      utils::packageVersion("PMCMRplus") < "1.9.12"
-  ) {
-    bq_abort(
-      "bq_error_missing_dependency",
-      paste0(
-        "`dunnett_test()` requires the suggested package `PMCMRplus` version ",
-        "1.9.12 or later; install it with `install.packages(\"PMCMRplus\")`."
-      )
-    )
-  }
+  check_string(reference, "reference")
+  check_dependency("PMCMRplus", "`dunnett_test()`", "1.9.12")
 
   specification <- list(
     kind = "dunnett_test",
@@ -42,23 +29,13 @@ dunnett_test <- function(reference) {
   )
   capabilities <- list(
     outcome_types = "continuous",
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
-    comparison_families = "reference",
     supplied_results = "comparison_family",
-    supplied_extractors = character(),
     suggested_dependencies = "PMCMRplus (>= 1.9.12)"
   )
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(data, context, "dunnett_test")
+    prepared <- prepare_engine_input(data, context, "dunnett_test")
     group_values <- prepared$group_values
     pairs <- compile_comparison_family(
       group_values,
@@ -92,7 +69,7 @@ dunnett_test <- function(reference) {
     statistic <- unname(vapply(pairs$comparison_value, function(value) {
       unname(as.double(engine_result$statistic[value, specification$reference]))
     }, double(1)))
-    p_value <- unname(vapply(pairs$comparison_value, function(value) {
+    p_value_adjusted <- unname(vapply(pairs$comparison_value, function(value) {
       unname(as.double(engine_result$p.value[value, specification$reference]))
     }, double(1)))
     group_mean <- vapply(group_values, function(value) {
@@ -103,8 +80,8 @@ dunnett_test <- function(reference) {
     )
     residual_df <- sum(used) - length(group_values)
     valid_result <- all(is.finite(c(
-      estimate, statistic, p_value, residual_df
-    ))) && residual_df > 0 && all(p_value >= 0 & p_value <= 1)
+      estimate, statistic, p_value_adjusted, residual_df
+    ))) && residual_df > 0 && all(p_value_adjusted >= 0 & p_value_adjusted <= 1)
     if (!valid_result) {
       bq_abort(
         "bq_error_analysis_runtime",
@@ -137,17 +114,19 @@ dunnett_test <- function(reference) {
       effect_conf_level = rep(NA_real_, comparison_n),
       effect_interval_scope = rep(NA_character_, comparison_n),
       effect_ci_method = rep(NA_character_, comparison_n),
+      effect_ci_clamped = rep(NA, comparison_n),
       statistic = statistic,
       statistic_type = rep("t", comparison_n),
       df = rep(as.double(residual_df), comparison_n),
-      p_value = p_value,
-      p_value_raw = rep(NA_real_, comparison_n),
+      p_value = rep(NA_real_, comparison_n),
+      p_value_adjusted = p_value_adjusted,
       p_adjust_method = rep("dunnett_single_step", comparison_n),
       conf_low = rep(NA_real_, comparison_n),
       conf_high = rep(NA_real_, comparison_n),
       conf_level = rep(NA_real_, comparison_n),
       interval_scope = rep("not_computed", comparison_n),
       ci_method = rep("not_computed", comparison_n),
+      ci_clamped = rep(NA, comparison_n),
       inference = rep("analytical", comparison_n),
       variance_assumption = rep("equal", comparison_n),
       exact_requested = rep(NA_character_, comparison_n),

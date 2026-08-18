@@ -55,9 +55,9 @@ test_that("preflight() compiles design cells and reports empty leaf cells", {
     treatment = factor(c("A", "B", "A"), levels = c("A", "B")),
     centre = factor(c("X", "X", "Y"), levels = c("X", "Y"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, treatment, binary("B"))
-  data <- set_type(data, centre, nominal("X"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, treatment, type_binary("B"))
+  data <- set_type(data, centre, type_nominal("X"))
   plan <- plan_summary(
     data,
     group = treatment,
@@ -85,8 +85,8 @@ test_that("preflight() reports missing design values without dropping rows", {
     value = c(10, 20),
     treatment = c("A", NA_character_)
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, treatment, binary("A"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, treatment, type_binary("A"))
   plan <- plan_summary(
     data,
     group = treatment
@@ -145,12 +145,12 @@ test_that("preflight() reports missing and unknown analytic types", {
 
 test_that("preflight() validates continuous model-frame coercion", {
   valid_data <- as_bq_data(tibble::tibble(value = c("1.5", "2.5")))
-  valid_data <- set_type(valid_data, value, continuous())
+  valid_data <- set_type(valid_data, value, type_continuous())
   valid_plan <- plan_summary(valid_data) |>
     add_statistic(value)
 
   invalid_data <- as_bq_data(tibble::tibble(value = c("1.5", "unknown")))
-  invalid_data <- set_type(invalid_data, value, continuous())
+  invalid_data <- set_type(invalid_data, value, type_continuous())
   invalid_plan <- plan_summary(invalid_data) |>
     add_statistic(value)
 
@@ -169,7 +169,7 @@ test_that("preflight() checks types of design axes", {
     value = c(1, 2),
     group = c("a", "b")
   ))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   plan <- plan_summary(
     data,
     group = group
@@ -192,8 +192,8 @@ test_that("preflight() diagnoses non-atomic design storage before compilation", 
     value = c(1, 2),
     group = list("a", "b")
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, group, binary("b"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, group, type_binary("b"))
   plan <- plan_summary(data, group = group) |>
     add_statistic(value)
 
@@ -210,8 +210,8 @@ test_that("preflight() rejects values outside declared design domains", {
     value = c(1, 2),
     group = c("a", "b")
   ))
-  binary_data <- set_type(binary_data, value, continuous())
-  binary_data <- set_type(binary_data, group, binary("b"))
+  binary_data <- set_type(binary_data, value, type_continuous())
+  binary_data <- set_type(binary_data, group, type_binary("b"))
   binary_data <- dplyr::bind_rows(
     binary_data,
     tibble::tibble(value = 3, group = "c")
@@ -223,11 +223,11 @@ test_that("preflight() rejects values outside declared design domains", {
     value = c(1, 2),
     severity = c("low", "high")
   ))
-  ordinal_data <- set_type(ordinal_data, value, continuous())
+  ordinal_data <- set_type(ordinal_data, value, type_continuous())
   ordinal_data <- set_type(
     ordinal_data,
     severity,
-    ordinal(c("low", "medium", "high"))
+    type_ordinal(c("low", "medium", "high"))
   )
   ordinal_data <- dplyr::bind_rows(
     ordinal_data,
@@ -278,7 +278,7 @@ test_that("preflight() requires at least one summary variable", {
 })
 
 test_that("preflight() reports incompatible continuous statistics", {
-  data <- set_type(labelled_data(), sex, binary("m"))
+  data <- set_type(labelled_data(), sex, type_binary("m"))
   plan <- plan_summary(data)
   statistic <- continuous_statistic(
     "average",
@@ -295,7 +295,7 @@ test_that("preflight() reports incompatible continuous statistics", {
 })
 
 test_that("preflight() reports incompatible display rules", {
-  data <- set_type(labelled_data(), sex, binary("m"))
+  data <- set_type(labelled_data(), sex, type_binary("m"))
   plan <- plan_summary(data) |>
     add_statistic(sex)
   plan <- add_display_rule(plan, sex, enumerate_values())
@@ -314,7 +314,7 @@ test_that("preflight() reports incompatible display rules", {
 
 test_that("preflight() requires rounding for dimensionless components", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   statistic <- continuous_statistic(
     "ratio",
     function(x) data.frame(ratio = NA_real_),

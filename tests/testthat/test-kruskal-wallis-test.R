@@ -36,8 +36,6 @@ test_that("kruskal_wallis_test() returns an inspectable analytic function", {
   expect_identical(capabilities$outcome_types, c("continuous", "ordinal"))
   expect_identical(capabilities$group_min_levels, 2L)
   expect_identical(capabilities$group_max_levels, NA_integer_)
-  expect_false(capabilities$provides_fits)
-  expect_identical(capabilities$supplied_extractors, character())
   expect_identical(capabilities$suggested_dependencies, character())
   expect_identical(names(formals(analysis)), c("data", "context"))
 })
@@ -117,7 +115,7 @@ test_that("kruskal_wallis_test() performs a reproducible random permutation test
     )$statistic)) >= observed
   }))
 
-  expect_identical(result$tests$test, "kruskal_wallis_permutation")
+  expect_identical(result$tests$test, "kruskal_wallis")
   expect_equal(result$tests$statistic, observed, tolerance = 1e-12)
   expect_true(is.na(result$tests$df))
   expect_equal(result$tests$p_value, (exceedances + 1) / 100)

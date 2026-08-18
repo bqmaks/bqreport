@@ -38,94 +38,33 @@ mann_whitney_family <- function(
   p_adjust = "holm",
   conf_level = 0.95
 ) {
-  allowed_families <- c("pairwise", "reference", "consecutive")
-  if (
-    !is.character(comparisons) || length(comparisons) != 1L ||
-      is.na(comparisons) || !comparisons %in% allowed_families
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`comparisons` must be \"pairwise\", \"reference\" or \"consecutive\"."
-    )
-  }
-  if (comparisons == "reference") {
-    if (
-      !is.character(reference) || length(reference) != 1L ||
-        is.na(reference) || !nzchar(reference)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        "`reference` must be one non-empty group value for a reference family."
-      )
-    }
-  } else if (!is.null(reference)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`reference` must be NULL unless `comparisons = \"reference\"`."
-    )
-  }
+  reference <- check_comparison_family(comparisons, reference)
   valid_exact <-
     is.logical(exact) && length(exact) == 1L && !is.na(exact) ||
-      is.character(exact) && length(exact) == 1L &&
-        !is.na(exact) && identical(exact, "auto")
+      identical(exact, "auto")
   if (!valid_exact) {
     bq_abort(
       "bq_error_invalid_analysis_function",
       "`exact` must be \"auto\", TRUE or FALSE."
     )
   }
-  if (
-    !is.logical(continuity_correction) ||
-      length(continuity_correction) != 1L || is.na(continuity_correction)
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`continuity_correction` must be either TRUE or FALSE."
-    )
-  }
-  if (
-    !is.character(p_adjust) || length(p_adjust) != 1L || is.na(p_adjust) ||
-      !p_adjust %in% stats::p.adjust.methods
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`p_adjust` must be one method supported by `stats::p.adjust()`."
-    )
-  }
-  if (
-    !is.numeric(conf_level) || length(conf_level) != 1L ||
-      is.na(conf_level) || !is.finite(conf_level) ||
-      conf_level <= 0 || conf_level >= 1
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`conf_level` must be one finite number strictly between zero and one."
-    )
-  }
+  check_flag(continuity_correction, "continuity_correction")
+  check_p_adjust(p_adjust)
+  conf_level <- check_conf_level(conf_level)
   specification <- list(
     kind = "mann_whitney_family",
     family = comparisons,
-    reference = if (is.null(reference)) NA_character_ else reference,
+    reference = reference,
     exact = exact,
     continuity_correction = continuity_correction,
     p_adjust_method = p_adjust,
-    conf_level = as.double(conf_level)
+    conf_level = conf_level
   )
   capabilities <- list(
     outcome_types = c("continuous", "ordinal"),
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
-    comparison_families = allowed_families,
     supplied_results = c("comparison_family", "pairwise_effect_size"),
-    supplied_extractors = character(),
     suggested_dependencies = character()
   )
   pair_test <- mann_whitney_test(
@@ -136,7 +75,7 @@ mann_whitney_family <- function(
   )
 
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(
+    prepared <- prepare_engine_input(
       data, context, "mann_whitney_family"
     )
     group_values <- prepared$group_values
@@ -174,6 +113,7 @@ mann_whitney_family <- function(
       pair_context <- list(
         analysis_id = context$analysis_id,
         test_id = paste0(context$test_id, "_", pairs$comparison_id[[position]]),
+        estimate_id = NA_character_,
         outcome_var_id = context$outcome_var_id,
         group_var_id = context$group_var_id,
         strata_var_id = NA_character_,
@@ -208,15 +148,15 @@ mann_whitney_family <- function(
       function(result) result$interval_conf_level,
       double(1)
     )
-    p_value <- stats::p.adjust(
+    p_value_adjusted <- stats::p.adjust(
       p_value_raw,
       method = specification$p_adjust_method
     )
     valid_result <- all(is.finite(c(
-      estimate, statistic, p_value_raw, p_value,
+      estimate, statistic, p_value_raw, p_value_adjusted,
       conf_low, conf_high, interval_conf_level, effect_size
     ))) && all(p_value_raw >= 0 & p_value_raw <= 1) &&
-      all(p_value >= 0 & p_value <= 1) && all(conf_low <= conf_high) &&
+      all(p_value_adjusted >= 0 & p_value_adjusted <= 1) && all(conf_low <= conf_high) &&
       all(effect_size >= -1 & effect_size <= 1)
     if (!valid_result) {
       bq_abort(
@@ -252,17 +192,19 @@ mann_whitney_family <- function(
       effect_conf_level = rep(NA_real_, comparison_n),
       effect_interval_scope = rep(NA_character_, comparison_n),
       effect_ci_method = rep(NA_character_, comparison_n),
+      effect_ci_clamped = rep(NA, comparison_n),
       statistic = statistic,
       statistic_type = rep("wilcoxon_W", comparison_n),
       df = rep(NA_real_, comparison_n),
-      p_value = unname(as.double(p_value)),
-      p_value_raw = p_value_raw,
+      p_value = p_value_raw,
+      p_value_adjusted = unname(as.double(p_value_adjusted)),
       p_adjust_method = rep(specification$p_adjust_method, comparison_n),
       conf_low = conf_low,
       conf_high = conf_high,
       conf_level = interval_conf_level,
       interval_scope = rep("individual_unadjusted", comparison_n),
       ci_method = vapply(pair_results, function(result) result$ci_method, character(1)),
+      ci_clamped = rep(FALSE, comparison_n),
       inference = rep("analytical", comparison_n),
       variance_assumption = rep("not_applicable", comparison_n),
       exact_requested = vapply(

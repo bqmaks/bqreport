@@ -29,7 +29,7 @@ test_that("resolve_variables() does not replace canonical names with aliases", {
     tibble::tibble(var_id = "v001", name = "age", position = 1L)
   )
   expect_identical(
-    variables(set_type(data, c(alias = age), continuous()))$type[1L],
+    variables(set_type(data, c(alias = age), type_continuous()))$type[1L],
     "continuous"
   )
 })

@@ -11,8 +11,8 @@ set_type(data, variable, type)
 
 \item{variable}{A tidyselect expression selecting exactly one column.}
 
-\item{type}{A \code{bq_type} specification created by \code{\link[=continuous]{continuous()}}, \code{\link[=count]{count()}},
-\code{\link[=binary]{binary()}}, \code{\link[=ordinal]{ordinal()}} or \code{\link[=nominal]{nominal()}}.}
+\item{type}{A \code{bq_type} specification created by \code{\link[=type_continuous]{type_continuous()}}, \code{\link[=type_count]{type_count()}},
+\code{\link[=type_binary]{type_binary()}}, \code{\link[=type_ordinal]{type_ordinal()}} or \code{\link[=type_nominal]{type_nominal()}}.}
 }
 \value{
 \code{data} with updated analytic metadata.
@@ -25,7 +25,7 @@ separate flat level registry.
 }
 \examples{
 data <- as_bq_data(data.frame(age = c(40, 55), group = c("case", "control")))
-data <- set_type(data, age, continuous())
-data <- set_type(data, group, binary("case"))
+data <- set_type(data, age, type_continuous())
+data <- set_type(data, group, type_binary("case"))
 variables(data)
 }

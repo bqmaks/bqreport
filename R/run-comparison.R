@@ -6,29 +6,28 @@
 #' context inputs.
 #'
 #' When `data` is `NULL`, `outcome` and `group` are vectors. When `data` is a
-#' data frame, they are single column names supplied as character strings.
-#' Existing factor level order is preserved. Character group values are
-#' ordered lexicographically; other atomic vectors follow their first
-#' appearance.
+#' data frame, they select one column each with tidyselect syntax: a bare
+#' column name or a character string. Existing factor level order is
+#' preserved; other group vectors are ordered by `sort()`, so character values
+#' are lexicographic and numeric values ascending.
 #'
-#' @param analysis A comparison specification created by [t_test()],
-#'   [mann_whitney_test()], [brunner_munzel_test()],
-#'   [kruskal_wallis_test()], [oneway_anova()], [tukey_test()] or
-#'   [t_family()], [mann_whitney_family()],
-#'   [brunner_munzel_family()], [dunn_test()], [dunnett_test()] or
-#'   [games_howell_test()].
-#' @param outcome A numeric outcome vector, or its column name when `data` is
-#'   supplied. Ordered factors are represented by their declared positions;
+#' @param analysis A comparison specification such as [t_test()],
+#'   [oneway_anova()], [t_family()] or [tukey_test()]: any function created by
+#'   the comparison constructors of this package.
+#' @param outcome A numeric outcome vector, or a column selection when `data`
+#'   is supplied. Ordered factors are represented by their declared positions;
 #'   other factor or character values must contain numeric representations.
-#' @param group A group vector, or its column name when `data` is supplied.
+#' @param group A group vector, or a column selection when `data` is supplied.
 #' @param data `NULL`, or an ordinary data frame or tibble.
 #' @param reference Reference group value for two-group terminal tests. It
 #'   must be `NULL` when the selected analysis declares its comparison family
 #'   internally.
 #'
-#' @return Two-group and omnibus tests return `tests`, `estimates` and
-#'   `sample_flow` tables. Comparison-family providers are separate analytic
-#'   entities and return only `comparisons` and `sample_flow`.
+#' @return A `bq_result_comparison` object: a list holding the executed
+#'   `specification` and the provider's result tables. Two-group and
+#'   omnibus tests supply `tests`, `estimates` and `sample_flow`.
+#'   Comparison-family providers are separate analytic entities and supply
+#'   only `comparisons` and `sample_flow`.
 #' @export
 #' @examples
 #' run_comparison(
@@ -43,7 +42,7 @@
 #'   arm = rep(c("new", "control"), each = 3)
 #' )
 #' run_comparison(
-#'   mann_whitney_test(), trial$response, trial$arm,
+#'   mann_whitney_test(), response, arm, data = trial,
 #'   reference = "control"
 #' )
 run_comparison <- function(
@@ -53,77 +52,83 @@ run_comparison <- function(
   data = NULL,
   reference = NULL
 ) {
-  supported_kinds <- c(
-    "t_test", "mann_whitney_test", "brunner_munzel_test",
-    "kruskal_wallis_test", "oneway_anova", "tukey_test", "t_family",
-    "mann_whitney_family", "brunner_munzel_family", "dunn_test",
-    "dunnett_test", "games_howell_test"
-  )
   specification <- attr(analysis, "specification")
   capabilities <- attr(analysis, "capabilities")
   if (
     !inherits(analysis, "bq_analysis_function") ||
       !is.list(specification) || !is.character(specification$kind) ||
       length(specification$kind) != 1L || is.na(specification$kind) ||
-      !specification$kind %in% supported_kinds || !is.list(capabilities)
+      !is.list(capabilities) ||
+      !all(
+        c(
+          "outcome_types", "group_min_levels", "group_max_levels",
+          "supplied_results"
+        ) %in% names(capabilities)
+      )
   ) {
     bq_abort(
       "bq_error_invalid_analysis_function",
       paste0(
-        "`analysis` must be a terminal comparison created by `t_test()`, ",
-        "`mann_whitney_test()`, `brunner_munzel_test()`, ",
-        "`kruskal_wallis_test()`, `oneway_anova()`, `tukey_test()` or ",
-        "`t_family()`, `mann_whitney_family()`, ",
-        "`brunner_munzel_family()`, `dunn_test()`, `dunnett_test()` or ",
-        "`games_howell_test()`."
+        "`analysis` must be a comparison specification created by one of ",
+        "the comparison constructors, such as `t_test()` or `t_family()`."
       )
     )
   }
+  input_error <- function(...) {
+    bq_abort("bq_error_invalid_analysis_input", paste0(...))
+  }
   if (missing(outcome) || missing(group)) {
-    bq_abort(
-      "bq_error_invalid_analysis_input",
-      "`outcome` and `group` must both be supplied."
-    )
+    input_error("`outcome` and `group` must both be supplied.")
   }
 
   outcome_id <- ".outcome"
   group_id <- ".group"
   if (!is.null(data)) {
     if (!is.data.frame(data)) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`data` must be NULL or a data frame."
+      input_error("`data` must be NULL or a data frame.")
+    }
+    if (
+      anyNA(names(data)) || any(!nzchar(names(data))) ||
+        anyDuplicated(names(data))
+    ) {
+      input_error("`data` must have unique, non-empty column names.")
+    }
+    select_one <- function(selection, argument) {
+      selected <- tryCatch(
+        tidyselect::eval_select(selection, data),
+        error = function(error) {
+          input_error(
+            "Cannot select `", argument, "` in `data`: ",
+            conditionMessage(error)
+          )
+        }
       )
-    }
-    if (anyNA(names(data)) || any(!nzchar(names(data))) || anyDuplicated(names(data))) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`data` must have unique, non-empty column names."
-      )
-    }
-    valid_column <- function(value) {
-      is.character(value) && length(value) == 1L && !is.na(value) &&
-        nzchar(value) && value %in% names(data)
-    }
-    if (!valid_column(outcome) || !valid_column(group) || outcome == group) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        paste0(
-          "With `data`, `outcome` and `group` must name two different ",
-          "existing columns."
+      if (length(selected) != 1L) {
+        input_error(
+          "`", argument, "` must select exactly one column of `data`, not ",
+          length(selected), "."
         )
-      )
+      }
+      names(data)[selected]
     }
-    outcome_id <- outcome
-    group_id <- group
+    outcome_id <- select_one(rlang::enquo(outcome), "outcome")
+    group_id <- select_one(rlang::enquo(group), "group")
+    if (outcome_id == group_id) {
+      input_error("`outcome` and `group` must select two different columns.")
+    }
     outcome <- data[[outcome_id]]
     group <- data[[group_id]]
   }
 
   if (length(outcome) == 0L || length(outcome) != length(group)) {
-    bq_abort(
-      "bq_error_invalid_analysis_input",
+    input_error(
       "`outcome` and `group` must be non-empty vectors of equal length."
+    )
+  }
+  if (is.ordered(outcome) && !"ordinal" %in% capabilities$outcome_types) {
+    input_error(
+      "`", specification$kind, "()` does not accept an ordinal outcome; ",
+      "supply numeric values or choose a rank-based comparison."
     )
   }
   numeric_outcome <- if (is.ordered(outcome)) {
@@ -132,42 +137,33 @@ run_comparison <- function(
     as_continuous_model_vector(outcome)
   }
   if (is.null(numeric_outcome)) {
-    bq_abort(
-      "bq_error_invalid_analysis_input",
-      paste0(
-        "`outcome` must be numeric, an ordered factor, or values with finite ",
-        "numeric representations."
-      )
+    input_error(
+      "`outcome` must be numeric, an ordered factor, or values with finite ",
+      "numeric representations."
     )
   }
   if (!is.atomic(group) || !is.null(dim(group)) || anyNA(group)) {
-    bq_abort(
-      "bq_error_invalid_analysis_input",
-      "`group` must be one atomic vector without missing values."
-    )
+    input_error("`group` must be one atomic vector without missing values.")
   }
 
-  group_values <- as.character(group)
+  # sort() keeps numeric groups in numeric order and character groups in
+  # C-locale order, so the declared level order does not depend on the order
+  # of appearance or on the session locale.
   group_levels <- if (is.factor(group)) {
     as.character(levels(group))
-  } else if (is.character(group)) {
-    sort(unique(group_values), method = "radix")
   } else {
-    unique(group_values)
+    as.character(sort(unique(group), method = "radix"))
   }
-  group_factor <- factor(group_values, levels = group_levels)
+  group_factor <- factor(as.character(group), levels = group_levels)
   level_n <- nlevels(group_factor)
   if (
     level_n < capabilities$group_min_levels ||
       (!is.na(capabilities$group_max_levels) &&
         level_n > capabilities$group_max_levels)
   ) {
-    bq_abort(
-      "bq_error_invalid_analysis_input",
-      sprintf(
-        "The selected comparison does not support %d declared group levels.",
-        level_n
-      )
+    input_error(
+      "The selected comparison does not support ", level_n,
+      " declared group levels."
     )
   }
 
@@ -178,19 +174,13 @@ run_comparison <- function(
       is.null(reference) || length(reference) != 1L || is.na(reference) ||
         !as.character(reference) %in% group_levels
     ) {
-      bq_abort(
-        "bq_error_invalid_analysis_input",
-        "`reference` must identify one declared group level."
-      )
+      input_error("`reference` must identify one declared group level.")
     }
     reference <- as.character(reference)
   } else if (!is.null(reference)) {
-    bq_abort(
-      "bq_error_invalid_analysis_input",
-      paste0(
-        "`reference` must be NULL when the selected analysis declares its ",
-        "comparison family internally."
-      )
+    input_error(
+      "`reference` must be NULL when the selected analysis declares its ",
+      "comparison family internally."
     )
   }
 
@@ -199,96 +189,51 @@ run_comparison <- function(
     .outcome = numeric_outcome,
     .group = group_factor
   )
-  level_registry <- tibble::tibble(
-    var_id = rep(group_id, level_n),
-    value = group_levels,
-    position = seq_len(level_n)
-  )
-  estimate_id <- if (
-    !is.null(specification$effect_size) && specification$effect_size != "none"
-  ) {
+  # A separate estimate identifier exists only when the provider reports an
+  # effect size in its own `estimates` table; family providers keep effects
+  # inside `comparisons` and never use it.
+  estimate_id <- if ("effect_size" %in% capabilities$supplied_results) {
     "e001"
   } else {
     NA_character_
   }
-  common_context <- list(
+  context <- list(
     analysis_id = "a001",
     test_id = "t001",
+    estimate_id = estimate_id,
     outcome_var_id = outcome_id,
     group_var_id = group_id,
-    strata_var_id = NA_character_
-  )
-  context <- switch(
-    specification$kind,
-    t_test = c(
-      common_context[1:2],
-      list(estimate_id = estimate_id),
-      common_context[3:5],
-      list(reference_value = reference, group_levels = level_registry)
-    ),
-    mann_whitney_test = c(
-      common_context,
-      list(reference_value = reference, group_levels = level_registry)
-    ),
-    brunner_munzel_test = c(
-      common_context,
-      list(reference_value = reference, group_levels = level_registry)
-    ),
-    kruskal_wallis_test = c(
-      common_context[1:2],
-      list(estimate_id = estimate_id),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    oneway_anova = c(
-      common_context[1:2],
-      list(estimate_id = estimate_id),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    tukey_test = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    t_family = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    mann_whitney_family = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    brunner_munzel_family = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    dunn_test = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    dunnett_test = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
-    ),
-    games_howell_test = c(
-      common_context[1:2],
-      list(estimate_id = NA_character_),
-      common_context[3:5],
-      list(group_levels = level_registry)
+    strata_var_id = NA_character_,
+    group_levels = tibble::tibble(
+      var_id = rep(group_id, level_n),
+      value = group_levels,
+      position = seq_len(level_n)
     )
   )
+  if (two_group) {
+    context$reference_value <- reference
+  }
 
-  analysis(engine_data, context)
+  result <- analysis(engine_data, context)
+  structure(
+    c(list(analysis = "comparison", specification = specification), result),
+    class = c("bq_result_comparison", "bq_result")
+  )
+}
+
+#' Print a comparison result
+#'
+#' @param x A `bq_result_comparison` object.
+#' @param ... Ignored.
+#'
+#' @return `x`, invisibly.
+#' @export
+print.bq_result_comparison <- function(x, ...) {
+  cat("<bq result: comparison>\n")
+  cat("Specification: ", x$specification$kind, "\n", sep = "")
+  for (name in setdiff(names(x), c("analysis", "specification"))) {
+    rows <- nrow(x[[name]])
+    cat(name, ": ", rows, " row", if (rows == 1L) "" else "s", "\n", sep = "")
+  }
+  invisible(x)
 }

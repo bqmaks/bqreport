@@ -103,7 +103,7 @@ test_that("dictionary decisions replace inferred decisions", {
 
 test_that("matching dictionary values preserve explicit provenance", {
   data <- as_bq_data(tibble::tibble(group = c("case", "control")))
-  data <- set_type(data, group, binary("case"))
+  data <- set_type(data, group, type_binary("case"))
   result <- apply_dictionary(
     data,
     tibble::tibble(name = "group", type = "binary", event = "case")
@@ -115,8 +115,8 @@ test_that("matching dictionary values preserve explicit provenance", {
 
 test_that("dictionary values cannot silently replace explicit decisions", {
   binary_data <- as_bq_data(tibble::tibble(group = c("case", "control")))
-  binary_data <- set_type(binary_data, group, binary("case"))
-  nominal_data <- set_type(binary_data, group, nominal("control"))
+  binary_data <- set_type(binary_data, group, type_binary("case"))
+  nominal_data <- set_type(binary_data, group, type_nominal("control"))
 
   expect_error(
     apply_dictionary(
@@ -250,7 +250,7 @@ test_that("dictionary ordinal levels replace inferred levels", {
 
 test_that("matching ordinal levels preserve explicit provenance", {
   data <- as_bq_data(tibble::tibble(severity = c("low", "high")))
-  data <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+  data <- set_type(data, severity, type_ordinal(c("low", "medium", "high")))
   dictionary <- tibble::tibble(name = "severity", type = "ordinal")
   matching_levels <- tibble::tibble(
     name = rep("severity", 3),
@@ -266,7 +266,7 @@ test_that("matching ordinal levels preserve explicit provenance", {
 
 test_that("dictionary levels cannot replace an explicit ordinal order", {
   data <- as_bq_data(tibble::tibble(severity = c("low", "high")))
-  data <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+  data <- set_type(data, severity, type_ordinal(c("low", "medium", "high")))
   dictionary <- tibble::tibble(name = "severity", type = "ordinal")
   conflicting_levels <- tibble::tibble(
     name = rep("severity", 3),

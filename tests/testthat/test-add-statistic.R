@@ -147,7 +147,7 @@ test_that("add_statistic() validates plan, selection and statistic objects", {
 })
 
 test_that("add_statistic() leaves type compatibility to preflight", {
-  data <- set_type(labelled_data(), sex, binary("m"))
+  data <- set_type(labelled_data(), sex, type_binary("m"))
   statistic <- continuous_statistic("value", function(x) data.frame(value = NA_real_))
 
   expect_no_error(

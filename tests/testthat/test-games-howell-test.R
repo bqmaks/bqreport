@@ -46,11 +46,11 @@ test_that("games_howell_test() matches PMCMRplus", {
   }, double(1))
 
   expect_equal(result$comparisons$statistic, direct_statistic, tolerance = 1e-12)
-  expect_equal(result$comparisons$p_value, direct_p, tolerance = 1e-12)
+  expect_equal(result$comparisons$p_value_adjusted, direct_p, tolerance = 1e-12)
   expect_identical(
     result$comparisons$p_adjust_method,
     rep("games_howell_studentized_range", 3L)
   )
   expect_identical(result$comparisons$variance_assumption, rep("unequal", 3L))
-  expect_named(result, c("comparisons", "sample_flow"))
+  expect_named(result, c("analysis", "specification", "comparisons", "sample_flow"))
 })

@@ -6,8 +6,8 @@ test_that("prepare_presentation() distinguishes cell status and display mode", {
       levels = c("A", "B", "C", "D")
     )
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, stratum, nominal("A"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, stratum, type_nominal("A"))
   statistic <- continuous_statistic(
     "mean",
     function(x) {
@@ -60,8 +60,8 @@ test_that("prepare_presentation() retains order and duplicates in Overall", {
     value = c(2, 1, 2),
     stratum = factor(c("A", "B", "A"), levels = c("A", "B"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, stratum, nominal("A"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, stratum, type_nominal("A"))
   statistic <- continuous_statistic(
     "mean",
     function(x) {
@@ -93,7 +93,7 @@ test_that("prepare_presentation() retains order and duplicates in Overall", {
 
 test_that("prepare_presentation() shows only statistics without a rule", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   statistic <- continuous_statistic(
     "mean",
     function(x) data.frame(mean = mean(x))
@@ -112,7 +112,7 @@ test_that("prepare_presentation() shows only statistics without a rule", {
 
 test_that("prepare_presentation() can show statistics and values together", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   statistic <- continuous_statistic(
     "mean",
     function(x) data.frame(mean = mean(x))
@@ -134,7 +134,7 @@ test_that("prepare_presentation() can show statistics and values together", {
 
 test_that("prepare_presentation() detects inconsistent source counts", {
   data <- as_bq_data(tibble::tibble(value = 1))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   statistic <- continuous_statistic(
     "mean",
     function(x) data.frame(mean = mean(x))

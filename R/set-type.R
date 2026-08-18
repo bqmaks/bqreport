@@ -7,15 +7,15 @@
 #'
 #' @param data A `bq_data` object.
 #' @param variable A tidyselect expression selecting exactly one column.
-#' @param type A `bq_type` specification created by [continuous()], [count()],
-#'   [binary()], [ordinal()] or [nominal()].
+#' @param type A `bq_type` specification created by [type_continuous()], [type_count()],
+#'   [type_binary()], [type_ordinal()] or [type_nominal()].
 #'
 #' @return `data` with updated analytic metadata.
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55), group = c("case", "control")))
-#' data <- set_type(data, age, continuous())
-#' data <- set_type(data, group, binary("case"))
+#' data <- set_type(data, age, type_continuous())
+#' data <- set_type(data, group, type_binary("case"))
 #' variables(data)
 set_type <- function(data, variable, type) {
   if (!inherits(data, "bq_data")) {

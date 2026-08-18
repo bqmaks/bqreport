@@ -21,7 +21,9 @@
 A \code{bq_data} object.
 }
 \description{
-New columns receive fresh identifiers. Metadata is cleared for each
-existing column touched by either a column replacement or a row-and-column
-replacement.
+New columns receive fresh identifiers. Replacing whole columns (\verb{x[j] <-}
+or \verb{x[, j] <-}) clears the metadata that described their previous values.
+Replacing a subset of rows (\verb{x[i, j] <-}) keeps every registry entry: the
+column still measures the same quantity, and preflight checks the stored
+values against the declared type before any analysis.
 }

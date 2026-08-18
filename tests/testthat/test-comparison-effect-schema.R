@@ -19,13 +19,13 @@ test_that("comparison providers share one effect-size schema", {
     "effect_size_type", "effect_size", "effect_std_error",
     "effect_size_method", "effect_size_correction", "effect_conf_low",
     "effect_conf_high", "effect_conf_level", "effect_interval_scope",
-    "effect_ci_method"
+    "effect_ci_method", "effect_ci_clamped"
   )
   comparison_names <- lapply(providers, function(provider) {
     result <- run_comparison(provider, outcome, group)
     expect_identical(names(result$comparisons)[13L], "std_error")
     expect_identical(
-      names(result$comparisons)[14:23],
+      names(result$comparisons)[14:24],
       effect_columns
     )
     names(result$comparisons)

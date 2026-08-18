@@ -21,7 +21,7 @@
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(value = c(1.2, 3)))
-#' data <- set_type(data, value, continuous())
+#' data <- set_type(data, value, type_continuous())
 #' data <- set_rounding(data, value, 2, "decimal")
 #' statistic <- continuous_statistic(
 #'   "mean",

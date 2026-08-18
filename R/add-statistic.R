@@ -84,8 +84,8 @@ is_valid_statistic_specification <- function(statistic) {
 #' @export
 #' @examples
 #' data <- as_bq_data(data.frame(age = c(40, 55, NA), bmi = c(22, 31, 27)))
-#' data <- set_type(data, age, continuous())
-#' data <- set_type(data, bmi, continuous())
+#' data <- set_type(data, age, type_continuous())
+#' data <- set_type(data, bmi, type_continuous())
 #' plan_summary(data) |>
 #'   add_statistic(c(age, bmi))
 add_statistic <- function(

@@ -27,18 +27,9 @@ test_that("t_test() returns an inspectable analytic function", {
     attr(analysis, "capabilities"),
     list(
       outcome_types = "continuous",
-      outcomes_per_analysis = 1L,
-      requires_group = TRUE,
       group_min_levels = 2L,
       group_max_levels = 2L,
-      max_strata = 0L,
-      supports_covariates = FALSE,
-      supports_weights = FALSE,
-      supports_clusters = FALSE,
-      supports_matched_sets = FALSE,
-      provides_fits = FALSE,
       supplied_results = "test",
-      supplied_extractors = character(),
       suggested_dependencies = character()
     )
   )
@@ -276,7 +267,7 @@ test_that("t_test() executes Welch test in comparison-minus-reference direction"
       test_id = "t001",
       analysis_id = "a001",
       outcome_var_id = "v001",
-      test = "welch_t_test",
+      test = "welch_t",
       reference_value = "control",
       comparison_value = "treatment",
       hypothesis = "two_sided",
@@ -356,7 +347,7 @@ test_that("t_test() executes Student test and reports missing outcomes", {
     conf.level = 0.9
   )
 
-  expect_identical(result$tests$test, "student_t_test")
+  expect_identical(result$tests$test, "student_t")
   expect_identical(result$tests$statistic, unname(as.double(direct$statistic)))
   expect_identical(result$tests$df, unname(as.double(direct$parameter)))
   expect_identical(result$tests$conf_low, unname(as.double(direct$conf.int[1L])))
@@ -405,7 +396,7 @@ test_that("t_test() rejects unsupported group structure and sample size", {
 
   expect_error(
     t_test()(input$data, input$context),
-    "exactly two",
+    "exactly 2",
     class = "bq_error_invalid_analysis_input"
   )
 
@@ -416,7 +407,7 @@ test_that("t_test() rejects unsupported group structure and sample size", {
   )
   expect_error(
     t_test()(input$data, input$context),
-    "too few observed",
+    "has no observed outcome values",
     class = "bq_error_invalid_analysis_input"
   )
 })
@@ -640,7 +631,7 @@ test_that("t_test() performs a declared studentized permutation test", {
 
   expect_equal(result$tests$p_value, direct$p.value, tolerance = 1e-12)
   expect_equal(result$tests$statistic, unname(direct$statistic), tolerance = 1e-12)
-  expect_identical(result$tests$test, "welch_permutation_t_test")
+  expect_identical(result$tests$test, "welch_t")
   expect_identical(result$tests$inference, "permutation")
   expect_identical(result$tests$permutation_sampling, "random")
   expect_identical(result$tests$permutation_p_method, "plusone")

@@ -27,18 +27,9 @@ test_that("oneway_anova() returns an inspectable analytic function", {
     attr(analysis, "capabilities"),
     list(
       outcome_types = "continuous",
-      outcomes_per_analysis = 1L,
-      requires_group = TRUE,
       group_min_levels = 2L,
       group_max_levels = NA_integer_,
-      max_strata = 0L,
-      supports_covariates = FALSE,
-      supports_weights = FALSE,
-      supports_clusters = FALSE,
-      supports_matched_sets = FALSE,
-      provides_fits = FALSE,
       supplied_results = c("omnibus_test", "effect_size"),
-      supplied_extractors = character(),
       suggested_dependencies = "effectsize"
     )
   )
@@ -383,9 +374,7 @@ test_that("oneway_anova() permutes the selected F statistic reproducibly", {
 
     expect_identical(
       result$tests$test,
-      if (var_equal) {
-        "oneway_anova_permutation"
-      } else "welch_anova_permutation"
+      if (var_equal) "oneway_anova" else "welch_anova"
     )
     expect_equal(result$tests$statistic, observed, tolerance = 1e-12)
     expect_equal(result$tests$p_value, (exceedances + 1) / 100)
@@ -530,7 +519,7 @@ test_that("oneway_anova() combines permutation inference and bootstrap", {
   result <- analysis(input$data, input$context)
 
   expect_identical(.Random.seed, state_before)
-  expect_identical(result$tests$test, "welch_anova_permutation")
+  expect_identical(result$tests$test, "welch_anova")
   expect_identical(result$tests$permutation_seed, 2042L)
   expect_identical(result$estimates$bootstrap_seed, 2043L)
   expect_true(is.finite(result$tests$p_value))

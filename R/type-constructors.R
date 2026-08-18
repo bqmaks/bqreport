@@ -7,8 +7,8 @@
 #' @return A `bq_type` specification.
 #' @export
 #' @examples
-#' continuous()
-continuous <- function() {
+#' type_continuous()
+type_continuous <- function() {
   structure(
     list(
       type = "continuous",
@@ -29,8 +29,8 @@ continuous <- function() {
 #' @return A `bq_type` specification.
 #' @export
 #' @examples
-#' count()
-count <- function() {
+#' type_count()
+type_count <- function() {
   structure(
     list(
       type = "count",
@@ -56,14 +56,14 @@ count <- function() {
 #' @return A `bq_type` specification.
 #' @export
 #' @examples
-#' binary(1)
-#' binary(TRUE)
-#' binary("case")
-binary <- function(event) {
+#' type_binary(1)
+#' type_binary(TRUE)
+#' type_binary("case")
+type_binary <- function(event) {
   if (missing(event)) {
     bq_abort(
       "bq_error_invalid_type_spec",
-      "`event` is required for `binary()`; choose the value that represents the event."
+      "`event` is required for `type_binary()`; choose the value that represents the event."
     )
   }
 
@@ -101,14 +101,14 @@ binary <- function(event) {
 #' @return A `bq_type` specification.
 #' @export
 #' @examples
-#' ordinal(c("low", "medium", "high"))
-#' ordinal(1:5)
-ordinal <- function(levels) {
+#' type_ordinal(c("low", "medium", "high"))
+#' type_ordinal(1:5)
+type_ordinal <- function(levels) {
   if (missing(levels)) {
     bq_abort(
       "bq_error_invalid_type_spec",
       paste0(
-        "`levels` is required for `ordinal()`; supply the categories from ",
+        "`levels` is required for `type_ordinal()`; supply the categories from ",
         "lowest to highest."
       )
     )
@@ -165,14 +165,14 @@ ordinal <- function(levels) {
 #' @return A `bq_type` specification.
 #' @export
 #' @examples
-#' nominal("control")
-#' nominal(0)
-nominal <- function(reference) {
+#' type_nominal("control")
+#' type_nominal(0)
+type_nominal <- function(reference) {
   if (missing(reference)) {
     bq_abort(
       "bq_error_invalid_type_spec",
       paste0(
-        "`reference` is required for `nominal()`; choose the category to use ",
+        "`reference` is required for `type_nominal()`; choose the category to use ",
         "as the reference."
       )
     )

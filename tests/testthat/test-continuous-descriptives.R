@@ -66,7 +66,7 @@ test_that("continuous_descriptives() handles empty and small samples", {
 
 test_that("continuous_descriptives() runs through the summary engine", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2, NA, 4)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 1)
   plan <- plan_summary(data) |>
     add_statistic(value)

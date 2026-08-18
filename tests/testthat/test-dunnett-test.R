@@ -57,7 +57,7 @@ test_that("dunnett_test() matches PMCMRplus with an arbitrary reference", {
     tolerance = 1e-12
   )
   expect_equal(
-    result$comparisons$p_value,
+    result$comparisons$p_value_adjusted,
     c(direct$p.value["low", "control"], direct$p.value["high", "control"]),
     tolerance = 1e-12
   )
@@ -65,5 +65,5 @@ test_that("dunnett_test() matches PMCMRplus with an arbitrary reference", {
     result$comparisons$p_adjust_method,
     rep("dunnett_single_step", 2L)
   )
-  expect_named(result, c("comparisons", "sample_flow"))
+  expect_named(result, c("analysis", "specification", "comparisons", "sample_flow"))
 })

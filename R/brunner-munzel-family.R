@@ -34,60 +34,10 @@ brunner_munzel_family <- function(
   p_adjust = "holm",
   conf_level = 0.95
 ) {
-  allowed_families <- c("pairwise", "reference", "consecutive")
-  if (
-    !is.character(comparisons) || length(comparisons) != 1L ||
-      is.na(comparisons) || !comparisons %in% allowed_families
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`comparisons` must be \"pairwise\", \"reference\" or \"consecutive\"."
-    )
-  }
-  if (comparisons == "reference") {
-    if (
-      !is.character(reference) || length(reference) != 1L ||
-        is.na(reference) || !nzchar(reference)
-    ) {
-      bq_abort(
-        "bq_error_invalid_analysis_function",
-        "`reference` must be one non-empty group value for a reference family."
-      )
-    }
-  } else if (!is.null(reference)) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`reference` must be NULL unless `comparisons = \"reference\"`."
-    )
-  }
-  if (
-    !is.character(inference) || length(inference) != 1L ||
-      is.na(inference) || !inference %in% c("asymptotic", "logit")
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`inference` must be either \"asymptotic\" or \"logit\"."
-    )
-  }
-  if (
-    !is.character(p_adjust) || length(p_adjust) != 1L || is.na(p_adjust) ||
-      !p_adjust %in% stats::p.adjust.methods
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`p_adjust` must be one method supported by `stats::p.adjust()`."
-    )
-  }
-  if (
-    !is.numeric(conf_level) || length(conf_level) != 1L ||
-      is.na(conf_level) || !is.finite(conf_level) ||
-      conf_level <= 0 || conf_level >= 1
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      "`conf_level` must be one finite number strictly between zero and one."
-    )
-  }
+  reference <- check_comparison_family(comparisons, reference)
+  check_choice(inference, "inference", c("asymptotic", "logit"))
+  check_p_adjust(p_adjust)
+  conf_level <- check_conf_level(conf_level)
 
   pair_test <- brunner_munzel_test(
     inference = inference,
@@ -96,31 +46,21 @@ brunner_munzel_family <- function(
   specification <- list(
     kind = "brunner_munzel_family",
     family = comparisons,
-    reference = if (is.null(reference)) NA_character_ else reference,
+    reference = reference,
     inference = inference,
     p_adjust_method = p_adjust,
-    conf_level = as.double(conf_level)
+    conf_level = conf_level
   )
   capabilities <- list(
     outcome_types = c("continuous", "ordinal"),
-    outcomes_per_analysis = 1L,
-    requires_group = TRUE,
     group_min_levels = 2L,
     group_max_levels = NA_integer_,
-    max_strata = 0L,
-    supports_covariates = FALSE,
-    supports_weights = FALSE,
-    supports_clusters = FALSE,
-    supports_matched_sets = FALSE,
-    provides_fits = FALSE,
-    comparison_families = allowed_families,
     supplied_results = c("comparison_family", "pairwise_effect_size"),
-    supplied_extractors = character(),
     suggested_dependencies = "TOSTER (>= 0.9.0)"
   )
 
   analysis_function <- function(data, context) {
-    prepared <- prepare_post_hoc_input(
+    prepared <- prepare_engine_input(
       data, context, "brunner_munzel_family"
     )
     group_values <- prepared$group_values
@@ -157,6 +97,7 @@ brunner_munzel_family <- function(
       pair_context <- list(
         analysis_id = context$analysis_id,
         test_id = paste0(context$test_id, "_", pairs$comparison_id[[position]]),
+        estimate_id = NA_character_,
         outcome_var_id = context$outcome_var_id,
         group_var_id = context$group_var_id,
         strata_var_id = NA_character_,
@@ -194,7 +135,12 @@ brunner_munzel_family <- function(
       function(result) result$interval_conf_level,
       double(1)
     )
-    p_value <- stats::p.adjust(
+    # TOSTER truncates the relative-effect interval at 0 and 1; the flag is
+    # kept because a truncated bound no longer matches the standard error.
+    ci_clamped <- vapply(
+      pair_results, function(result) result$ci_clamped, logical(1)
+    )
+    p_value_adjusted <- stats::p.adjust(
       p_value_raw,
       method = specification$p_adjust_method
     )
@@ -203,13 +149,13 @@ brunner_munzel_family <- function(
     effect_conf_low <- 2 * conf_low - 1
     effect_conf_high <- 2 * conf_high - 1
     valid_result <- all(is.finite(c(
-      estimate, std_error, statistic, df, p_value_raw, p_value,
+      estimate, std_error, statistic, df, p_value_raw, p_value_adjusted,
       conf_low, conf_high, interval_conf_level, effect_size, effect_std_error,
       effect_conf_low, effect_conf_high
     ))) && all(std_error > 0) && all(effect_std_error > 0) &&
       all(df > 0) && all(estimate >= 0 & estimate <= 1) &&
       all(p_value_raw >= 0 & p_value_raw <= 1) &&
-      all(p_value >= 0 & p_value <= 1) && all(conf_low <= conf_high) &&
+      all(p_value_adjusted >= 0 & p_value_adjusted <= 1) && all(conf_low <= conf_high) &&
       all(effect_size >= -1 & effect_size <= 1) &&
       all(effect_conf_low >= -1 & effect_conf_high <= 1) &&
       all(effect_conf_low <= effect_conf_high)
@@ -250,11 +196,12 @@ brunner_munzel_family <- function(
         "linear_transform_of_",
         vapply(pair_results, function(result) result$ci_method, character(1))
       ),
+      effect_ci_clamped = ci_clamped,
       statistic = statistic,
       statistic_type = rep("t", comparison_n),
       df = df,
-      p_value = unname(as.double(p_value)),
-      p_value_raw = p_value_raw,
+      p_value = p_value_raw,
+      p_value_adjusted = unname(as.double(p_value_adjusted)),
       p_adjust_method = rep(specification$p_adjust_method, comparison_n),
       conf_low = conf_low,
       conf_high = conf_high,
@@ -263,6 +210,7 @@ brunner_munzel_family <- function(
       ci_method = vapply(
         pair_results, function(result) result$ci_method, character(1)
       ),
+      ci_clamped = ci_clamped,
       inference = rep(specification$inference, comparison_n),
       variance_assumption = rep("not_assumed", comparison_n),
       exact_requested = rep(NA_character_, comparison_n),

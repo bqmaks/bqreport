@@ -26,53 +26,72 @@ permutation_control <- function(
   p_method = "plusone",
   seed = NULL
 ) {
-  if (
-    !is.numeric(iterations) || length(iterations) != 1L ||
-      is.na(iterations) || !is.finite(iterations) || iterations <= 0 ||
-      iterations != floor(iterations) || iterations > .Machine$integer.max
-  ) {
-    bq_abort(
-      "bq_error_invalid_permutation_control",
-      paste0(
-        "`iterations` must be one positive whole number no greater than ",
-        ".Machine$integer.max."
-      )
-    )
-  }
-
-  if (
-    !is.character(p_method) || length(p_method) != 1L ||
-      is.na(p_method) || !identical(p_method, "plusone")
-  ) {
-    bq_abort(
-      "bq_error_invalid_permutation_control",
-      "`p_method` must be \"plusone\" for random permutations."
-    )
-  }
-
-  if (
-    !is.null(seed) && (
-      !is.numeric(seed) || length(seed) != 1L || is.na(seed) ||
-        !is.finite(seed) || seed < 0 || seed != floor(seed) ||
-        seed > .Machine$integer.max
-    )
-  ) {
-    bq_abort(
-      "bq_error_invalid_permutation_control",
-      paste0(
-        "`seed` must be NULL or one non-negative whole number no greater ",
-        "than .Machine$integer.max."
-      )
-    )
+  class <- "bq_error_invalid_permutation_control"
+  iterations <- check_whole(iterations, "iterations", lower = 1, class = class)
+  check_choice(p_method, "p_method", "plusone", class = class)
+  if (!is.null(seed)) {
+    seed <- check_whole(seed, "seed", lower = 0, class = class)
   }
 
   structure(
     list(
       sampling = "random",
-      iterations = as.integer(iterations),
+      iterations = iterations,
       p_method = p_method,
-      seed = if (is.null(seed)) NULL else as.integer(seed)
+      seed = seed
     ),
     class = "bq_permutation_control"
   )
+}
+
+#' Require a permutation specification consistent with `inference`
+#'
+#' The specification is re-checked structurally for the same reason as in
+#' `check_bootstrap_control()`: it is plain data. Presence is tied to
+#' `inference` so that a declared permutation test cannot silently run without
+#' its configuration and an unused configuration cannot be carried along.
+#'
+#' @param permutation `NULL` or a `bq_permutation_control` object.
+#' @param inference `"analytical"` or `"permutation"`.
+#'
+#' @return `permutation`, invisibly.
+#' @noRd
+check_permutation_control <- function(permutation, inference) {
+  valid <- is.null(permutation) || (
+    identical(class(permutation), "bq_permutation_control") &&
+      identical(
+        names(permutation), c("sampling", "iterations", "p_method", "seed")
+      ) &&
+      identical(permutation$sampling, "random") &&
+      is.integer(permutation$iterations) &&
+      length(permutation$iterations) == 1L &&
+      !is.na(permutation$iterations) && permutation$iterations > 0L &&
+      identical(permutation$p_method, "plusone") &&
+      (is.null(permutation$seed) || (
+        is.integer(permutation$seed) && length(permutation$seed) == 1L &&
+          !is.na(permutation$seed) && permutation$seed >= 0L
+      ))
+  )
+  if (!valid) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      paste0(
+        "`permutation` must be NULL or a valid `permutation_control()` ",
+        "specification."
+      )
+    )
+  }
+  if (inference == "permutation" && is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` is required when `inference = \"permutation\"`."
+    )
+  }
+  if (inference != "permutation" && !is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL unless `inference = \"permutation\"`."
+    )
+  }
+  invisible(permutation)
 }

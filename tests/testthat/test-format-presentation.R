@@ -1,6 +1,6 @@
 formatted_example <- function(rounding = TRUE) {
   data <- as_bq_data(tibble::tibble(value = c(1.2, 3)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   if (rounding) {
     data <- set_rounding(data, value, 2, "decimal")
   }
@@ -71,7 +71,7 @@ test_that("format_presentation() can trim trailing fractional zeros", {
 
 test_that("format_presentation() formats component scales", {
   data <- as_bq_data(tibble::tibble(value = c(1, 3)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 1, "decimal")
   statistic <- continuous_statistic(
     "summary",
@@ -118,7 +118,7 @@ test_that("format_presentation() formats component scales", {
 
 test_that("format_presentation() normalizes negative zero", {
   data <- as_bq_data(tibble::tibble(value = -0.001))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 2, "decimal")
   statistic <- continuous_statistic(
     "value",
@@ -155,8 +155,8 @@ test_that("format_presentation() records missing and empty status text", {
     value = c(NA_real_, 1),
     stratum = factor(c("A", "B"), levels = c("A", "B", "C"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, stratum, nominal("A"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, stratum, type_nominal("A"))
   data <- set_rounding(data, value, 1)
   statistic <- continuous_statistic(
     "mean",

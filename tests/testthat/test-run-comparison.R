@@ -9,7 +9,10 @@ test_that("run_comparison() runs two-group analyses from vectors", {
     mann_whitney_test(), outcome, group, reference = "control"
   )
 
-  expect_named(t_result, c("tests", "estimates", "sample_flow"))
+  expect_named(t_result, c("analysis", "specification", "tests", "estimates", "sample_flow"))
+  expect_s3_class(t_result, "bq_result_comparison")
+  expect_identical(t_result$analysis, "comparison")
+  expect_identical(t_result$specification, attr(t_test(), "specification"))
   expect_equal(
     t_result$tests$statistic,
     unname(stats::t.test(outcome[group == "new"], outcome[group == "control"])$statistic),
@@ -135,6 +138,6 @@ test_that("run_comparison() supports Brunner-Munzel without package data objects
     reference = "control"
   )
 
-  expect_named(result, c("tests", "estimates", "sample_flow"))
+  expect_named(result, c("analysis", "specification", "tests", "estimates", "sample_flow"))
   expect_identical(result$tests$test, "brunner_munzel")
 })

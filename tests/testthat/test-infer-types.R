@@ -42,7 +42,7 @@ test_that("infer_types() expands an inferred ordinal order", {
 
 test_that("infer_types() does not overwrite an existing type decision", {
   data <- as_bq_data(tibble::tibble(group = c("alpha", "zeta"), age = c(40, 55)))
-  data <- set_type(data, group, nominal("alpha"))
+  data <- set_type(data, group, type_nominal("alpha"))
   before <- variables_of(data)[1, ]
 
   result <- infer_types(data)

@@ -3,8 +3,8 @@ compose_table_example <- function() {
     value = c(NA_real_, 1.2, 3),
     stratum = factor(c("A", "B", "B"), levels = c("A", "B", "C"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, stratum, nominal("A"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, stratum, type_nominal("A"))
   data <- set_unit(data, value, "mg")
   data <- set_rounding(data, value, 1)
   data <- apply_dictionary(
@@ -105,7 +105,7 @@ test_that("compose_table() keeps statuses outside the body", {
 
 test_that("compose_table() substitutes named summary formats", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2, 3)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 1)
   data <- set_summary_format(
     data,
@@ -151,7 +151,7 @@ test_that("compose_table() substitutes named summary formats", {
 
 test_that("compose_table() omits statistics replaced by enumeration", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 0)
   data <- set_summary_format(data, value, c("Mean" = "{mean}"))
   statistic <- continuous_statistic(
@@ -171,7 +171,7 @@ test_that("compose_table() omits statistics replaced by enumeration", {
 
 test_that("compose_table() retains an unnamed summary format", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 0)
   data <- set_summary_format(data, value, "{mean}")
   statistic <- continuous_statistic(
@@ -196,9 +196,9 @@ test_that("compose_table() identifies group, strata and Overall headers", {
     treatment = factor(c("A", "B"), levels = c("A", "B")),
     centre = factor(c("X", "Y"), levels = c("X", "Y"))
   ))
-  data <- set_type(data, value, continuous())
-  data <- set_type(data, treatment, binary("B"))
-  data <- set_type(data, centre, nominal("X"))
+  data <- set_type(data, value, type_continuous())
+  data <- set_type(data, treatment, type_binary("B"))
+  data <- set_type(data, centre, type_nominal("X"))
   data <- set_rounding(data, value, 0)
   statistic <- continuous_statistic(
     "mean",
@@ -247,7 +247,7 @@ test_that("compose_table() identifies group, strata and Overall headers", {
 
 test_that("compose_table() supports a table without design axes", {
   data <- as_bq_data(tibble::tibble(value = c(1, 2)))
-  data <- set_type(data, value, continuous())
+  data <- set_type(data, value, type_continuous())
   data <- set_rounding(data, value, 0)
   statistic <- continuous_statistic(
     "mean",
