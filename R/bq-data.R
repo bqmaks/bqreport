@@ -1,16 +1,17 @@
-#' Analysis data with a variable registry
+#' Analysis data with analytic metadata
 #'
 #' `as_bq_data()` turns a data frame into a `bq_data` object. The data itself
-#' stays an ordinary tibble; a registry of per-column analytic properties is
-#' attached next to it and carried along through the analysis.
+#' stays an ordinary tibble; metadata registries are attached next to it and
+#' carried along through the analysis.
 #'
 #' The registry starts out empty: every column gets a stable `var_id` and its
-#' current `name`, while `label`, `role` and `type` are `NA` until they are
-#' set explicitly or inferred.
+#' current `name`, while analytic properties are `NA` until they are set
+#' explicitly or inferred.
 #'
 #' @param data A data frame or tibble.
 #'
-#' @return A `bq_data` object: a tibble with a `variables` attribute.
+#' @return A `bq_data` object: a tibble with variable, level and summary format
+#'   registries.
 #' @export
 #' @examples
 #' as_bq_data(data.frame(age = c(40, 55), sex = c("f", "m")))
@@ -30,7 +31,13 @@ as_bq_data <- function(data) {
   # relies on to address columns by name.
   data <- tibble::as_tibble(data)
 
-  new_bq_data(data, new_variable_registry(names(data)))
+  new_bq_data(
+    data,
+    new_variable_registry(names(data)),
+    new_level_registry(),
+    new_summary_format_registry(),
+    length(names(data)) + 1L
+  )
 }
 
 #' Build a bq_data object from its parts
@@ -44,13 +51,26 @@ as_bq_data <- function(data) {
 #'
 #' @param data A data frame.
 #' @param variables A variable registry tibble.
+#' @param levels A level registry tibble.
+#' @param summary_formats A summary format registry tibble.
+#' @param next_var_number Next number that may be issued as a variable
+#'   identifier.
 #'
 #' @return A `bq_data` object.
 #' @noRd
-new_bq_data <- function(data, variables) {
+new_bq_data <- function(
+  data,
+  variables,
+  levels,
+  summary_formats,
+  next_var_number
+) {
   tibble::new_tibble(
     data,
     variables = variables,
+    levels = levels,
+    summary_formats = summary_formats,
+    next_var_number = next_var_number,
     nrow = nrow(data),
     class = "bq_data"
   )
@@ -72,6 +92,44 @@ new_variable_registry <- function(names) {
     name = names,
     label = NA_character_,
     role = NA_character_,
-    type = NA_character_
+    type = NA_character_,
+    event = NA_character_,
+    event_source = NA_character_,
+    reference = NA_character_,
+    type_source = NA_character_,
+    unit = NA_character_,
+    rounding = NA_character_,
+    digits = NA_integer_
+  )
+}
+
+#' Build an empty level registry
+#'
+#' Levels live in a separate long table because a variable can have more than
+#' one level while the variable registry must remain one flat row per column.
+#'
+#' @return A tibble with no rows and the level registry columns.
+#' @noRd
+new_level_registry <- function() {
+  tibble::tibble(
+    var_id = character(),
+    value = character(),
+    position = integer()
+  )
+}
+
+#' Build an empty summary format registry
+#'
+#' Summary formats use a separate long table because one variable can have
+#' multiple ordered presentation templates.
+#'
+#' @return A tibble with no rows and the summary format registry columns.
+#' @noRd
+new_summary_format_registry <- function() {
+  tibble::tibble(
+    var_id = character(),
+    format_name = character(),
+    template = character(),
+    position = integer()
   )
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/dplyr-methods.R
 \name{as_tibble.bq_data}
 \alias{as_tibble.bq_data}
-\title{Drop the registry and return a plain tibble}
+\title{Drop analytic metadata and return a plain tibble}
 \usage{
 \method{as_tibble}{bq_data}(x, ...)
 }
@@ -15,5 +15,5 @@
 A tibble.
 }
 \description{
-Drop the registry and return a plain tibble
+Drop analytic metadata and return a plain tibble
 }

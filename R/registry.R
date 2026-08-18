@@ -11,10 +11,12 @@
 #'
 #' @param variables The registry to align.
 #' @param names Character vector of the new column names, in column order.
+#' @param next_var_number Next number that has never been issued for this
+#'   `bq_data` lineage.
 #'
-#' @return A registry with one row per element of `names`.
+#' @return A list containing the aligned registry and the next unused number.
 #' @noRd
-reconcile_variables <- function(variables, names) {
+reconcile_variables <- function(variables, names, next_var_number) {
   position <- match(names, variables$name)
 
   # Unmatched names index an all-NA row, which is exactly the blank record a
@@ -23,9 +25,34 @@ reconcile_variables <- function(variables, names) {
   out$name <- names
 
   fresh <- is.na(position)
-  out$var_id[fresh] <- next_var_ids(variables$var_id, sum(fresh))
+  out$var_id[fresh] <- next_var_ids(next_var_number, sum(fresh))
 
-  out
+  list(
+    variables = out,
+    next_var_number = next_var_number + sum(fresh)
+  )
+}
+
+#' Remove levels whose variables no longer exist
+#'
+#' @param levels The level registry.
+#' @param var_ids Identifiers present in the reconciled variable registry.
+#'
+#' @return A level registry containing only existing variables.
+#' @noRd
+reconcile_levels <- function(levels, var_ids) {
+  levels[levels$var_id %in% var_ids, ]
+}
+
+#' Remove summary formats whose variables no longer exist
+#'
+#' @param summary_formats The summary format registry.
+#' @param var_ids Identifiers present in the reconciled variable registry.
+#'
+#' @return A summary format registry containing only existing variables.
+#' @noRd
+reconcile_summary_formats <- function(summary_formats, var_ids) {
+  summary_formats[summary_formats$var_id %in% var_ids, ]
 }
 
 #' Generate identifiers that no existing column uses
@@ -33,19 +60,15 @@ reconcile_variables <- function(variables, names) {
 #' Numbering continues past the highest id ever issued for this object rather
 #' than filling gaps, so an id is never silently reused by a different column.
 #'
-#' @param existing Character vector of identifiers already in the registry.
+#' @param start First number that has never been issued.
 #' @param n Number of new identifiers required.
 #'
 #' @return Character vector of length `n`.
 #' @noRd
-next_var_ids <- function(existing, n) {
+next_var_ids <- function(start, n) {
   if (n == 0L) {
     return(character(0))
   }
-
-  numbered <- grepl("^v[0-9]+$", existing)
-  used <- as.integer(sub("^v", "", existing[numbered]))
-  start <- if (length(used) > 0L) max(used) + 1L else 1L
 
   sprintf("v%03d", seq.int(start, length.out = n))
 }

@@ -66,6 +66,15 @@ test_that("too many categories stay unknown", {
   expect_identical(infer_type(letters[1:5], max_levels = 3L), "unknown")
 })
 
+test_that("max_levels must be one positive whole number", {
+  for (max_levels in list(NA_integer_, -1L, 0L, 1.5, c(2L, 3L), "2")) {
+    expect_error(
+      infer_type(letters[1:3], max_levels = max_levels),
+      class = "bq_error_invalid_inference"
+    )
+  }
+})
+
 test_that("dates are recognised before their numeric payload", {
   expect_identical(infer_type(as.Date(c("2026-01-01", "2026-02-01"))), "date")
   expect_identical(
@@ -84,4 +93,72 @@ test_that("columns without observations are unknown", {
 test_that("anything else is unknown", {
   expect_identical(infer_type(list(1, "a")), "unknown")
   expect_identical(infer_type(complex(real = 1, imaginary = 1)), "unknown")
+})
+
+test_that("known binary codings infer their event", {
+  for (x in list(
+    c(TRUE, FALSE),
+    c(0, 1),
+    c("0", "1"),
+    factor(c("0", "1"))
+  )) {
+    metadata <- infer_type_metadata(x)
+    expect_identical(metadata$event, if (is.logical(x)) "TRUE" else "1")
+    expect_identical(metadata$event_source, "inferred")
+  }
+
+  for (x in list(c("FALSE", "TRUE"), factor(c("FALSE", "TRUE")))) {
+    metadata <- infer_type_metadata(x)
+    expect_identical(metadata$event, "TRUE")
+    expect_identical(metadata$event_source, "inferred")
+  }
+})
+
+test_that("known binary codings infer the potential event when it is unobserved", {
+  expect_identical(infer_type_metadata(FALSE)$event, "TRUE")
+  expect_identical(infer_type_metadata(0)$event, "1")
+  expect_identical(infer_type_metadata("0")$event, "1")
+  expect_identical(infer_type_metadata("FALSE")$event, "TRUE")
+})
+
+test_that("an arbitrary factor uses its second declared level as the default event", {
+  x <- factor("control", levels = c("case", "control"))
+  metadata <- infer_type_metadata(x)
+
+  expect_identical(metadata$type, "binary")
+  expect_identical(metadata$event, "control")
+  expect_identical(metadata$event_source, "default")
+})
+
+test_that("an arbitrary character binary uses lexical order for its default event", {
+  forward <- infer_type_metadata(c("alpha", "zeta"))
+  reversed <- infer_type_metadata(c("zeta", "alpha"))
+
+  expect_identical(forward$event, "zeta")
+  expect_identical(reversed$event, "zeta")
+  expect_identical(forward$event_source, "default")
+  expect_identical(reversed$event_source, "default")
+})
+
+test_that("ordinal inference carries the declared level order", {
+  x <- ordered("medium", levels = c("low", "medium", "high"))
+  metadata <- infer_type_metadata(x)
+
+  expect_identical(
+    metadata,
+    list(
+      type = "ordinal",
+      event = NA_character_,
+      event_source = NA_character_,
+      levels = c("low", "medium", "high")
+    )
+  )
+})
+
+test_that("non-binary inference does not propose an event", {
+  for (x in list(c(1, 2, 3), c("a", "b", "c"), as.Date("2026-01-01"))) {
+    metadata <- infer_type_metadata(x)
+    expect_identical(metadata$event, NA_character_)
+    expect_identical(metadata$event_source, NA_character_)
+  }
 })

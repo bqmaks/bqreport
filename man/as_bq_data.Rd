@@ -2,7 +2,7 @@
 % Please edit documentation in R/bq-data.R
 \name{as_bq_data}
 \alias{as_bq_data}
-\title{Analysis data with a variable registry}
+\title{Analysis data with analytic metadata}
 \usage{
 as_bq_data(data)
 }
@@ -10,17 +10,18 @@ as_bq_data(data)
 \item{data}{A data frame or tibble.}
 }
 \value{
-A \code{bq_data} object: a tibble with a \code{variables} attribute.
+A \code{bq_data} object: a tibble with variable, level and summary format
+registries.
 }
 \description{
 \code{as_bq_data()} turns a data frame into a \code{bq_data} object. The data itself
-stays an ordinary tibble; a registry of per-column analytic properties is
-attached next to it and carried along through the analysis.
+stays an ordinary tibble; metadata registries are attached next to it and
+carried along through the analysis.
 }
 \details{
 The registry starts out empty: every column gets a stable \code{var_id} and its
-current \code{name}, while \code{label}, \code{role} and \code{type} are \code{NA} until they are
-set explicitly or inferred.
+current \code{name}, while analytic properties are \code{NA} until they are set
+explicitly or inferred.
 }
 \examples{
 as_bq_data(data.frame(age = c(40, 55), sex = c("f", "m")))
