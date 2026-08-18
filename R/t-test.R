@@ -21,6 +21,14 @@
 #' @param effect_size Effect size to report. One of `"none"`, `"cohens_d"`
 #'   and `"hedges_g"`. Student's test uses a pooled standard deviation and
 #'   Welch's test uses an unpooled standard deviation.
+#' @param inference `"analytical"` for the usual t distribution or
+#'   `"permutation"` for a studentized randomization test.
+#' @param permutation A [permutation_control()] specification when
+#'   `inference = "permutation"`; otherwise `NULL`.
+#' @param bootstrap `NULL` for the test-engine interval or a
+#'   [bootstrap_control()] specification for ordinary or fractional weighted
+#'   bootstrap intervals around the mean difference and any requested effect
+#'   size.
 #' @param conf_level Confidence level for the mean-difference interval. Must be
 #'   one finite number strictly between zero and one.
 #'
@@ -40,6 +48,9 @@ t_test <- function(
   margin = NULL,
   benefit = NULL,
   effect_size = "none",
+  inference = "analytical",
+  permutation = NULL,
+  bootstrap = NULL,
   conf_level = 0.95
 ) {
   if (
@@ -48,6 +59,113 @@ t_test <- function(
     bq_abort(
       "bq_error_invalid_analysis_function",
       "`var_equal` must be either TRUE or FALSE."
+    )
+  }
+  valid_bootstrap <- is.null(bootstrap) || (
+    identical(class(bootstrap), "bq_bootstrap_control") &&
+      identical(
+        names(bootstrap),
+        c("method", "engine", "iterations", "conf_type", "seed", "weight_type")
+      ) &&
+      is.character(bootstrap$method) && length(bootstrap$method) == 1L &&
+      !is.na(bootstrap$method) &&
+      bootstrap$method %in% c("ordinary", "fractional") &&
+      identical(
+        bootstrap$engine,
+        if (identical(bootstrap$method, "ordinary")) "boot" else "fwb"
+      ) &&
+      is.integer(bootstrap$iterations) && length(bootstrap$iterations) == 1L &&
+      !is.na(bootstrap$iterations) && bootstrap$iterations > 0L &&
+      is.character(bootstrap$conf_type) && length(bootstrap$conf_type) == 1L &&
+      !is.na(bootstrap$conf_type) &&
+      bootstrap$conf_type %in% c("bca", "percentile", "basic") &&
+      (is.null(bootstrap$seed) || (
+        is.integer(bootstrap$seed) && length(bootstrap$seed) == 1L &&
+          !is.na(bootstrap$seed) && bootstrap$seed >= 0L
+      )) &&
+      if (identical(bootstrap$method, "ordinary")) {
+        is.null(bootstrap$weight_type)
+      } else {
+        identical(bootstrap$weight_type, "exponential")
+      }
+  )
+  if (!valid_bootstrap) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      paste0(
+        "`bootstrap` must be NULL or a valid specification from ",
+        "`bootstrap_control()`."
+      )
+    )
+  }
+  if (
+    !is.null(bootstrap) && bootstrap$method == "ordinary" &&
+      !requireNamespace("boot", quietly = TRUE)
+  ) {
+    bq_abort(
+      "bq_error_missing_dependency",
+      "Ordinary bootstrap requires the suggested package `boot`."
+    )
+  }
+  if (
+    !is.null(bootstrap) && bootstrap$method == "fractional" &&
+      !requireNamespace("fwb", quietly = TRUE)
+  ) {
+    bq_abort(
+      "bq_error_missing_dependency",
+      "Fractional weighted bootstrap requires the suggested package `fwb`."
+    )
+  }
+
+  if (
+    !is.character(inference) || length(inference) != 1L || is.na(inference) ||
+      !inference %in% c("analytical", "permutation")
+  ) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`inference` must be either \"analytical\" or \"permutation\"."
+    )
+  }
+  valid_permutation <- is.null(permutation) || (
+    identical(class(permutation), "bq_permutation_control") &&
+      identical(
+        names(permutation), c("sampling", "iterations", "p_method", "seed")
+      ) &&
+      identical(permutation$sampling, "random") &&
+      is.integer(permutation$iterations) && length(permutation$iterations) == 1L &&
+      !is.na(permutation$iterations) && permutation$iterations > 0L &&
+      identical(permutation$p_method, "plusone") &&
+      (is.null(permutation$seed) || (
+        is.integer(permutation$seed) && length(permutation$seed) == 1L &&
+          !is.na(permutation$seed) && permutation$seed >= 0L
+      ))
+  )
+  if (!valid_permutation) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL or a valid `permutation_control()` specification."
+    )
+  }
+  if (inference == "permutation" && is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` is required when `inference = \"permutation\"`."
+    )
+  }
+  if (inference != "permutation" && !is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL unless `inference = \"permutation\"`."
+    )
+  }
+  if (
+    inference == "permutation" &&
+      (!requireNamespace("TOSTER", quietly = TRUE) ||
+        utils::packageVersion("TOSTER") < "0.9.0")
+  ) {
+    bq_abort(
+      "bq_error_missing_dependency",
+      "Permutation t-tests require the suggested package `TOSTER` 0.9.0 or later."
     )
   }
 
@@ -194,6 +312,9 @@ t_test <- function(
     margin_upper = margin_upper,
     benefit = if (is.null(benefit)) NA_character_ else benefit,
     effect_size = effect_size,
+    inference = inference,
+    permutation = permutation,
+    bootstrap = bootstrap,
     conf_level = as.double(conf_level)
   )
   supplied_results <- "test"
@@ -201,6 +322,14 @@ t_test <- function(
   if (effect_size != "none") {
     supplied_results <- c(supplied_results, "effect_size")
     suggested_dependencies <- "effectsize"
+  }
+  if (inference == "permutation") {
+    suggested_dependencies <- unique(c(
+      suggested_dependencies, "TOSTER (>= 0.9.0)"
+    ))
+  }
+  if (!is.null(bootstrap)) {
+    suggested_dependencies <- unique(c(suggested_dependencies, "boot"))
   }
   capabilities <- list(
     outcome_types = "continuous",
@@ -415,7 +544,70 @@ t_test <- function(
     test_comparison <- benefit_sign * comparison
     test_reference <- benefit_sign * reference
 
-    test_results <- tryCatch(
+    permutation_result <- NULL
+    if (specification$inference == "permutation") {
+      possible_partitions <- choose(
+        length(comparison) + length(reference), length(comparison)
+      )
+      if (specification$permutation$iterations >= possible_partitions) {
+        bq_abort(
+          "bq_error_analysis_runtime",
+          paste0(
+            "The requested number of random permutations reaches all ",
+            "possible group partitions; reduce `iterations` because exact ",
+            "enumeration is not part of `permutation_control()`."
+          ),
+          analysis_id = context$analysis_id
+        )
+      }
+      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      if (seed_exists) {
+        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      }
+      if (!is.null(specification$permutation$seed)) {
+        on.exit({
+          if (seed_exists) {
+            assign(".Random.seed", previous_seed, envir = .GlobalEnv)
+          } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+            rm(".Random.seed", envir = .GlobalEnv)
+          }
+        }, add = TRUE)
+        set.seed(specification$permutation$seed)
+      }
+      alternative <- if (specification$hypothesis == "two_sided") {
+        "two.sided"
+      } else if (specification$hypothesis == "equivalence") {
+        "equivalence"
+      } else {
+        "greater"
+      }
+      null_value <- if (specification$hypothesis == "equivalence") {
+        c(specification$margin_lower, specification$margin_upper)
+      } else if (specification$hypothesis %in% c("noninferiority", "superiority")) {
+        specification$margin_lower
+      } else {
+        0
+      }
+      permutation_result <- tryCatch(
+        suppressMessages(TOSTER::perm_t_test(
+          test_comparison, test_reference, alternative = alternative,
+          mu = null_value, var.equal = specification$var_equal,
+          alpha = 1 - specification$conf_level,
+          R = specification$permutation$iterations,
+          p_method = specification$permutation$p_method,
+          keep_perm = FALSE
+        )),
+        error = function(error) {
+          bq_abort(
+            "bq_error_analysis_runtime",
+            paste0("Permutation `t_test()` failed: ", conditionMessage(error)),
+            analysis_id = context$analysis_id
+          )
+        }
+      )
+    }
+
+    test_results <- if (specification$inference == "permutation") NULL else tryCatch(
       if (specification$hypothesis == "two_sided") {
         list(
           primary = stats::t.test(
@@ -471,7 +663,25 @@ t_test <- function(
       }
     )
 
-    if (specification$hypothesis == "equivalence") {
+    if (specification$inference == "permutation") {
+      directional <- specification$hypothesis %in% c(
+        "noninferiority", "superiority"
+      )
+      estimate <- if (directional) benefit_sign * raw_estimate else raw_estimate
+      benefit_estimate <- if (directional) estimate else NA_real_
+      std_error <- unname(as.double(permutation_result$stderr))
+      statistic <- unname(as.double(permutation_result$statistic))
+      statistic_lower <- statistic_upper <- NA_real_
+      df <- unname(as.double(permutation_result$parameter))
+      p_value <- unname(as.double(permutation_result$p.value))
+      p_lower <- if (directional) p_value else NA_real_
+      p_upper <- NA_real_
+      conf_low <- unname(as.double(permutation_result$conf.int[1L]))
+      conf_high <- unname(as.double(permutation_result$conf.int[2L]))
+      interval_conf_level <- unname(as.double(
+        attr(permutation_result$conf.int, "conf.level")
+      ))
+    } else if (specification$hypothesis == "equivalence") {
       estimate <- raw_estimate
       benefit_estimate <- NA_real_
       std_error <- unname(as.double(test_results$lower$stderr))
@@ -505,11 +715,208 @@ t_test <- function(
       interval_conf_level <- specification$conf_level
     }
 
+    test_ci_method <- if (specification$inference == "permutation") {
+      "TOSTER_permutation"
+    } else {
+      "t_distribution"
+    }
+    bootstrap_iterations_valid <- NA_integer_
+    bootstrap_effect_std_error <- NA_real_
+    bootstrap_effect_conf_low <- bootstrap_effect_conf_high <- NA_real_
+    if (!is.null(specification$bootstrap)) {
+      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      if (seed_exists) {
+        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      }
+      if (!is.null(specification$bootstrap$seed)) {
+        if (
+          specification$inference != "permutation" ||
+            is.null(specification$permutation$seed)
+        ) {
+          on.exit({
+            if (seed_exists) {
+              assign(".Random.seed", previous_seed, envir = .GlobalEnv)
+            } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+              rm(".Random.seed", envir = .GlobalEnv)
+            }
+          }, add = TRUE)
+        }
+        set.seed(specification$bootstrap$seed)
+      }
+      bootstrap_data <- data.frame(
+        outcome = c(comparison, reference),
+        group = factor(
+          c(rep("comparison", length(comparison)), rep("reference", length(reference))),
+          levels = c("comparison", "reference")
+        )
+      )
+      weighted_statistics <- function(x, y, x_weights, y_weights) {
+        x_weights <- x_weights / sum(x_weights)
+        y_weights <- y_weights / sum(y_weights)
+        x_mean <- sum(x_weights * x)
+        y_mean <- sum(y_weights * y)
+        difference <- x_mean - y_mean
+        reported_difference <- if (benefit_sign < 0) -difference else difference
+        if (specification$effect_size == "none") return(reported_difference)
+        s1_squared <- sum(x_weights * (x - x_mean)^2) *
+          length(x) / (length(x) - 1)
+        s2_squared <- sum(y_weights * (y - y_mean)^2) *
+          length(y) / (length(y) - 1)
+        if (specification$var_equal) {
+          effect_sd <- sqrt(
+            ((length(x) - 1) * s1_squared +
+              (length(y) - 1) * s2_squared) /
+              (length(x) + length(y) - 2)
+          )
+          effect_df <- length(x) + length(y) - 2
+        } else {
+          effect_sd <- sqrt((s1_squared + s2_squared) / 2)
+          se1_squared <- s1_squared / length(x)
+          se2_squared <- s2_squared / length(y)
+          effect_df <- (se1_squared + se2_squared)^2 /
+            (se1_squared^2 / (length(x) - 1) +
+              se2_squared^2 / (length(y) - 1))
+        }
+        effect <- difference / effect_sd
+        if (specification$effect_size == "hedges_g") {
+          correction <- exp(
+            lgamma(effect_df / 2) - log(sqrt(effect_df / 2)) -
+              lgamma((effect_df - 1) / 2)
+          )
+          effect <- effect * correction
+        }
+        c(reported_difference, effect)
+      }
+      if (specification$bootstrap$method == "ordinary") {
+        ordinary_statistic <- function(bootstrap_data, indices) {
+          sampled <- bootstrap_data[indices, , drop = FALSE]
+          comparison_rows <- sampled$group == "comparison"
+          x <- sampled$outcome[comparison_rows]
+          y <- sampled$outcome[!comparison_rows]
+          weighted_statistics(x, y, rep(1, length(x)), rep(1, length(y)))
+        }
+        bootstrap_result <- tryCatch(
+          boot::boot(
+            bootstrap_data, ordinary_statistic,
+            R = specification$bootstrap$iterations,
+            sim = "ordinary", stype = "i", strata = bootstrap_data$group
+          ),
+          error = function(error) {
+            bq_abort(
+              "bq_error_analysis_runtime",
+              paste0("Ordinary bootstrap for `t_test()` failed: ", conditionMessage(error)),
+              analysis_id = context$analysis_id
+            )
+          }
+        )
+      } else {
+        fractional_statistic <- function(bootstrap_data, weights) {
+          comparison_rows <- bootstrap_data$group == "comparison"
+          weighted_statistics(
+            bootstrap_data$outcome[comparison_rows],
+            bootstrap_data$outcome[!comparison_rows],
+            weights[comparison_rows], weights[!comparison_rows]
+          )
+        }
+        bootstrap_result <- tryCatch(
+          fwb::fwb(
+            bootstrap_data, fractional_statistic,
+            R = specification$bootstrap$iterations,
+            wtype = "exp", verbose = FALSE
+          ),
+          error = function(error) {
+            bq_abort(
+              "bq_error_analysis_runtime",
+              paste0("Fractional weighted bootstrap for `t_test()` failed: ", conditionMessage(error)),
+              analysis_id = context$analysis_id
+            )
+          }
+        )
+      }
+      bootstrap_values <- as.matrix(bootstrap_result$t)
+      bootstrap_iterations_valid <- as.integer(sum(apply(
+        bootstrap_values, 1L, function(values) all(is.finite(values))
+      )))
+      if (bootstrap_iterations_valid < 2L) {
+        bq_abort(
+          "bq_error_analysis_runtime",
+          "Bootstrap produced fewer than two finite estimates.",
+          analysis_id = context$analysis_id
+        )
+      }
+      bootstrap_ci_type <- switch(
+        specification$bootstrap$conf_type,
+        bca = "bca", percentile = "perc", basic = "basic"
+      )
+      extract_interval <- function(index) {
+        if (specification$bootstrap$method == "ordinary") {
+          interval <- boot::boot.ci(
+            bootstrap_result, conf = specification$conf_level,
+            type = bootstrap_ci_type, index = index
+          )
+          values <- switch(
+            specification$bootstrap$conf_type,
+            bca = interval$bca, percentile = interval$percent,
+            basic = interval$basic
+          )
+          if (is.null(values) || anyNA(values[1L, 4:5])) {
+            stop("the requested interval could not be computed")
+          }
+          as.double(values[1L, 4:5])
+        } else {
+          interval <- fwb::fwb.ci(
+            bootstrap_result, conf = specification$conf_level,
+            type = bootstrap_ci_type, index = index
+          )
+          values <- fwb::get_ci(
+            interval, type = bootstrap_ci_type
+          )[[bootstrap_ci_type]]
+          if (length(values) != 2L || anyNA(values)) {
+            stop("the requested interval could not be computed")
+          }
+          unname(as.double(values))
+        }
+      }
+      intervals <- tryCatch(
+        lapply(seq_len(ncol(bootstrap_values)), extract_interval),
+        error = function(error) {
+          bq_abort(
+            "bq_error_analysis_runtime",
+            paste0("Bootstrap interval failed: ", conditionMessage(error)),
+            analysis_id = context$analysis_id
+          )
+        }
+      )
+      std_error <- stats::sd(bootstrap_values[, 1L], na.rm = TRUE)
+      conf_low <- intervals[[1L]][1L]
+      conf_high <- intervals[[1L]][2L]
+      interval_conf_level <- specification$conf_level
+      test_ci_method <- paste0(
+        if (specification$bootstrap$method == "fractional") {
+          "fractional_bootstrap_"
+        } else {
+          "bootstrap_"
+        },
+        specification$bootstrap$conf_type
+      )
+      if (specification$effect_size != "none") {
+        bootstrap_effect_std_error <- stats::sd(
+          bootstrap_values[, 2L], na.rm = TRUE
+        )
+        bootstrap_effect_conf_low <- intervals[[2L]][1L]
+        bootstrap_effect_conf_high <- intervals[[2L]][2L]
+      }
+    }
+
     tests <- tibble::tibble(
       test_id = context$test_id,
       analysis_id = context$analysis_id,
       outcome_var_id = context$outcome_var_id,
-      test = if (specification$var_equal) "student_t_test" else "welch_t_test",
+      test = paste0(
+        if (specification$var_equal) "student" else "welch",
+        if (specification$inference == "permutation") "_permutation" else "",
+        "_t_test"
+      ),
       reference_value = context$reference_value,
       comparison_value = comparison_value,
       hypothesis = specification$hypothesis,
@@ -530,7 +937,39 @@ t_test <- function(
       p_lower = p_lower,
       p_upper = p_upper,
       requested_conf_level = specification$conf_level,
-      interval_conf_level = interval_conf_level
+      interval_conf_level = interval_conf_level,
+      ci_method = test_ci_method,
+      bootstrap_method = if (is.null(specification$bootstrap)) NA_character_ else
+        specification$bootstrap$method,
+      bootstrap_engine = if (is.null(specification$bootstrap)) NA_character_ else
+        specification$bootstrap$engine,
+      bootstrap_weight_type = if (
+        is.null(specification$bootstrap) ||
+          specification$bootstrap$method == "ordinary"
+      ) NA_character_ else specification$bootstrap$weight_type,
+      bootstrap_iterations_requested = if (is.null(specification$bootstrap)) NA_integer_ else
+        specification$bootstrap$iterations,
+      bootstrap_iterations_valid = bootstrap_iterations_valid,
+      bootstrap_seed = if (
+        is.null(specification$bootstrap) || is.null(specification$bootstrap$seed)
+      ) NA_integer_ else specification$bootstrap$seed,
+      inference = specification$inference,
+      permutation_sampling = if (specification$inference == "permutation") {
+        specification$permutation$sampling
+      } else NA_character_,
+      permutation_p_method = if (specification$inference == "permutation") {
+        specification$permutation$p_method
+      } else NA_character_,
+      permutation_iterations_requested = if (
+        specification$inference == "permutation"
+      ) specification$permutation$iterations else NA_integer_,
+      permutation_iterations_performed = if (
+        specification$inference == "permutation"
+      ) as.integer(permutation_result$R.used) else NA_integer_,
+      permutation_seed = if (
+        specification$inference == "permutation" &&
+          !is.null(specification$permutation$seed)
+      ) specification$permutation$seed else NA_integer_
     )
     if (specification$effect_size == "none") {
       estimates <- tibble::tibble(
@@ -545,7 +984,11 @@ t_test <- function(
         std_error = double(),
         conf_low = double(),
         conf_high = double(),
-        ci_method = character()
+        ci_method = character(),
+        bootstrap_method = character(), bootstrap_engine = character(),
+        bootstrap_weight_type = character(),
+        bootstrap_iterations_requested = integer(),
+        bootstrap_iterations_valid = integer(), bootstrap_seed = integer()
       )
     } else {
       effect_result <- tryCatch(
@@ -588,10 +1031,40 @@ t_test <- function(
         comparison_value = comparison_value,
         standardizer = if (specification$var_equal) "pooled_sd" else "unpooled_sd",
         estimate = unname(as.double(effect_result[[effect_column]])),
-        std_error = NA_real_,
-        conf_low = unname(as.double(effect_result$CI_low)),
-        conf_high = unname(as.double(effect_result$CI_high)),
-        ci_method = "noncentral_t"
+        std_error = if (is.null(specification$bootstrap)) NA_real_ else
+          bootstrap_effect_std_error,
+        conf_low = if (is.null(specification$bootstrap)) {
+          unname(as.double(effect_result$CI_low))
+        } else bootstrap_effect_conf_low,
+        conf_high = if (is.null(specification$bootstrap)) {
+          unname(as.double(effect_result$CI_high))
+        } else bootstrap_effect_conf_high,
+        ci_method = if (is.null(specification$bootstrap)) {
+          "noncentral_t"
+        } else {
+          paste0(
+            if (specification$bootstrap$method == "fractional") {
+              "fractional_bootstrap_"
+            } else {
+              "bootstrap_"
+            },
+            specification$bootstrap$conf_type
+          )
+        },
+        bootstrap_method = if (is.null(specification$bootstrap)) NA_character_ else
+          specification$bootstrap$method,
+        bootstrap_engine = if (is.null(specification$bootstrap)) NA_character_ else
+          specification$bootstrap$engine,
+        bootstrap_weight_type = if (
+          is.null(specification$bootstrap) ||
+            specification$bootstrap$method == "ordinary"
+        ) NA_character_ else specification$bootstrap$weight_type,
+        bootstrap_iterations_requested = if (is.null(specification$bootstrap)) NA_integer_ else
+          specification$bootstrap$iterations,
+        bootstrap_iterations_valid = bootstrap_iterations_valid,
+        bootstrap_seed = if (
+          is.null(specification$bootstrap) || is.null(specification$bootstrap$seed)
+        ) NA_integer_ else specification$bootstrap$seed
       )
     }
     sample_flow <- tibble::tibble(

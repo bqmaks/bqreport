@@ -10,6 +10,9 @@ t_test(
   margin = NULL,
   benefit = NULL,
   effect_size = "none",
+  inference = "analytical",
+  permutation = NULL,
+  bootstrap = NULL,
   conf_level = 0.95
 )
 }
@@ -32,6 +35,17 @@ equivalence tests.}
 \item{effect_size}{Effect size to report. One of \code{"none"}, \code{"cohens_d"}
 and \code{"hedges_g"}. Student's test uses a pooled standard deviation and
 Welch's test uses an unpooled standard deviation.}
+
+\item{inference}{\code{"analytical"} for the usual t distribution or
+\code{"permutation"} for a studentized randomization test.}
+
+\item{permutation}{A \code{\link[=permutation_control]{permutation_control()}} specification when
+\code{inference = "permutation"}; otherwise \code{NULL}.}
+
+\item{bootstrap}{\code{NULL} for the test-engine interval or a
+\code{\link[=bootstrap_control]{bootstrap_control()}} specification for ordinary or fractional weighted
+bootstrap intervals around the mean difference and any requested effect
+size.}
 
 \item{conf_level}{Confidence level for the mean-difference interval. Must be
 one finite number strictly between zero and one.}

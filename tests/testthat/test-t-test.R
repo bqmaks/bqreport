@@ -17,6 +17,9 @@ test_that("t_test() returns an inspectable analytic function", {
       margin_upper = NA_real_,
       benefit = NA_character_,
       effect_size = "none",
+      inference = "analytical",
+      permutation = NULL,
+      bootstrap = NULL,
       conf_level = 0.9
     )
   )
@@ -55,6 +58,9 @@ test_that("t_test() records its defaults", {
       margin_upper = NA_real_,
       benefit = NA_character_,
       effect_size = "none",
+      inference = "analytical",
+      permutation = NULL,
+      bootstrap = NULL,
       conf_level = 0.95
     )
   )
@@ -278,7 +284,20 @@ test_that("t_test() executes Welch test in comparison-minus-reference direction"
       p_lower = NA_real_,
       p_upper = NA_real_,
       requested_conf_level = 0.95,
-      interval_conf_level = 0.95
+      interval_conf_level = 0.95,
+      ci_method = "t_distribution",
+      bootstrap_method = NA_character_,
+      bootstrap_engine = NA_character_,
+      bootstrap_weight_type = NA_character_,
+      bootstrap_iterations_requested = NA_integer_,
+      bootstrap_iterations_valid = NA_integer_,
+      bootstrap_seed = NA_integer_,
+      inference = "analytical",
+      permutation_sampling = NA_character_,
+      permutation_p_method = NA_character_,
+      permutation_iterations_requested = NA_integer_,
+      permutation_iterations_performed = NA_integer_,
+      permutation_seed = NA_integer_
     )
   )
   expect_identical(
@@ -295,7 +314,13 @@ test_that("t_test() executes Welch test in comparison-minus-reference direction"
       std_error = double(),
       conf_low = double(),
       conf_high = double(),
-      ci_method = character()
+      ci_method = character(),
+      bootstrap_method = character(),
+      bootstrap_engine = character(),
+      bootstrap_weight_type = character(),
+      bootstrap_iterations_requested = integer(),
+      bootstrap_iterations_valid = integer(),
+      bootstrap_seed = integer()
     )
   )
   expect_identical(input$data, original_data)
@@ -577,5 +602,156 @@ test_that("t_test() requires an estimate ID exactly when effect size is requeste
     t_test()(input$data, input$context),
     "estimate_id",
     class = "bq_error_invalid_analysis_input"
+  )
+})
+
+test_that("t_test() performs a declared studentized permutation test", {
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  input <- t_test_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  control <- permutation_control(iterations = 99L, seed = 2030L)
+  analysis <- t_test(inference = "permutation", permutation = control)
+
+  set.seed(80)
+  state_before <- .Random.seed
+  result <- analysis(input$data, input$context)
+  expect_identical(.Random.seed, state_before)
+  set.seed(2030)
+  direct <- suppressMessages(TOSTER::perm_t_test(
+    c(3, 5, 7, 8, 10), c(1, 2, 4, 6, 9),
+    var.equal = FALSE, R = 99L, p_method = "plusone", keep_perm = FALSE
+  ))
+
+  expect_equal(result$tests$p_value, direct$p.value, tolerance = 1e-12)
+  expect_equal(result$tests$statistic, unname(direct$statistic), tolerance = 1e-12)
+  expect_identical(result$tests$test, "welch_permutation_t_test")
+  expect_identical(result$tests$inference, "permutation")
+  expect_identical(result$tests$permutation_sampling, "random")
+  expect_identical(result$tests$permutation_p_method, "plusone")
+  expect_identical(result$tests$permutation_iterations_requested, 99L)
+  expect_identical(result$tests$permutation_iterations_performed, 99L)
+  expect_identical(result$tests$permutation_seed, 2030L)
+})
+
+test_that("t_test() validates permutation declaration and prevents exact mode", {
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  expect_error(
+    t_test(inference = "permutation"),
+    class = "bq_error_invalid_analysis_function"
+  )
+  expect_error(
+    t_test(permutation = permutation_control(seed = 1L)),
+    class = "bq_error_invalid_analysis_function"
+  )
+
+  input <- t_test_input(
+    outcome = 1:6, group = rep(c("a", "b"), each = 3L),
+    reference_value = "b"
+  )
+  analysis <- t_test(
+    inference = "permutation",
+    permutation = permutation_control(iterations = 20L, seed = 1L)
+  )
+  expect_error(
+    analysis(input$data, input$context),
+    "exact enumeration is not part",
+    class = "bq_error_analysis_runtime"
+  )
+})
+
+test_that("t_test() applies ordinary bootstrap to the mean difference", {
+  skip_if_not_installed("boot")
+  input <- t_test_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  control <- bootstrap_control(
+    method = "ordinary", iterations = 299L,
+    conf_type = "percentile", seed = 2031L
+  )
+  analysis <- t_test(bootstrap = control, conf_level = 0.9)
+
+  set.seed(79)
+  state_before <- .Random.seed
+  result <- analysis(input$data, input$context)
+
+  expect_identical(.Random.seed, state_before)
+  expect_true(is.finite(result$tests$std_error))
+  expect_true(result$tests$conf_low <= result$tests$conf_high)
+  expect_identical(result$tests$ci_method, "bootstrap_percentile")
+  expect_identical(result$tests$bootstrap_method, "ordinary")
+  expect_identical(result$tests$bootstrap_engine, "boot")
+  expect_true(is.na(result$tests$bootstrap_weight_type))
+  expect_identical(result$tests$bootstrap_iterations_requested, 299L)
+  expect_identical(result$tests$bootstrap_iterations_valid, 299L)
+  expect_identical(result$tests$bootstrap_seed, 2031L)
+  expect_identical(
+    analysis(input$data, input$context)$tests,
+    result$tests
+  )
+})
+
+test_that("t_test() bootstraps its declared standardized effect", {
+  skip_if_not_installed("boot")
+  skip_if_not_installed("effectsize")
+  input <- t_test_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference", estimate_id = "e001"
+  )
+  control <- bootstrap_control(
+    iterations = 299L, conf_type = "percentile", seed = 2032L
+  )
+  result <- t_test(
+    var_equal = TRUE, effect_size = "hedges_g", bootstrap = control
+  )(input$data, input$context)
+
+  expect_true(is.finite(result$estimates$std_error))
+  expect_true(result$estimates$conf_low <= result$estimates$conf_high)
+  expect_identical(result$estimates$ci_method, "bootstrap_percentile")
+  expect_identical(result$estimates$bootstrap_method, "ordinary")
+  expect_identical(result$estimates$bootstrap_engine, "boot")
+  expect_identical(result$estimates$bootstrap_iterations_valid, 299L)
+  expect_identical(result$estimates$bootstrap_seed, 2032L)
+})
+
+test_that("t_test() applies fractional weighted bootstrap", {
+  skip_if_not_installed("fwb")
+  skip_if_not_installed("effectsize")
+  input <- t_test_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference", estimate_id = "e001"
+  )
+  control <- bootstrap_control(
+    method = "fractional", iterations = 299L,
+    conf_type = "percentile", seed = 2033L
+  )
+  analysis <- t_test(effect_size = "cohens_d", bootstrap = control)
+
+  set.seed(78)
+  state_before <- .Random.seed
+  result <- analysis(input$data, input$context)
+
+  expect_identical(.Random.seed, state_before)
+  expect_true(is.finite(result$tests$std_error))
+  expect_identical(result$tests$ci_method, "fractional_bootstrap_percentile")
+  expect_identical(result$tests$bootstrap_method, "fractional")
+  expect_identical(result$tests$bootstrap_engine, "fwb")
+  expect_identical(result$tests$bootstrap_weight_type, "exponential")
+  expect_identical(result$tests$bootstrap_iterations_valid, 299L)
+  expect_true(is.finite(result$estimates$std_error))
+  expect_identical(
+    result$estimates$ci_method,
+    "fractional_bootstrap_percentile"
+  )
+  expect_identical(result$estimates$bootstrap_weight_type, "exponential")
+  expect_identical(
+    analysis(input$data, input$context)$tests,
+    result$tests
   )
 })
