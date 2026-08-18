@@ -10,9 +10,10 @@
 
 - Ветка: `agent/stabilize-comparison-api`; `origin/main` отстаёт на пять
   коммитов сравнительного анализа.
-- HEAD: `8bae5e2 Add multiple comparison families`.
-- После HEAD — незакоммиченные правки по итогам ревью (см. ниже). Коммит и
-  push делать только по новой явной просьбе автора; после коммита имеет
+- HEAD: `5b7768e Apply project review: shared validation, result schema and print
+  methods`, запушен в `origin/agent/stabilize-comparison-api`.
+- Рабочее дерево чистое. Коммит и
+  push делать только по новой явной просьбе автора; имеет
   смысл слить ветку в `main`.
 
 ## Карта пакета
