@@ -22,6 +22,7 @@ Suggests:
     datawizard,
     effectsize,
     fwb,
+    PMCMRplus (>= 1.9.12),
     TOSTER (>= 0.9.0),
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

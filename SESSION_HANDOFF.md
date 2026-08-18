@@ -4,6 +4,14 @@
 
 Контракт, инварианты и соглашения — в `AGENTS.md`. Здесь только состояние.
 
+## Состояние git
+
+- Ветка: `agent/stabilize-comparison-api`.
+- HEAD: `a8de6e9 Stabilize comparison analysis workflows`.
+- После HEAD есть 34 изменённых или новых пути с текущей реализацией семейств
+  сравнений. Они намеренные, ещё не закоммичены и не должны быть отброшены или
+  перезаписаны. Коммит и push делать только по новой явной просьбе автора.
+
 ## Сделано
 
 - `R/conditions.R` — `bq_abort()`, типизированные условия.
@@ -218,21 +226,78 @@
   Для metadata-aware и standalone путей используется один и тот же provider и
   одна схема результата. `print.bq_analysis_function()` показывает компактную
   specification вместо тела closure.
+- `t_family()`, `mann_whitney_family()` и
+  `brunner_munzel_family()` поставляют семейства `pairwise`, `reference` и
+  `consecutive`; порядок factor задаёт направление и соседство, а
+  character-группы всегда сортируются лексикографически. Коррекция
+  множественности применяется только внутри объявленного семейства. Пока эти
+  providers поддерживают только двусторонние аналитические варианты;
+  directional, equivalence, permutation и bootstrap policy для семейства не
+  спроектированы.
+- `t_family(effect_size = ...)` по явному запросу поставляет `"cohens_d"` или
+  `"hedges_g"`; default остаётся `"none"`. Student использует pooled SD,
+  Welch — unpooled SD. Индивидуальный effect-size ДИ берётся из `effectsize`
+  по noncentral-t методу и не соответствует multiplicity-adjusted p-value.
+- `mann_whitney_family()` всегда поставляет Cliff's delta как
+  `2 * U / (n_comparison * n_reference) - 1`. Основная оценка и ДИ остаются
+  Hodges-Lehmann из `stats::wilcox.test()`; отдельный ДИ и стандартная ошибка
+  для delta намеренно не добавлены и хранятся как typed NA.
+- `brunner_munzel_family()` поставляет relative effect и Cliff's delta как
+  `2 * relative_effect - 1`; ДИ delta и его стандартная ошибка являются тем же
+  линейным преобразованием ДИ и SE relative effect.
+- `tukey_test()` поставляет фиксированное all-pairs семейство с одновременными
+  Tukey intervals. `dunnett_test()` поставляет many-to-one семейство,
+  `games_howell_test()` — all-pairs семейство для неодинаковых дисперсий.
+  `dunn_test()` поставляет rank-based `pairwise`, `reference` или
+  `consecutive`. Последние три требуют Suggested `PMCMRplus (>= 1.9.12)` и не
+  имеют runtime fallback.
+- Все comparison-family providers являются отдельными от omnibus-тестов аналитическими
+  сущностями и возвращают только стандартизированный плоский реестр
+  `comparisons` и `sample_flow`. Они не вычисляют и не возвращают `tests` или
+  `estimates`; omnibus-анализ объявляется и запускается отдельно. Направление
+  оценки фиксировано как comparison minus reference.
+- Общий `comparisons` schema содержит отдельные `std_error` для основной оценки
+  и `effect_std_error` для размера эффекта, а также effect-size type, method,
+  correction, CI bounds, level, scope и method. Числовая SE возвращается только
+  когда она существует на шкале соответствующей оценки и согласована с методом
+  интервала; иначе используется typed `NA_real_`. Сейчас это выполнено для
+  разности средних в `t_family()`, relative effect и Cliff's delta в
+  `brunner_munzel_family()`, а также разности средних в `tukey_test()`.
+- Возможный будущий `test_family(test, comparisons, reference, p_adjust)`
+  сможет компилировать поддерживаемую двухгрупповую specification в семейство.
+  Пока конструктор не реализуется: сначала нужен общий контракт resampling и
+  directional hypotheses. Настоящие post hoc процедуры `dunn_test()`,
+  `tukey_test()`, `dunnett_test()` и `games_howell_test()` таким конструктором
+  оборачиваться не должны.
 - Permutation и bootstrap stages в `t_test()` и `mann_whitney_test()` имеют
   независимый RNG scope. Kruskal-Wallis и ANOVA проверяют конечность omnibus
   statistic/df/p-value и типизированно отклоняют вырожденные данные.
 
-1772 теста; `R CMD check --no-manual` перед текущим коммитом — Status: OK.
+2037 тестов: FAIL 0, WARN 0, SKIP 0. Свежие `R CMD build` и
+`R CMD check --no-manual` для текущего рабочего дерева — Status: OK. При
+проверке было только сетевое сообщение о недоступном CRAN index, не NOTE/WARN.
 
 ## Следующий шаг
 
-План дальнейшей разработки вынесен в `ROADMAP.md`. Renderer-specific слой пока
-не проектировать. Следующий дизайн — post hoc
-сравнения после omnibus-тестов. Сначала определить отдельный контракт post hoc:
-семейство сравнений, multiplicity adjustment, совместимость с выбранным
-omnibus-тестом, шкалу эффекта и resampling policy. Контрасты `reference`,
-`pairwise`, `consecutive` и `grand_mean` относятся к будущим модельным
-аналитическим функциям и не должны извлекаться из терминальных тестов.
+Следующую сессию начать с обсуждения и подтверждения оставшегося плана, не с
+написания кода. Текущий рабочий список:
+
+1. Решить и реализовать Cliff's delta для `dunn_test()`; по принятому правилу
+   не придумывать отдельный ДИ, если процедура его не поставляет.
+2. Отдельно спроектировать размеры эффекта, ДИ и SE для `tukey_test()` и
+   `dunnett_test()`, сохраняя различие между индивидуальными и одновременными
+   интервалами.
+3. Отдельно спроектировать размер эффекта, ДИ и SE для
+   `games_howell_test()` с учётом неодинаковых дисперсий.
+4. После подтверждения численного контракта обновить README, NEWS, ROADMAP и
+   этот handoff, затем снова выполнить полный `devtools::test()`, build и
+   `R CMD check --no-manual`.
+5. Только после завершения и явного разрешения автора создать коммит и push.
+
+Resampling policy для семейств, directional/equivalence hypotheses и будущий
+`test_family()` остаются отдельной последующей задачей. Более общий модельный
+язык контрастов (`grand_mean`, произвольные коэффициенты,
+interaction-контрасты) также не извлекается из терминальных тестов.
 
 Для raw-vector описательных статистик встроенными остаются только
 `continuous_descriptives()` и `continuous_descriptives_extended()`. Остальные

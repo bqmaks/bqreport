@@ -2,6 +2,19 @@
 
 ## Comparison analyses
 
+- Added standalone multiple-comparison providers with a common `comparisons`
+  result schema and explicit `comparison - reference` orientation.
+- Comparison-family providers are independent from omnibus tests and return only
+  `comparisons` and `sample_flow`; omnibus analyses are declared and executed
+  separately.
+- Added `t_family()`, `mann_whitney_family()` and
+  `brunner_munzel_family()` with pairwise, reference and consecutive
+  families and family-specific p-value adjustment.
+- Character group values are ordered lexicographically; explicit factor level
+  order remains authoritative.
+- Added Tukey all-pairs comparisons through `tukey_test()` and PMCMRplus-backed
+  Dunn, Dunnett and Games-Howell providers. Specialized procedures keep their
+  intrinsic family and multiplicity policy.
 - Added `run_comparison()` for executing all five terminal comparison
   specifications directly from vectors or ordinary data frames.
 - Added compact printing for analytic function specifications.

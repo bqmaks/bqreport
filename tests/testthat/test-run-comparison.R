@@ -24,7 +24,7 @@ test_that("run_comparison() runs two-group analyses from vectors", {
     tolerance = 1e-12
   )
   expect_identical(t_result$tests$outcome_var_id, ".outcome")
-  expect_identical(t_result$sample_flow$group_value, c("new", "control"))
+  expect_identical(t_result$sample_flow$group_value, c("control", "new"))
 })
 
 test_that("run_comparison() reads named data-frame columns", {
@@ -70,6 +70,30 @@ test_that("run_comparison() respects declared factor and ordinal order", {
 
   expect_identical(result$sample_flow$group_value, c("control", "new"))
   expect_identical(result$sample_flow$n_used, c(2L, 2L))
+})
+
+test_that("run_comparison() orders character groups lexicographically", {
+  outcome <- c(1, 2, 3, 4, 5, 6)
+  group <- c("zeta", "zeta", "alpha", "alpha", "middle", "middle")
+
+  result <- run_comparison(
+    t_family(comparisons = "consecutive", var_equal = TRUE),
+    outcome,
+    group
+  )
+
+  expect_identical(
+    result$sample_flow$group_value,
+    c("alpha", "middle", "zeta")
+  )
+  expect_identical(
+    result$comparisons$reference_value,
+    c("alpha", "middle")
+  )
+  expect_identical(
+    result$comparisons$comparison_value,
+    c("middle", "zeta")
+  )
 })
 
 test_that("run_comparison() validates its public inputs", {

@@ -48,6 +48,80 @@ run_comparison(
 Supported terminal comparisons are `t_test()`, `mann_whitney_test()`,
 `brunner_munzel_test()`, `kruskal_wallis_test()` and `oneway_anova()`.
 
+## Multiple comparisons
+
+Comparison-family providers can be used as planned multiple comparisons or in
+a post hoc workflow. They use the same standalone runner but remain independent
+from omnibus tests. They return the selected family in `result$comparisons`
+and observation accounting in `result$sample_flow`; they do not compute or
+return `tests` or `estimates`.
+
+| Provider | Comparison method | Comparison family |
+|---|---|---|
+| `t_family()` | Student or Welch t | pairwise, reference or consecutive |
+| `mann_whitney_family()` | Mann-Whitney | pairwise, reference or consecutive |
+| `brunner_munzel_family()` | Brunner-Munzel | pairwise, reference or consecutive |
+| `dunn_test()` | Dunn rank comparison | pairwise, reference or consecutive |
+| `tukey_test()` | Tukey HSD | all pairs, fixed Tukey adjustment |
+| `dunnett_test()` | Dunnett | reference, fixed Dunnett adjustment |
+| `games_howell_test()` | Games-Howell | all pairs, fixed Games-Howell adjustment |
+
+```r
+trial3 <- data.frame(
+  response = c(8, 10, 12, 1, 2, 6, 4, 5, 7),
+  arm = factor(
+    rep(c("control", "low", "high"), each = 3),
+    levels = c("control", "low", "high")
+  )
+)
+
+reference_result <- run_comparison(
+  t_family(
+    comparisons = "reference",
+    reference = "control",
+    var_equal = FALSE,
+    p_adjust = "holm"
+  ),
+  outcome = "response",
+  group = "arm",
+  data = trial3
+)
+
+consecutive_result <- run_comparison(
+  mann_whitney_family(
+    comparisons = "consecutive",
+    exact = "auto",
+    p_adjust = "holm"
+  ),
+  outcome = "response",
+  group = "arm",
+  data = trial3
+)
+
+reference_result$comparisons
+consecutive_result$comparisons
+```
+
+All estimates and statistics are oriented as `comparison - reference`.
+Factor levels determine the orientation of pairwise comparisons and define
+which levels are adjacent for a consecutive family. Character groups use
+ascending lexicographic order regardless of their order of appearance.
+Multiplicity correction applies only to the declared family; it is not
+conditional on or coupled to a separate omnibus analysis.
+
+The specialized procedures can be declared directly:
+
+```r
+tukey_test()
+dunnett_test(reference = "control")
+games_howell_test()
+dunn_test(comparisons = "pairwise", p_adjust = "holm")
+```
+
+`dunn_test()`, `dunnett_test()` and `games_howell_test()` require the
+suggested package `PMCMRplus` version 1.9.12 or later. There is no runtime
+fallback to another method when that engine is unavailable.
+
 ## Metadata-aware summaries
 
 For repeatable analysis and reporting, data can be paired with metadata and an

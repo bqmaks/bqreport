@@ -9,7 +9,10 @@ run_comparison(analysis, outcome, group, data = NULL, reference = NULL)
 \arguments{
 \item{analysis}{A comparison specification created by \code{\link[=t_test]{t_test()}},
 \code{\link[=mann_whitney_test]{mann_whitney_test()}}, \code{\link[=brunner_munzel_test]{brunner_munzel_test()}},
-\code{\link[=kruskal_wallis_test]{kruskal_wallis_test()}} or \code{\link[=oneway_anova]{oneway_anova()}}.}
+\code{\link[=kruskal_wallis_test]{kruskal_wallis_test()}}, \code{\link[=oneway_anova]{oneway_anova()}}, \code{\link[=tukey_test]{tukey_test()}} or
+\code{\link[=t_family]{t_family()}}, \code{\link[=mann_whitney_family]{mann_whitney_family()}},
+\code{\link[=brunner_munzel_family]{brunner_munzel_family()}}, \code{\link[=dunn_test]{dunn_test()}}, \code{\link[=dunnett_test]{dunnett_test()}} or
+\code{\link[=games_howell_test]{games_howell_test()}}.}
 
 \item{outcome}{A numeric outcome vector, or its column name when \code{data} is
 supplied. Ordered factors are represented by their declared positions;
@@ -19,12 +22,14 @@ other factor or character values must contain numeric representations.}
 
 \item{data}{\code{NULL}, or an ordinary data frame or tibble.}
 
-\item{reference}{Reference group value for two-group comparisons. It must
-be \code{NULL} for omnibus comparisons.}
+\item{reference}{Reference group value for two-group terminal tests. It
+must be \code{NULL} when the selected analysis declares its comparison family
+internally.}
 }
 \value{
-A comparison result with \code{tests}, \code{estimates} and \code{sample_flow}
-tables, in the same schema returned by the analytic function.
+Two-group and omnibus tests return \code{tests}, \code{estimates} and
+\code{sample_flow} tables. Comparison-family providers are separate analytic
+entities and return only \code{comparisons} and \code{sample_flow}.
 }
 \description{
 Executes one terminal comparison specification without creating \code{bq_data}
@@ -35,8 +40,9 @@ context inputs.
 \details{
 When \code{data} is \code{NULL}, \code{outcome} and \code{group} are vectors. When \code{data} is a
 data frame, they are single column names supplied as character strings.
-Existing factor level order is preserved; otherwise group levels follow
-their first appearance.
+Existing factor level order is preserved. Character group values are
+ordered lexicographically; other atomic vectors follow their first
+appearance.
 }
 \examples{
 run_comparison(

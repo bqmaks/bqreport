@@ -7,22 +7,28 @@
 #'
 #' When `data` is `NULL`, `outcome` and `group` are vectors. When `data` is a
 #' data frame, they are single column names supplied as character strings.
-#' Existing factor level order is preserved; otherwise group levels follow
-#' their first appearance.
+#' Existing factor level order is preserved. Character group values are
+#' ordered lexicographically; other atomic vectors follow their first
+#' appearance.
 #'
 #' @param analysis A comparison specification created by [t_test()],
 #'   [mann_whitney_test()], [brunner_munzel_test()],
-#'   [kruskal_wallis_test()] or [oneway_anova()].
+#'   [kruskal_wallis_test()], [oneway_anova()], [tukey_test()] or
+#'   [t_family()], [mann_whitney_family()],
+#'   [brunner_munzel_family()], [dunn_test()], [dunnett_test()] or
+#'   [games_howell_test()].
 #' @param outcome A numeric outcome vector, or its column name when `data` is
 #'   supplied. Ordered factors are represented by their declared positions;
 #'   other factor or character values must contain numeric representations.
 #' @param group A group vector, or its column name when `data` is supplied.
 #' @param data `NULL`, or an ordinary data frame or tibble.
-#' @param reference Reference group value for two-group comparisons. It must
-#'   be `NULL` for omnibus comparisons.
+#' @param reference Reference group value for two-group terminal tests. It
+#'   must be `NULL` when the selected analysis declares its comparison family
+#'   internally.
 #'
-#' @return A comparison result with `tests`, `estimates` and `sample_flow`
-#'   tables, in the same schema returned by the analytic function.
+#' @return Two-group and omnibus tests return `tests`, `estimates` and
+#'   `sample_flow` tables. Comparison-family providers are separate analytic
+#'   entities and return only `comparisons` and `sample_flow`.
 #' @export
 #' @examples
 #' run_comparison(
@@ -49,7 +55,9 @@ run_comparison <- function(
 ) {
   supported_kinds <- c(
     "t_test", "mann_whitney_test", "brunner_munzel_test",
-    "kruskal_wallis_test", "oneway_anova"
+    "kruskal_wallis_test", "oneway_anova", "tukey_test", "t_family",
+    "mann_whitney_family", "brunner_munzel_family", "dunn_test",
+    "dunnett_test", "games_howell_test"
   )
   specification <- attr(analysis, "specification")
   capabilities <- attr(analysis, "capabilities")
@@ -64,7 +72,10 @@ run_comparison <- function(
       paste0(
         "`analysis` must be a terminal comparison created by `t_test()`, ",
         "`mann_whitney_test()`, `brunner_munzel_test()`, ",
-        "`kruskal_wallis_test()` or `oneway_anova()`."
+        "`kruskal_wallis_test()`, `oneway_anova()`, `tukey_test()` or ",
+        "`t_family()`, `mann_whitney_family()`, ",
+        "`brunner_munzel_family()`, `dunn_test()`, `dunnett_test()` or ",
+        "`games_howell_test()`."
       )
     )
   }
@@ -139,6 +150,8 @@ run_comparison <- function(
   group_values <- as.character(group)
   group_levels <- if (is.factor(group)) {
     as.character(levels(group))
+  } else if (is.character(group)) {
+    sort(unique(group_values), method = "radix")
   } else {
     unique(group_values)
   }
@@ -174,7 +187,10 @@ run_comparison <- function(
   } else if (!is.null(reference)) {
     bq_abort(
       "bq_error_invalid_analysis_input",
-      "`reference` must be NULL for an omnibus comparison."
+      paste0(
+        "`reference` must be NULL when the selected analysis declares its ",
+        "comparison family internally."
+      )
     )
   }
 
@@ -227,6 +243,48 @@ run_comparison <- function(
     oneway_anova = c(
       common_context[1:2],
       list(estimate_id = estimate_id),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    tukey_test = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    t_family = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    mann_whitney_family = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    brunner_munzel_family = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    dunn_test = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    dunnett_test = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
+      common_context[3:5],
+      list(group_levels = level_registry)
+    ),
+    games_howell_test = c(
+      common_context[1:2],
+      list(estimate_id = NA_character_),
       common_context[3:5],
       list(group_levels = level_registry)
     )
