@@ -26,9 +26,23 @@ compile_summary_cells <- function(plan) {
   axis_names <- registry$name[match(axis_ids, registry$var_id)]
   group_axis <- seq_along(axis_ids) <= length(plan$group)
   strata_axis <- !group_axis
+  level_registry <- attr(plan$data, "levels")
 
-  axis_values <- lapply(axis_names, function(axis_name) {
+  axis_values <- lapply(seq_along(axis_ids), function(axis_position) {
+    axis_id <- axis_ids[[axis_position]]
+    axis_name <- axis_names[[axis_position]]
     column <- plan$data[[axis_name]]
+    variable_type <- registry$type[match(axis_id, registry$var_id)]
+
+    if (!is.na(variable_type) && variable_type == "ordinal") {
+      declared <- level_registry[level_registry$var_id == axis_id, ]
+      declared <- declared[order(declared$position), , drop = FALSE]
+      values <- declared$value
+      if (anyNA(column)) {
+        values <- c(values, NA_character_)
+      }
+      return(values)
+    }
 
     if (is.factor(column)) {
       values <- levels(column)

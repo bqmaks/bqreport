@@ -406,7 +406,18 @@ oneway_anova <- function(
       .outcome = data$.outcome[!missing_outcome],
       .group = data$.group[!missing_outcome]
     )
-    test_result <- tryCatch(
+    if (length(unique(model_data$.outcome)) < 2L) {
+      bq_abort(
+        "bq_error_analysis_runtime",
+        paste0(
+          "`oneway_anova()` could not compute a finite F test; each group ",
+          "must provide enough outcome variation for the declared variance ",
+          "assumption."
+        ),
+        analysis_id = context$analysis_id
+      )
+    }
+    test_result <- suppressWarnings(tryCatch(
       if (specification$var_equal) {
         fit <- stats::lm(.outcome ~ .group, data = model_data)
         table <- stats::anova(fit)
@@ -430,7 +441,28 @@ oneway_anova <- function(
           analysis_id = context$analysis_id
         )
       }
+    ))
+    test_values <- c(
+      statistic = unname(as.double(test_result$statistic)),
+      df1 = unname(as.double(test_result$parameter[[1L]])),
+      df2 = unname(as.double(test_result$parameter[[2L]])),
+      p_value = unname(as.double(test_result$p.value))
     )
+    if (
+      length(test_values) != 4L || any(!is.finite(test_values)) ||
+        test_values[["df1"]] <= 0 || test_values[["df2"]] <= 0 ||
+        test_values[["p_value"]] < 0 || test_values[["p_value"]] > 1
+    ) {
+      bq_abort(
+        "bq_error_analysis_runtime",
+        paste0(
+          "`oneway_anova()` could not compute a finite F test; each group ",
+          "must provide enough outcome variation for the declared variance ",
+          "assumption."
+        ),
+        analysis_id = context$analysis_id
+      )
+    }
 
     restore_rng <- (
       specification$inference == "permutation" &&

@@ -70,6 +70,21 @@ mann_whitney_test <- function(
       "`continuity_correction` must be either TRUE or FALSE."
     )
   }
+  allowed_hypotheses <- c(
+    "two_sided", "equivalence", "noninferiority", "superiority"
+  )
+  if (
+    !is.character(hypothesis) || length(hypothesis) != 1L ||
+      is.na(hypothesis) || !hypothesis %in% allowed_hypotheses
+  ) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      paste0(
+        "`hypothesis` must be one of \"two_sided\", \"equivalence\", ",
+        "\"noninferiority\" and \"superiority\"."
+      )
+    )
+  }
   valid_bootstrap <- is.null(bootstrap) || (
     identical(class(bootstrap), "bq_bootstrap_control") &&
       identical(
@@ -165,22 +180,6 @@ mann_whitney_test <- function(
       paste0(
         "Permutation Mann-Whitney inference requires the suggested package ",
         "`TOSTER` 0.9.0 or later."
-      )
-    )
-  }
-
-  allowed_hypotheses <- c(
-    "two_sided", "equivalence", "noninferiority", "superiority"
-  )
-  if (
-    !is.character(hypothesis) || length(hypothesis) != 1L ||
-      is.na(hypothesis) || !hypothesis %in% allowed_hypotheses
-  ) {
-    bq_abort(
-      "bq_error_invalid_analysis_function",
-      paste0(
-        "`hypothesis` must be one of \"two_sided\", \"equivalence\", ",
-        "\"noninferiority\" and \"superiority\"."
       )
     )
   }
@@ -523,20 +522,6 @@ mann_whitney_test <- function(
           analysis_id = context$analysis_id
         )
       }
-      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      if (seed_exists) {
-        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      }
-      if (!is.null(specification$permutation$seed)) {
-        on.exit({
-          if (seed_exists) {
-            assign(".Random.seed", previous_seed, envir = .GlobalEnv)
-          } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-            rm(".Random.seed", envir = .GlobalEnv)
-          }
-        }, add = TRUE)
-        set.seed(specification$permutation$seed)
-      }
       alternative <- if (specification$hypothesis == "two_sided") {
         "two.sided"
       } else {
@@ -545,21 +530,27 @@ mann_whitney_test <- function(
       null_value <- if (
         specification$hypothesis %in% c("noninferiority", "superiority")
       ) specification$margin_lower else 0
-      permutation_result <- tryCatch(
-        suppressMessages(TOSTER::hodges_lehmann(
-          test_comparison, test_reference, alternative = alternative,
-          mu = null_value, alpha = 1 - specification$conf_level,
-          R = specification$permutation$iterations,
-          p_method = specification$permutation$p_method,
-          keep_perm = FALSE
-        )),
-        error = function(error) {
-          bq_abort(
-            "bq_error_analysis_runtime",
-            paste0("Permutation `mann_whitney_test()` failed: ", conditionMessage(error)),
-            analysis_id = context$analysis_id
-          )
-        }
+      permutation_result <- with_resampling_seed(
+        specification$permutation$seed,
+        tryCatch(
+          suppressMessages(TOSTER::hodges_lehmann(
+            test_comparison, test_reference, alternative = alternative,
+            mu = null_value, alpha = 1 - specification$conf_level,
+            R = specification$permutation$iterations,
+            p_method = specification$permutation$p_method,
+            keep_perm = FALSE
+          )),
+          error = function(error) {
+            bq_abort(
+              "bq_error_analysis_runtime",
+              paste0(
+                "Permutation `mann_whitney_test()` failed: ",
+                conditionMessage(error)
+              ),
+              analysis_id = context$analysis_id
+            )
+          }
+        )
       )
     }
     test_results <- if (specification$inference == "permutation") NULL else tryCatch(
@@ -656,25 +647,6 @@ mann_whitney_test <- function(
     }
     bootstrap_iterations_valid <- NA_integer_
     if (!is.null(specification$bootstrap)) {
-      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      if (seed_exists) {
-        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      }
-      if (!is.null(specification$bootstrap$seed)) {
-        if (
-          specification$inference != "permutation" ||
-            is.null(specification$permutation$seed)
-        ) {
-          on.exit({
-            if (seed_exists) {
-              assign(".Random.seed", previous_seed, envir = .GlobalEnv)
-            } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-              rm(".Random.seed", envir = .GlobalEnv)
-            }
-          }, add = TRUE)
-        }
-        set.seed(specification$bootstrap$seed)
-      }
       bootstrap_data <- data.frame(
         outcome = c(comparison, reference),
         group = factor(
@@ -689,19 +661,25 @@ mann_whitney_test <- function(
         shift <- stats::median(as.vector(outer(x, y, "-")))
         if (benefit_sign < 0) -shift else shift
       }
-      bootstrap_result <- tryCatch(
-        boot::boot(
-          bootstrap_data, ordinary_statistic,
-          R = specification$bootstrap$iterations,
-          sim = "ordinary", stype = "i", strata = bootstrap_data$group
-        ),
-        error = function(error) {
-          bq_abort(
-            "bq_error_analysis_runtime",
-            paste0("Ordinary Hodges-Lehmann bootstrap failed: ", conditionMessage(error)),
-            analysis_id = context$analysis_id
-          )
-        }
+      bootstrap_result <- with_resampling_seed(
+        specification$bootstrap$seed,
+        tryCatch(
+          boot::boot(
+            bootstrap_data, ordinary_statistic,
+            R = specification$bootstrap$iterations,
+            sim = "ordinary", stype = "i", strata = bootstrap_data$group
+          ),
+          error = function(error) {
+            bq_abort(
+              "bq_error_analysis_runtime",
+              paste0(
+                "Ordinary Hodges-Lehmann bootstrap failed: ",
+                conditionMessage(error)
+              ),
+              analysis_id = context$analysis_id
+            )
+          }
+        )
       )
       bootstrap_values <- as.double(bootstrap_result$t[, 1L])
       bootstrap_iterations_valid <- as.integer(sum(is.finite(bootstrap_values)))

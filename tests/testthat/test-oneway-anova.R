@@ -416,6 +416,20 @@ test_that("oneway_anova() does not silently enumerate exact permutations", {
   )
 })
 
+test_that("oneway_anova() rejects non-finite F tests", {
+  input <- oneway_anova_input(rep(1, 6), rep(c("a", "b"), each = 3L))
+
+  for (var_equal in c(TRUE, FALSE)) {
+    expect_error(
+      oneway_anova(var_equal = var_equal, effect_size = "none")(
+        input$data,
+        input$context
+      ),
+      class = "bq_error_analysis_runtime"
+    )
+  }
+})
+
 test_that("oneway_anova() bootstraps both effect sizes for both F tests", {
   skip_if_not_installed("boot")
   input <- oneway_anova_input(

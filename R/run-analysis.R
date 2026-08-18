@@ -54,6 +54,11 @@ run_analysis.bq_plan_summary <- function(plan) {
   }
 
   registry <- attr(plan$data, "variables")
+  model_variables <- lapply(plan$variables, function(var_id) {
+    variable_name <- registry$name[match(var_id, registry$var_id)]
+    as_continuous_model_vector(plan$data[[variable_name]])
+  })
+  names(model_variables) <- plan$variables
   sample_size_records <- list()
   estimate_records <- list()
   next_sample_size <- 1L
@@ -64,7 +69,7 @@ run_analysis.bq_plan_summary <- function(plan) {
 
     for (var_id in plan$variables) {
       variable_name <- registry$name[match(var_id, registry$var_id)]
-      x <- plan$data[[variable_name]][rows]
+      x <- model_variables[[var_id]][rows]
       sample_size_records[[next_sample_size]] <- tibble::tibble(
         cell_id = cell_id,
         var_id = var_id,
@@ -81,7 +86,7 @@ run_analysis.bq_plan_summary <- function(plan) {
       statistic_name <- plan$statistics$name[
         match(statistic_id, plan$statistics$statistic_id)
       ]
-      x <- plan$data[[variable_name]][rows]
+      x <- model_variables[[var_id]][rows]
       fun <- plan$statistic_functions[[statistic_id]]
 
       output <- tryCatch(

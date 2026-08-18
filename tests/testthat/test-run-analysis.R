@@ -121,6 +121,23 @@ test_that("run_analysis() keeps raw values despite display metadata", {
   expect_identical(result$estimates$value, 1.25)
 })
 
+test_that("run_analysis() uses the declared continuous model frame", {
+  data <- as_bq_data(tibble::tibble(value = factor(c("2.5", "1.5"))))
+  data <- set_type(data, value, continuous())
+  plan <- plan_summary(data) |>
+    add_statistic(value) |>
+    add_display_rule(value, enumerate_values())
+
+  result <- run_analysis(plan)
+  presentation <- prepare_presentation(result)
+
+  expect_identical(
+    result$estimates$value[result$estimates$component == "mean"],
+    2
+  )
+  expect_identical(presentation$display_values$value, c(2.5, 1.5))
+})
+
 test_that("run_analysis() stops before computing a plan that fails preflight", {
   plan <- plan_summary(labelled_data())
 

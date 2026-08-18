@@ -329,7 +329,10 @@ t_test <- function(
     ))
   }
   if (!is.null(bootstrap)) {
-    suggested_dependencies <- unique(c(suggested_dependencies, "boot"))
+    suggested_dependencies <- unique(c(
+      suggested_dependencies,
+      bootstrap$engine
+    ))
   }
   capabilities <- list(
     outcome_types = "continuous",
@@ -560,20 +563,6 @@ t_test <- function(
           analysis_id = context$analysis_id
         )
       }
-      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      if (seed_exists) {
-        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      }
-      if (!is.null(specification$permutation$seed)) {
-        on.exit({
-          if (seed_exists) {
-            assign(".Random.seed", previous_seed, envir = .GlobalEnv)
-          } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-            rm(".Random.seed", envir = .GlobalEnv)
-          }
-        }, add = TRUE)
-        set.seed(specification$permutation$seed)
-      }
       alternative <- if (specification$hypothesis == "two_sided") {
         "two.sided"
       } else if (specification$hypothesis == "equivalence") {
@@ -588,22 +577,28 @@ t_test <- function(
       } else {
         0
       }
-      permutation_result <- tryCatch(
-        suppressMessages(TOSTER::perm_t_test(
-          test_comparison, test_reference, alternative = alternative,
-          mu = null_value, var.equal = specification$var_equal,
-          alpha = 1 - specification$conf_level,
-          R = specification$permutation$iterations,
-          p_method = specification$permutation$p_method,
-          keep_perm = FALSE
-        )),
-        error = function(error) {
-          bq_abort(
-            "bq_error_analysis_runtime",
-            paste0("Permutation `t_test()` failed: ", conditionMessage(error)),
-            analysis_id = context$analysis_id
-          )
-        }
+      permutation_result <- with_resampling_seed(
+        specification$permutation$seed,
+        tryCatch(
+          suppressMessages(TOSTER::perm_t_test(
+            test_comparison, test_reference, alternative = alternative,
+            mu = null_value, var.equal = specification$var_equal,
+            alpha = 1 - specification$conf_level,
+            R = specification$permutation$iterations,
+            p_method = specification$permutation$p_method,
+            keep_perm = FALSE
+          )),
+          error = function(error) {
+            bq_abort(
+              "bq_error_analysis_runtime",
+              paste0(
+                "Permutation `t_test()` failed: ",
+                conditionMessage(error)
+              ),
+              analysis_id = context$analysis_id
+            )
+          }
+        )
       )
     }
 
@@ -724,25 +719,6 @@ t_test <- function(
     bootstrap_effect_std_error <- NA_real_
     bootstrap_effect_conf_low <- bootstrap_effect_conf_high <- NA_real_
     if (!is.null(specification$bootstrap)) {
-      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      if (seed_exists) {
-        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
-      }
-      if (!is.null(specification$bootstrap$seed)) {
-        if (
-          specification$inference != "permutation" ||
-            is.null(specification$permutation$seed)
-        ) {
-          on.exit({
-            if (seed_exists) {
-              assign(".Random.seed", previous_seed, envir = .GlobalEnv)
-            } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
-              rm(".Random.seed", envir = .GlobalEnv)
-            }
-          }, add = TRUE)
-        }
-        set.seed(specification$bootstrap$seed)
-      }
       bootstrap_data <- data.frame(
         outcome = c(comparison, reference),
         group = factor(
@@ -795,19 +771,25 @@ t_test <- function(
           y <- sampled$outcome[!comparison_rows]
           weighted_statistics(x, y, rep(1, length(x)), rep(1, length(y)))
         }
-        bootstrap_result <- tryCatch(
-          boot::boot(
-            bootstrap_data, ordinary_statistic,
-            R = specification$bootstrap$iterations,
-            sim = "ordinary", stype = "i", strata = bootstrap_data$group
-          ),
-          error = function(error) {
-            bq_abort(
-              "bq_error_analysis_runtime",
-              paste0("Ordinary bootstrap for `t_test()` failed: ", conditionMessage(error)),
-              analysis_id = context$analysis_id
-            )
-          }
+        bootstrap_result <- with_resampling_seed(
+          specification$bootstrap$seed,
+          tryCatch(
+            boot::boot(
+              bootstrap_data, ordinary_statistic,
+              R = specification$bootstrap$iterations,
+              sim = "ordinary", stype = "i", strata = bootstrap_data$group
+            ),
+            error = function(error) {
+              bq_abort(
+                "bq_error_analysis_runtime",
+                paste0(
+                  "Ordinary bootstrap for `t_test()` failed: ",
+                  conditionMessage(error)
+                ),
+                analysis_id = context$analysis_id
+              )
+            }
+          )
         )
       } else {
         fractional_statistic <- function(bootstrap_data, weights) {
@@ -818,19 +800,25 @@ t_test <- function(
             weights[comparison_rows], weights[!comparison_rows]
           )
         }
-        bootstrap_result <- tryCatch(
-          fwb::fwb(
-            bootstrap_data, fractional_statistic,
-            R = specification$bootstrap$iterations,
-            wtype = "exp", verbose = FALSE
-          ),
-          error = function(error) {
-            bq_abort(
-              "bq_error_analysis_runtime",
-              paste0("Fractional weighted bootstrap for `t_test()` failed: ", conditionMessage(error)),
-              analysis_id = context$analysis_id
-            )
-          }
+        bootstrap_result <- with_resampling_seed(
+          specification$bootstrap$seed,
+          tryCatch(
+            fwb::fwb(
+              bootstrap_data, fractional_statistic,
+              R = specification$bootstrap$iterations,
+              wtype = "exp", verbose = FALSE
+            ),
+            error = function(error) {
+              bq_abort(
+                "bq_error_analysis_runtime",
+                paste0(
+                  "Fractional weighted bootstrap for `t_test()` failed: ",
+                  conditionMessage(error)
+                ),
+                analysis_id = context$analysis_id
+              )
+            }
+          )
         )
       }
       bootstrap_values <- as.matrix(bootstrap_result$t)

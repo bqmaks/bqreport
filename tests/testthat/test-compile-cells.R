@@ -58,6 +58,21 @@ test_that("compile_summary_cells() retains missing design values as cells", {
   expect_identical(compiled$cell_rows$row, c(1L, 2L))
 })
 
+test_that("compile_summary_cells() uses the declared ordinal domain", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(10, 20),
+    severity = c("high", "low")
+  ))
+  data <- set_type(data, severity, ordinal(c("low", "medium", "high")))
+  plan <- plan_summary(data, group = severity)
+
+  compiled <- compile_summary_cells(plan)
+
+  expect_identical(compiled$cell_axes$value, c("low", "medium", "high"))
+  expect_identical(compiled$cells$n, c(1L, 0L, 1L))
+  expect_identical(compiled$cell_rows$row, c(2L, 1L))
+})
+
 test_that("strata Overall collapses multiple strata variables together", {
   data <- as_bq_data(tibble::tibble(
     value = c(10, 20),

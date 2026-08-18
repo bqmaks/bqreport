@@ -169,10 +169,16 @@ test_that("mann_whitney_test() executes an exact comparison in declared directio
 })
 
 test_that("mann_whitney_test() validates hypothesis margins and benefit", {
-  expect_error(
-    mann_whitney_test(hypothesis = "unknown"),
-    class = "bq_error_invalid_analysis_function"
-  )
+  for (hypothesis in list("unknown", NA_character_, c("two_sided", "superiority"))) {
+    expect_error(
+      mann_whitney_test(
+        hypothesis = hypothesis,
+        inference = "permutation",
+        permutation = permutation_control(iterations = 9L)
+      ),
+      class = "bq_error_invalid_analysis_function"
+    )
+  }
   expect_error(
     mann_whitney_test(margin = 1),
     class = "bq_error_invalid_analysis_function"
@@ -537,4 +543,53 @@ test_that("mann_whitney_test() rejects fractional bootstrap", {
     "fractional bootstrap is not supported",
     class = "bq_error_invalid_analysis_function"
   )
+})
+
+test_that("mann_whitney_test() isolates each resampling stage by its own seed", {
+  skip_if_not_installed("boot")
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  input <- mann_whitney_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  seed_combinations <- list(
+    c(permutation = 2038L, bootstrap = 2039L),
+    c(permutation = 2038L, bootstrap = NA_integer_),
+    c(permutation = NA_integer_, bootstrap = 2039L),
+    c(permutation = NA_integer_, bootstrap = NA_integer_)
+  )
+  preserves_stream <- c(TRUE, FALSE, FALSE, FALSE)
+
+  for (index in seq_along(seed_combinations)) {
+    seeds <- seed_combinations[[index]]
+    permutation_seed <- if (is.na(seeds[["permutation"]])) {
+      NULL
+    } else {
+      seeds[["permutation"]]
+    }
+    bootstrap_seed <- if (is.na(seeds[["bootstrap"]])) {
+      NULL
+    } else {
+      seeds[["bootstrap"]]
+    }
+    analysis <- mann_whitney_test(
+      inference = "permutation",
+      permutation = permutation_control(
+        iterations = 19L, seed = permutation_seed
+      ),
+      bootstrap = bootstrap_control(
+        iterations = 49L, conf_type = "percentile", seed = bootstrap_seed
+      )
+    )
+
+    set.seed(85)
+    state_before <- .Random.seed
+    analysis(input$data, input$context)
+
+    expect_identical(
+      identical(.Random.seed, state_before),
+      preserves_stream[[index]]
+    )
+  }
 })

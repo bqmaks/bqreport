@@ -53,6 +53,21 @@ test_that("rename() survives a preceding select()", {
   expect_identical(variables_of(result)$name, c("index", "age"))
 })
 
+test_that("names<-() rejects names that cannot identify registry rows", {
+  data <- labelled_data()
+
+  expect_error(
+    names(data) <- c("age", "age", "bmi"),
+    "unique and non-empty",
+    class = "bq_error_invalid_data"
+  )
+  expect_error(
+    names(data) <- c("age", "", "bmi"),
+    "unique and non-empty",
+    class = "bq_error_invalid_data"
+  )
+})
+
 test_that("mutate() gives a new column a blank row with a fresh identifier", {
   added <- dplyr::mutate(labelled_data(), waist = c(80, 95, 88))
 

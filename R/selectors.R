@@ -65,7 +65,7 @@ resolve_variables <- function(data, selection, argument, min = 1L, max = Inf) {
 
   tibble::tibble(
     var_id = registry$var_id[positions],
-    name = names(selected),
+    name = registry$name[positions],
     position = positions
   )
 }

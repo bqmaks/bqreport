@@ -176,6 +176,19 @@ test_that("t_test() declares requested effect sizes and dependencies", {
   }
 })
 
+test_that("t_test() declares the selected bootstrap engine dependency", {
+  skip_if_not_installed("fwb")
+
+  analysis <- t_test(
+    bootstrap = bootstrap_control(method = "fractional")
+  )
+
+  expect_identical(
+    attr(analysis, "capabilities")$suggested_dependencies,
+    "fwb"
+  )
+})
+
 test_that("t_test() validates var_equal", {
   invalid <- list(NULL, NA, 1, "yes", c(TRUE, FALSE))
 
@@ -754,4 +767,57 @@ test_that("t_test() applies fractional weighted bootstrap", {
     analysis(input$data, input$context)$tests,
     result$tests
   )
+})
+
+test_that("t_test() isolates each resampling stage by its own seed", {
+  skip_if_not_installed("boot")
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  input <- t_test_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+
+  seed_combinations <- list(
+    c(permutation = 2034L, bootstrap = 2035L),
+    c(permutation = 2034L, bootstrap = NA_integer_),
+    c(permutation = NA_integer_, bootstrap = 2035L),
+    c(permutation = NA_integer_, bootstrap = NA_integer_)
+  )
+  preserves_stream <- c(TRUE, FALSE, FALSE, FALSE)
+
+  for (combination in seq_along(seed_combinations)) {
+    seeds <- seed_combinations[[combination]]
+    permutation_seed <- if (is.na(seeds[["permutation"]])) {
+      NULL
+    } else {
+      seeds[["permutation"]]
+    }
+    bootstrap_seed <- if (is.na(seeds[["bootstrap"]])) {
+      NULL
+    } else {
+      seeds[["bootstrap"]]
+    }
+    analysis <- t_test(
+      inference = "permutation",
+      permutation = permutation_control(
+        iterations = 19L,
+        seed = permutation_seed
+      ),
+      bootstrap = bootstrap_control(
+        iterations = 49L,
+        conf_type = "percentile",
+        seed = bootstrap_seed
+      )
+    )
+
+    set.seed(84)
+    state_before <- .Random.seed
+    analysis(input$data, input$context)
+
+    expect_identical(
+      identical(.Random.seed, state_before),
+      preserves_stream[combination]
+    )
+  }
 })

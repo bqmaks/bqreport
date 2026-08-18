@@ -21,6 +21,19 @@ test_that("resolve_variables() follows a rename through its stable identifier", 
   )
 })
 
+test_that("resolve_variables() does not replace canonical names with aliases", {
+  data <- labelled_data()
+
+  expect_identical(
+    resolve_variables(data, rlang::quo(c(alias = age)), "variable"),
+    tibble::tibble(var_id = "v001", name = "age", position = 1L)
+  )
+  expect_identical(
+    variables(set_type(data, c(alias = age), continuous()))$type[1L],
+    "continuous"
+  )
+})
+
 test_that("resolve_variables() enforces selection cardinality", {
   data <- labelled_data()
 

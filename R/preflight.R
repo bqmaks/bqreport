@@ -279,8 +279,6 @@ preflight.bq_plan_summary <- function(plan) {
     )
   }
 
-  compiled_cells <- compile_summary_cells(plan)
-
   diagnostics <- tibble::tibble(
     severity = character(),
     code = character(),
@@ -353,6 +351,31 @@ preflight.bq_plan_summary <- function(plan) {
     }
 
     if (
+      !is.na(variable_type) && variable_type == "continuous" &&
+        is.null(as_continuous_model_vector(plan$data[[variable_name]]))
+    ) {
+      diagnostics <- dplyr::bind_rows(
+        diagnostics,
+        tibble::tibble(
+          severity = "error",
+          code = "invalid_continuous_storage",
+          var_id = var_id,
+          statistic_id = NA_character_,
+          component = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
+          message = sprintf(
+            paste0(
+              "Continuous variable `%s` cannot be converted to finite numeric ",
+              "values; correct its storage or analytic type before analysis."
+            ),
+            variable_name
+          )
+        )
+      )
+    }
+
+    if (
       !is.na(variable_type) && variable_type != "unknown" &&
         !variable_type %in% c("continuous", "count") &&
         !is.na(registry$unit[variable_row])
@@ -404,10 +427,73 @@ preflight.bq_plan_summary <- function(plan) {
     }
   }
 
+  design_ready <- TRUE
   for (var_id in c(plan$group, plan$strata)) {
     variable_row <- match(var_id, registry$var_id)
     variable_name <- registry$name[variable_row]
-    missing_n <- sum(is.na(plan$data[[variable_name]]))
+    variable_type <- registry$type[variable_row]
+    column <- plan$data[[variable_name]]
+
+    if (!is.atomic(column) || !is.null(dim(column))) {
+      design_ready <- FALSE
+      diagnostics <- dplyr::bind_rows(
+        diagnostics,
+        tibble::tibble(
+          severity = "error",
+          code = "invalid_design_storage",
+          var_id = var_id,
+          statistic_id = NA_character_,
+          component = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
+          message = sprintf(
+            paste0(
+              "Design variable `%s` must be stored as an atomic vector; ",
+              "replace its list or matrix column before analysis."
+            ),
+            variable_name
+          )
+        )
+      )
+      next
+    }
+
+    observed <- unique(as.character(column[!is.na(column)]))
+    undeclared <- character()
+    if (!is.na(variable_type) && variable_type == "binary" && length(observed) > 2L) {
+      undeclared <- observed[3L]
+    } else if (!is.na(variable_type) && variable_type == "ordinal") {
+      declared <- attr(plan$data, "levels")
+      declared <- declared$value[declared$var_id == var_id]
+      undeclared <- setdiff(observed, declared)
+    }
+
+    if (length(undeclared) > 0L) {
+      design_ready <- FALSE
+      diagnostics <- dplyr::bind_rows(
+        diagnostics,
+        tibble::tibble(
+          severity = "error",
+          code = "invalid_design_domain",
+          var_id = var_id,
+          statistic_id = NA_character_,
+          component = NA_character_,
+          rule_id = NA_character_,
+          cell_id = NA_character_,
+          message = sprintf(
+            paste0(
+              "Design variable `%s` has value %s outside its declared `%s` ",
+              "domain; update the data or declare its type again."
+            ),
+            variable_name,
+            encodeString(undeclared[[1L]], quote = '"'),
+            variable_type
+          )
+        )
+      )
+    }
+
+    missing_n <- sum(is.na(column))
 
     if (missing_n > 0L) {
       diagnostics <- dplyr::bind_rows(
@@ -432,6 +518,26 @@ preflight.bq_plan_summary <- function(plan) {
         )
       )
     }
+  }
+
+  compiled_cells <- if (design_ready) {
+    compile_summary_cells(plan)
+  } else {
+    list(
+      cells = tibble::tibble(
+        cell_id = character(),
+        overall_group = logical(),
+        overall_strata = logical(),
+        n = integer()
+      ),
+      cell_axes = tibble::tibble(
+        cell_id = character(),
+        var_id = character(),
+        value = character(),
+        is_overall = logical()
+      ),
+      cell_rows = tibble::tibble(cell_id = character(), row = integer())
+    )
   }
 
   empty_leaf_cells <- compiled_cells$cells$cell_id[

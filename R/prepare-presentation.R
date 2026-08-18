@@ -106,7 +106,7 @@ prepare_presentation.bq_result_summary <- function(result) {
     if (show_values) {
       rows <- result$cell_rows$row[result$cell_rows$cell_id == cell_id]
       variable_name <- registry$name[match(var_id, registry$var_id)]
-      values <- plan$data[[variable_name]][rows]
+      values <- as_continuous_model_vector(plan$data[[variable_name]])[rows]
       values <- values[!is.na(values)]
 
       if (length(values) != n) {

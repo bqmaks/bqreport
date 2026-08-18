@@ -169,6 +169,16 @@ test_that("kruskal_wallis_test() matches stats::kruskal.test", {
   expect_identical(input$data, original)
 })
 
+test_that("kruskal_wallis_test() rejects a non-finite omnibus result", {
+  input <- kruskal_wallis_input(rep(1, 6), rep(c("a", "b"), each = 3L))
+
+  expect_error(
+    kruskal_wallis_test()(input$data, input$context),
+    "finite omnibus test",
+    class = "bq_error_analysis_runtime"
+  )
+})
+
 test_that("kruskal_wallis_test() computes rank epsilon squared without an implicit bootstrap", {
   skip_if_not_installed("effectsize")
   input <- kruskal_wallis_input(

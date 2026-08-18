@@ -143,6 +143,27 @@ test_that("preflight() reports missing and unknown analytic types", {
   expect_identical(unknown_result$diagnostics$code, "unknown_type")
 })
 
+test_that("preflight() validates continuous model-frame coercion", {
+  valid_data <- as_bq_data(tibble::tibble(value = c("1.5", "2.5")))
+  valid_data <- set_type(valid_data, value, continuous())
+  valid_plan <- plan_summary(valid_data) |>
+    add_statistic(value)
+
+  invalid_data <- as_bq_data(tibble::tibble(value = c("1.5", "unknown")))
+  invalid_data <- set_type(invalid_data, value, continuous())
+  invalid_plan <- plan_summary(invalid_data) |>
+    add_statistic(value)
+
+  expect_true(preflight(valid_plan)$ok)
+  invalid_result <- preflight(invalid_plan)
+  expect_false(invalid_result$ok)
+  expect_identical(
+    invalid_result$diagnostics$code,
+    "invalid_continuous_storage"
+  )
+  expect_identical(invalid_result$diagnostics$var_id, "v001")
+})
+
 test_that("preflight() checks types of design axes", {
   data <- as_bq_data(tibble::tibble(
     value = c(1, 2),
@@ -164,6 +185,65 @@ test_that("preflight() checks types of design axes", {
   expect_false(result$ok)
   expect_identical(result$diagnostics$code, "missing_type")
   expect_identical(result$diagnostics$var_id, "v002")
+})
+
+test_that("preflight() diagnoses non-atomic design storage before compilation", {
+  data <- as_bq_data(tibble::tibble(
+    value = c(1, 2),
+    group = list("a", "b")
+  ))
+  data <- set_type(data, value, continuous())
+  data <- set_type(data, group, binary("b"))
+  plan <- plan_summary(data, group = group) |>
+    add_statistic(value)
+
+  result <- preflight(plan)
+
+  expect_false(result$ok)
+  expect_identical(result$diagnostics$code, "invalid_design_storage")
+  expect_identical(result$diagnostics$var_id, "v002")
+  expect_identical(nrow(result$cells), 0L)
+})
+
+test_that("preflight() rejects values outside declared design domains", {
+  binary_data <- as_bq_data(tibble::tibble(
+    value = c(1, 2),
+    group = c("a", "b")
+  ))
+  binary_data <- set_type(binary_data, value, continuous())
+  binary_data <- set_type(binary_data, group, binary("b"))
+  binary_data <- dplyr::bind_rows(
+    binary_data,
+    tibble::tibble(value = 3, group = "c")
+  )
+  binary_plan <- plan_summary(binary_data, group = group) |>
+    add_statistic(value)
+
+  ordinal_data <- as_bq_data(tibble::tibble(
+    value = c(1, 2),
+    severity = c("low", "high")
+  ))
+  ordinal_data <- set_type(ordinal_data, value, continuous())
+  ordinal_data <- set_type(
+    ordinal_data,
+    severity,
+    ordinal(c("low", "medium", "high"))
+  )
+  ordinal_data <- dplyr::bind_rows(
+    ordinal_data,
+    tibble::tibble(value = 3, severity = "severe")
+  )
+  ordinal_plan <- plan_summary(ordinal_data, group = severity) |>
+    add_statistic(value)
+
+  for (plan in list(binary_plan, ordinal_plan)) {
+    result <- preflight(plan)
+
+    expect_false(result$ok)
+    expect_identical(result$diagnostics$code, "invalid_design_domain")
+    expect_identical(result$diagnostics$var_id, "v002")
+    expect_identical(nrow(result$cells), 0L)
+  }
 })
 
 test_that("preflight() restricts units and rounding to quantitative variables", {

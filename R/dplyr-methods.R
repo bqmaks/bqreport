@@ -263,6 +263,16 @@ replacement_names <- function(names, index) {
 #' @return A `bq_data` object.
 #' @export
 `names<-.bq_data` <- function(x, value) {
+  if (
+    !is.character(value) || length(value) != ncol(x) || anyNA(value) ||
+      any(!nzchar(value)) || anyDuplicated(value)
+  ) {
+    bq_abort(
+      "bq_error_invalid_data",
+      "Column names of a bq_data object must be unique and non-empty."
+    )
+  }
+
   out <- NextMethod()
 
   variables <- attr(out, "variables")

@@ -47,8 +47,9 @@
   словаря по имени и отдельного ordinal level dictionary с приоритетом над
   inferred/default и защитой explicit.
 - `R/selectors.R` — внутренний `resolve_variables()`, немедленно связывающий
-  tidyselect-выбор со стабильными `var_id`; на него переведены `set_type()` и
-  `set_role()` с его обёртками, а также `infer_types()`.
+  tidyselect-выбор со стабильными `var_id`; именованные aliases не заменяют
+  каноническое имя реестра. На него переведены `set_type()` и `set_role()` с
+  его обёртками, а также `infer_types()`.
 - `R/plan-summary.R` — `plan_summary()`, конструктор только дизайна: group,
   strata и оси raw Overall. Анализируемые переменные и вычисления в нём не
   задаются; их последовательно добавляет `add_statistic()`. Поэтому только что
@@ -112,8 +113,9 @@
   первичная `missing_statistic`.
 - `R/compile-cells.R` — внутренний `compile_summary_cells()`, нормализующий
   leaf и raw Overall в три плоских реестра: `cells`, `cell_axes`, `cell_rows`.
-  Factor использует объявленные levels, включая пустые комбинации; NA остаётся
-  явной ячейкой; multiple strata сворачиваются общей осью Overall.
+  Factor использует объявленные levels, ordinal — плоский level registry,
+  включая пустые комбинации; NA остаётся явной ячейкой; multiple strata
+  сворачиваются общей осью Overall.
 - `R/enumerate-values.R` — `enumerate_values(max_n = 2L,
   display_statistics = FALSE)`, декларативное display rule для перечисления
   исходных непропущенных значений в малых summary-ячейках. При
@@ -132,6 +134,9 @@
   длинный `estimates` без округления. Runtime error и изменение one-row схемы
   останавливают расчёт как `bq_error_statistic_runtime` или
   `bq_error_statistic_schema`, с ID ячейки, переменной и статистики.
+- `R/model-frame.R` — единое приведение continuous storage к plain double.
+  Числовые character/factor значения допустимы, неоднозначные, бесконечные и
+  неатомарные блокируются в preflight. Исходный `bq_data` не изменяется.
 - `R/prepare-presentation.R` — generic `prepare_presentation()` и
   summary-метод. Вычисления не меняются: создаются `display_cells`
   (`cell_id`, `var_id`, `status`, `show_statistics`, `show_values`, `rule_id`)
@@ -208,12 +213,21 @@
   неявный переход к точному перебору запрещены; внешний RNG восстанавливается.
 - Все перечисленные функции терминальные: они поставляют тесты и effect sizes,
   но не внутригрупповые оценки, fitted objects или extractors.
+- `run_comparison()` исполняет все пять терминальных функций напрямую из
+  векторов или обычного data.frame/tibble, сам собирая внутренние data/context.
+  Для metadata-aware и standalone путей используется один и тот же provider и
+  одна схема результата. `print.bq_analysis_function()` показывает компактную
+  specification вместо тела closure.
+- Permutation и bootstrap stages в `t_test()` и `mann_whitney_test()` имеют
+  независимый RNG scope. Kruskal-Wallis и ANOVA проверяют конечность omnibus
+  statistic/df/p-value и типизированно отклоняют вырожденные данные.
 
-1700 тестов, `R CMD check --no-manual` — Status: OK.
+1772 теста; `R CMD check --no-manual` перед текущим коммитом — Status: OK.
 
 ## Следующий шаг
 
-Renderer-specific слой пока не проектировать. Следующий дизайн — post hoc
+План дальнейшей разработки вынесен в `ROADMAP.md`. Renderer-specific слой пока
+не проектировать. Следующий дизайн — post hoc
 сравнения после omnibus-тестов. Сначала определить отдельный контракт post hoc:
 семейство сравнений, multiplicity adjustment, совместимость с выбранным
 omnibus-тестом, шкалу эффекта и resampling policy. Контрасты `reference`,

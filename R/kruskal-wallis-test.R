@@ -304,6 +304,25 @@ kruskal_wallis_test <- function(
         )
       }
     )
+    test_values <- c(
+      statistic = unname(as.double(test_result$statistic)),
+      df = unname(as.double(test_result$parameter)),
+      p_value = unname(as.double(test_result$p.value))
+    )
+    if (
+      length(test_values) != 3L || any(!is.finite(test_values)) ||
+        test_values[["df"]] <= 0 || test_values[["p_value"]] < 0 ||
+        test_values[["p_value"]] > 1
+    ) {
+      bq_abort(
+        "bq_error_analysis_runtime",
+        paste0(
+          "`kruskal_wallis_test()` could not compute a finite omnibus test; ",
+          "the observed outcomes must contain rank variation."
+        ),
+        analysis_id = context$analysis_id
+      )
+    }
     permutation_p_value <- NA_real_
     permutation_iterations_performed <- NA_integer_
     if (specification$inference == "permutation") {
