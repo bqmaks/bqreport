@@ -21,6 +21,9 @@ test_that("mann_whitney_test() returns an inspectable analytic function", {
       margin_lower = NA_real_,
       margin_upper = NA_real_,
       benefit = NA_character_,
+      inference = "analytical",
+      permutation = NULL,
+      bootstrap = NULL,
       conf_level = 0.9
     )
   )
@@ -59,6 +62,9 @@ test_that("mann_whitney_test() records its defaults", {
       margin_lower = NA_real_,
       margin_upper = NA_real_,
       benefit = NA_character_,
+      inference = "analytical",
+      permutation = NULL,
+      bootstrap = NULL,
       conf_level = 0.95
     )
   )
@@ -378,5 +384,157 @@ test_that("mann_whitney_test() requires observations in both groups", {
     mann_whitney_test()(input$data, input$context),
     "observed outcome in both groups",
     class = "bq_error_invalid_analysis_input"
+  )
+})
+
+test_that("mann_whitney_test() performs declared randomization inference", {
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  input <- mann_whitney_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  control <- permutation_control(iterations = 99L, seed = 2034L)
+  analysis <- mann_whitney_test(
+    inference = "permutation", permutation = control
+  )
+
+  set.seed(77)
+  state_before <- .Random.seed
+  result <- analysis(input$data, input$context)
+  expect_identical(.Random.seed, state_before)
+  set.seed(2034)
+  direct <- suppressMessages(TOSTER::hodges_lehmann(
+    c(3, 5, 7, 8, 10), c(1, 2, 4, 6, 9),
+    R = 99L, p_method = "plusone", keep_perm = FALSE
+  ))
+
+  expect_equal(result$tests$estimate, unname(direct$estimate), tolerance = 1e-12)
+  expect_equal(result$tests$statistic, unname(direct$statistic), tolerance = 1e-12)
+  expect_equal(result$tests$p_value, direct$p.value, tolerance = 1e-12)
+  expect_identical(result$tests$test, "hodges_lehmann_permutation_test")
+  expect_identical(result$tests$inference, "permutation")
+  expect_true(is.na(result$tests$exact_requested))
+  expect_true(is.na(result$tests$exact_used))
+  expect_true(is.na(result$tests$continuity_correction))
+  expect_identical(result$tests$permutation_sampling, "random")
+  expect_identical(result$tests$permutation_p_method, "plusone")
+  expect_identical(result$tests$permutation_iterations_requested, 99L)
+  expect_identical(result$tests$permutation_iterations_performed, 99L)
+  expect_identical(result$tests$permutation_seed, 2034L)
+})
+
+test_that("mann_whitney_test() supports directional permutation nulls", {
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  input <- mann_whitney_input(
+    outcome = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  result <- mann_whitney_test(
+    hypothesis = "superiority", margin = 1, benefit = "lower",
+    inference = "permutation",
+    permutation = permutation_control(iterations = 99L, seed = 2035L)
+  )(input$data, input$context)
+
+  expect_identical(result$tests$raw_estimate, -5)
+  expect_identical(result$tests$benefit_estimate, 5)
+  expect_identical(result$tests$estimate, 5)
+  expect_identical(result$tests$p_lower, result$tests$p_value)
+})
+
+test_that("mann_whitney_test() rejects unsupported permutation declarations", {
+  skip_if_not_installed("TOSTER", minimum_version = "0.9.0")
+  expect_error(
+    mann_whitney_test(inference = "permutation"),
+    class = "bq_error_invalid_analysis_function"
+  )
+  expect_error(
+    mann_whitney_test(permutation = permutation_control(seed = 1L)),
+    class = "bq_error_invalid_analysis_function"
+  )
+  expect_error(
+    mann_whitney_test(
+      hypothesis = "equivalence", margin = 1,
+      inference = "permutation", permutation = permutation_control(seed = 1L)
+    ),
+    "not valid for equivalence",
+    class = "bq_error_invalid_analysis_function"
+  )
+
+  input <- mann_whitney_input(
+    outcome = 1:6, group = rep(c("a", "b"), each = 3L),
+    reference_value = "b"
+  )
+  analysis <- mann_whitney_test(
+    inference = "permutation",
+    permutation = permutation_control(iterations = 20L, seed = 1L)
+  )
+  expect_error(
+    analysis(input$data, input$context),
+    "exact enumeration is not part",
+    class = "bq_error_analysis_runtime"
+  )
+})
+
+test_that("mann_whitney_test() bootstraps the Hodges-Lehmann shift", {
+  skip_if_not_installed("boot")
+  input <- mann_whitney_input(
+    outcome = c(3, 5, 7, 8, 10, 1, 2, 4, 6, 9),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  control <- bootstrap_control(
+    method = "ordinary", iterations = 299L,
+    conf_type = "percentile", seed = 2036L
+  )
+  analysis <- mann_whitney_test(bootstrap = control, conf_level = 0.9)
+
+  set.seed(76)
+  state_before <- .Random.seed
+  result <- analysis(input$data, input$context)
+
+  expect_identical(.Random.seed, state_before)
+  expect_true(is.finite(result$tests$std_error))
+  expect_true(result$tests$conf_low <= result$tests$conf_high)
+  expect_identical(result$tests$interval_conf_level, 0.9)
+  expect_identical(result$tests$ci_method, "bootstrap_percentile")
+  expect_identical(result$tests$bootstrap_method, "ordinary")
+  expect_identical(result$tests$bootstrap_engine, "boot")
+  expect_identical(result$tests$bootstrap_iterations_requested, 299L)
+  expect_identical(result$tests$bootstrap_iterations_valid, 299L)
+  expect_identical(result$tests$bootstrap_seed, 2036L)
+  expect_identical(
+    analysis(input$data, input$context)$tests,
+    result$tests
+  )
+})
+
+test_that("mann_whitney_test() bootstraps on the directional benefit scale", {
+  skip_if_not_installed("boot")
+  input <- mann_whitney_input(
+    outcome = c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10),
+    group = rep(c("new", "reference"), each = 5L),
+    reference_value = "reference"
+  )
+  result <- mann_whitney_test(
+    hypothesis = "superiority", margin = 1, benefit = "lower",
+    bootstrap = bootstrap_control(
+      iterations = 299L, conf_type = "percentile", seed = 2037L
+    )
+  )(input$data, input$context)
+
+  expect_identical(result$tests$raw_estimate, -5)
+  expect_identical(result$tests$benefit_estimate, 5)
+  expect_true(result$tests$conf_low > 0)
+})
+
+test_that("mann_whitney_test() rejects fractional bootstrap", {
+  expect_error(
+    mann_whitney_test(
+      bootstrap = bootstrap_control(method = "fractional")
+    ),
+    "fractional bootstrap is not supported",
+    class = "bq_error_invalid_analysis_function"
   )
 })

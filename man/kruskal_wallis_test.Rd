@@ -4,11 +4,23 @@
 \alias{kruskal_wallis_test}
 \title{Declare a Kruskal-Wallis test}
 \usage{
-kruskal_wallis_test(effect_size = "none", conf_level = 0.95, bootstrap = NULL)
+kruskal_wallis_test(
+  effect_size = "none",
+  inference = "analytical",
+  permutation = NULL,
+  conf_level = 0.95,
+  bootstrap = NULL
+)
 }
 \arguments{
 \item{effect_size}{Effect size to report: \code{"none"} or
 \code{"rank_epsilon_squared"}.}
+
+\item{inference}{\code{"analytical"} for the chi-squared approximation or
+\code{"permutation"} for a randomization test of the Kruskal-Wallis statistic.}
+
+\item{permutation}{A \code{\link[=permutation_control]{permutation_control()}} specification when
+\code{inference = "permutation"}; otherwise \code{NULL}.}
 
 \item{conf_level}{Confidence level for a bootstrap interval. It is recorded
 but not used when \code{bootstrap} is \code{NULL}.}

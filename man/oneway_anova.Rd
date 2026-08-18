@@ -7,18 +7,31 @@
 oneway_anova(
   var_equal = TRUE,
   effect_size = "omega_squared",
-  conf_level = 0.95
+  inference = "analytical",
+  permutation = NULL,
+  conf_level = 0.95,
+  bootstrap = NULL
 )
 }
 \arguments{
-\item{var_equal}{Whether to use the classical equal-variance ANOVA. Welch's
-ANOVA is not yet available and \code{FALSE} is currently rejected.}
+\item{var_equal}{Whether to use the classical equal-variance ANOVA. When
+\code{FALSE}, Welch's heteroscedastic ANOVA is used.}
 
 \item{effect_size}{Effect size to report. One of \code{"none"},
 \code{"eta_squared"} and \code{"omega_squared"}.}
 
+\item{inference}{\code{"analytical"} for the parametric F test or
+\code{"permutation"} for a randomization test of the selected F statistic.}
+
+\item{permutation}{A \code{\link[=permutation_control]{permutation_control()}} specification when
+\code{inference = "permutation"}; otherwise \code{NULL}.}
+
 \item{conf_level}{Confidence level for interval estimates. Must be one
 finite number strictly between zero and one.}
+
+\item{bootstrap}{\code{NULL} for a point estimate only, or a specification from
+\code{\link[=bootstrap_control]{bootstrap_control()}} for an ordinary or fractional weighted bootstrap
+confidence interval. Requires an effect size.}
 }
 \value{
 A \code{bq_oneway_anova} analytic function.

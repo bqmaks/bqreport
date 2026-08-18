@@ -6,6 +6,10 @@
 #'
 #' @param effect_size Effect size to report: `"none"` or
 #'   `"rank_epsilon_squared"`.
+#' @param inference `"analytical"` for the chi-squared approximation or
+#'   `"permutation"` for a randomization test of the Kruskal-Wallis statistic.
+#' @param permutation A [permutation_control()] specification when
+#'   `inference = "permutation"`; otherwise `NULL`.
 #' @param conf_level Confidence level for a bootstrap interval. It is recorded
 #'   but not used when `bootstrap` is `NULL`.
 #' @param bootstrap `NULL` for a point estimate only, or a specification from
@@ -16,6 +20,8 @@
 #' @export
 kruskal_wallis_test <- function(
   effect_size = "none",
+  inference = "analytical",
+  permutation = NULL,
   conf_level = 0.95,
   bootstrap = NULL
 ) {
@@ -27,6 +33,47 @@ kruskal_wallis_test <- function(
     bq_abort(
       "bq_error_invalid_analysis_function",
       "`effect_size` must be either \"none\" or \"rank_epsilon_squared\"."
+    )
+  }
+  if (
+    !is.character(inference) || length(inference) != 1L || is.na(inference) ||
+      !inference %in% c("analytical", "permutation")
+  ) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`inference` must be either \"analytical\" or \"permutation\"."
+    )
+  }
+  valid_permutation <- is.null(permutation) || (
+    identical(class(permutation), "bq_permutation_control") &&
+      identical(
+        names(permutation), c("sampling", "iterations", "p_method", "seed")
+      ) &&
+      identical(permutation$sampling, "random") &&
+      is.integer(permutation$iterations) && length(permutation$iterations) == 1L &&
+      !is.na(permutation$iterations) && permutation$iterations > 0L &&
+      identical(permutation$p_method, "plusone") &&
+      (is.null(permutation$seed) || (
+        is.integer(permutation$seed) && length(permutation$seed) == 1L &&
+          !is.na(permutation$seed) && permutation$seed >= 0L
+      ))
+  )
+  if (!valid_permutation) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL or a valid `permutation_control()` specification."
+    )
+  }
+  if (inference == "permutation" && is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` is required when `inference = \"permutation\"`."
+    )
+  }
+  if (inference != "permutation" && !is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL unless `inference = \"permutation\"`."
     )
   }
   if (
@@ -101,6 +148,8 @@ kruskal_wallis_test <- function(
   specification <- list(
     kind = "kruskal_wallis_test",
     effect_size = effect_size,
+    inference = inference,
+    permutation = permutation,
     conf_level = as.double(conf_level),
     bootstrap = bootstrap
   )
@@ -255,14 +304,80 @@ kruskal_wallis_test <- function(
         )
       }
     )
+    permutation_p_value <- NA_real_
+    permutation_iterations_performed <- NA_integer_
+    if (specification$inference == "permutation") {
+      log_partitions <- lgamma(sum(n_used) + 1) - sum(lgamma(n_used + 1))
+      if (log(specification$permutation$iterations) >= log_partitions - 1e-12) {
+        bq_abort(
+          "bq_error_analysis_runtime",
+          paste0(
+            "The requested number of random permutations reaches all ",
+            "possible group partitions; reduce `iterations` because exact ",
+            "enumeration is not part of `permutation_control()`."
+          ),
+          analysis_id = context$analysis_id
+        )
+      }
+      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      if (seed_exists) {
+        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      }
+      if (!is.null(specification$permutation$seed)) {
+        on.exit({
+          if (seed_exists) {
+            assign(".Random.seed", previous_seed, envir = .GlobalEnv)
+          } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+            rm(".Random.seed", envir = .GlobalEnv)
+          }
+        }, add = TRUE)
+        set.seed(specification$permutation$seed)
+      }
+      observed_statistic <- unname(as.double(test_result$statistic))
+      used_outcome <- data$.outcome[used]
+      used_group <- data$.group[used]
+      exceedances <- 0L
+      for (iteration in seq_len(specification$permutation$iterations)) {
+        permuted_group <- sample(used_group, replace = FALSE)
+        permuted_statistic <- unname(as.double(
+          stats::kruskal.test(used_outcome, permuted_group)$statistic
+        ))
+        if (permuted_statistic >= observed_statistic) {
+          exceedances <- exceedances + 1L
+        }
+      }
+      permutation_p_value <- (exceedances + 1) /
+        (specification$permutation$iterations + 1)
+      permutation_iterations_performed <- specification$permutation$iterations
+    }
     tests <- tibble::tibble(
       test_id = context$test_id,
       analysis_id = context$analysis_id,
       outcome_var_id = context$outcome_var_id,
-      test = "kruskal_wallis",
+      test = if (specification$inference == "permutation") {
+        "kruskal_wallis_permutation"
+      } else "kruskal_wallis",
       statistic = unname(as.double(test_result$statistic)),
-      df = unname(as.double(test_result$parameter)),
-      p_value = unname(as.double(test_result$p.value))
+      df = if (specification$inference == "permutation") NA_real_ else
+        unname(as.double(test_result$parameter)),
+      p_value = if (specification$inference == "permutation") {
+        permutation_p_value
+      } else unname(as.double(test_result$p.value)),
+      inference = specification$inference,
+      permutation_sampling = if (specification$inference == "permutation") {
+        specification$permutation$sampling
+      } else NA_character_,
+      permutation_p_method = if (specification$inference == "permutation") {
+        specification$permutation$p_method
+      } else NA_character_,
+      permutation_iterations_requested = if (
+        specification$inference == "permutation"
+      ) specification$permutation$iterations else NA_integer_,
+      permutation_iterations_performed = permutation_iterations_performed,
+      permutation_seed = if (
+        specification$inference == "permutation" &&
+          !is.null(specification$permutation$seed)
+      ) specification$permutation$seed else NA_integer_
     )
 
     if (effect_size == "none") {
@@ -317,7 +432,8 @@ kruskal_wallis_test <- function(
             statistic = statistic,
             R = bootstrap$iterations,
             sim = "ordinary",
-            stype = "i"
+            stype = "i",
+            strata = bootstrap_data$group
           ),
           error = function(error) {
             bq_abort(

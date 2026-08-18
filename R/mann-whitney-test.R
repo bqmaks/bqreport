@@ -20,6 +20,12 @@
 #'   The rules are the same as for [t_test()].
 #' @param benefit Which outcome direction is beneficial for noninferiority and
 #'   superiority: `"higher"` or `"lower"`.
+#' @param inference `"analytical"` for [stats::wilcox.test()] or
+#'   `"permutation"` for a randomization Hodges-Lehmann test.
+#' @param permutation A [permutation_control()] specification when
+#'   `inference = "permutation"`; otherwise `NULL`.
+#' @param bootstrap `NULL` for the inference-engine interval or an ordinary
+#'   [bootstrap_control()] specification for the Hodges-Lehmann interval.
 #' @param conf_level Confidence level for the Hodges-Lehmann location-shift
 #'   interval. Must be one finite number strictly between zero and one.
 #'
@@ -38,6 +44,9 @@ mann_whitney_test <- function(
   hypothesis = "two_sided",
   margin = NULL,
   benefit = NULL,
+  inference = "analytical",
+  permutation = NULL,
+  bootstrap = NULL,
   conf_level = 0.95
 ) {
   valid_exact <-
@@ -59,6 +68,104 @@ mann_whitney_test <- function(
     bq_abort(
       "bq_error_invalid_analysis_function",
       "`continuity_correction` must be either TRUE or FALSE."
+    )
+  }
+  valid_bootstrap <- is.null(bootstrap) || (
+    identical(class(bootstrap), "bq_bootstrap_control") &&
+      identical(
+        names(bootstrap),
+        c("method", "engine", "iterations", "conf_type", "seed", "weight_type")
+      ) &&
+      identical(bootstrap$method, "ordinary") &&
+      identical(bootstrap$engine, "boot") &&
+      is.integer(bootstrap$iterations) && length(bootstrap$iterations) == 1L &&
+      !is.na(bootstrap$iterations) && bootstrap$iterations > 0L &&
+      is.character(bootstrap$conf_type) && length(bootstrap$conf_type) == 1L &&
+      !is.na(bootstrap$conf_type) &&
+      bootstrap$conf_type %in% c("bca", "percentile", "basic") &&
+      (is.null(bootstrap$seed) || (
+        is.integer(bootstrap$seed) && length(bootstrap$seed) == 1L &&
+          !is.na(bootstrap$seed) && bootstrap$seed >= 0L
+      )) && is.null(bootstrap$weight_type)
+  )
+  if (!valid_bootstrap) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      paste0(
+        "`bootstrap` must be NULL or an ordinary specification from ",
+        "`bootstrap_control()`; fractional bootstrap is not supported for ",
+        "the Hodges-Lehmann estimator."
+      )
+    )
+  }
+  if (!is.null(bootstrap) && !requireNamespace("boot", quietly = TRUE)) {
+    bq_abort(
+      "bq_error_missing_dependency",
+      "Ordinary bootstrap requires the suggested package `boot`."
+    )
+  }
+
+  if (
+    !is.character(inference) || length(inference) != 1L || is.na(inference) ||
+      !inference %in% c("analytical", "permutation")
+  ) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`inference` must be either \"analytical\" or \"permutation\"."
+    )
+  }
+  valid_permutation <- is.null(permutation) || (
+    identical(class(permutation), "bq_permutation_control") &&
+      identical(
+        names(permutation), c("sampling", "iterations", "p_method", "seed")
+      ) &&
+      identical(permutation$sampling, "random") &&
+      is.integer(permutation$iterations) && length(permutation$iterations) == 1L &&
+      !is.na(permutation$iterations) && permutation$iterations > 0L &&
+      identical(permutation$p_method, "plusone") &&
+      (is.null(permutation$seed) || (
+        is.integer(permutation$seed) && length(permutation$seed) == 1L &&
+          !is.na(permutation$seed) && permutation$seed >= 0L
+      ))
+  )
+  if (!valid_permutation) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL or a valid `permutation_control()` specification."
+    )
+  }
+  if (inference == "permutation" && is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` is required when `inference = \"permutation\"`."
+    )
+  }
+  if (inference != "permutation" && !is.null(permutation)) {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      "`permutation` must be NULL unless `inference = \"permutation\"`."
+    )
+  }
+  if (inference == "permutation" && hypothesis == "equivalence") {
+    bq_abort(
+      "bq_error_invalid_analysis_function",
+      paste0(
+        "Permutation Hodges-Lehmann inference is not valid for equivalence ",
+        "bounds; use `inference = \"analytical\"`."
+      )
+    )
+  }
+  if (
+    inference == "permutation" &&
+      (!requireNamespace("TOSTER", quietly = TRUE) ||
+        utils::packageVersion("TOSTER") < "0.9.0")
+  ) {
+    bq_abort(
+      "bq_error_missing_dependency",
+      paste0(
+        "Permutation Mann-Whitney inference requires the suggested package ",
+        "`TOSTER` 0.9.0 or later."
+      )
     )
   }
 
@@ -177,6 +284,9 @@ mann_whitney_test <- function(
     margin_lower = margin_lower,
     margin_upper = margin_upper,
     benefit = if (is.null(benefit)) NA_character_ else benefit,
+    inference = inference,
+    permutation = permutation,
+    bootstrap = bootstrap,
     conf_level = as.double(conf_level)
   )
   capabilities <- list(
@@ -193,7 +303,10 @@ mann_whitney_test <- function(
     provides_fits = FALSE,
     supplied_results = "test",
     supplied_extractors = character(),
-    suggested_dependencies = character()
+    suggested_dependencies = c(
+      if (inference == "permutation") "TOSTER (>= 0.9.0)" else character(),
+      if (!is.null(bootstrap)) "boot" else character()
+    )
   )
 
   analysis_function <- function(data, context) {
@@ -361,7 +474,10 @@ mann_whitney_test <- function(
       data$.group == context$reference_value & !missing_outcome
     ]
     has_ties <- anyDuplicated(c(comparison, reference)) > 0L
-    if (isTRUE(specification$exact) && has_ties) {
+    if (
+      specification$inference == "analytical" &&
+        isTRUE(specification$exact) && has_ties
+    ) {
       bq_abort(
         "bq_error_invalid_analysis_input",
         paste0(
@@ -370,7 +486,9 @@ mann_whitney_test <- function(
         )
       )
     }
-    exact_used <- if (identical(specification$exact, "auto")) {
+    exact_used <- if (specification$inference == "permutation") {
+      NA
+    } else if (identical(specification$exact, "auto")) {
       length(comparison) < 50L && length(reference) < 50L && !has_ties
     } else {
       specification$exact
@@ -389,7 +507,62 @@ mann_whitney_test <- function(
         conf.int = TRUE, conf.level = conf_level
       )
     }
-    test_results <- tryCatch(
+    permutation_result <- NULL
+    if (specification$inference == "permutation") {
+      possible_partitions <- choose(
+        length(comparison) + length(reference), length(comparison)
+      )
+      if (specification$permutation$iterations >= possible_partitions) {
+        bq_abort(
+          "bq_error_analysis_runtime",
+          paste0(
+            "The requested number of random permutations reaches all ",
+            "possible group partitions; reduce `iterations` because exact ",
+            "enumeration is not part of `permutation_control()`."
+          ),
+          analysis_id = context$analysis_id
+        )
+      }
+      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      if (seed_exists) {
+        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      }
+      if (!is.null(specification$permutation$seed)) {
+        on.exit({
+          if (seed_exists) {
+            assign(".Random.seed", previous_seed, envir = .GlobalEnv)
+          } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+            rm(".Random.seed", envir = .GlobalEnv)
+          }
+        }, add = TRUE)
+        set.seed(specification$permutation$seed)
+      }
+      alternative <- if (specification$hypothesis == "two_sided") {
+        "two.sided"
+      } else {
+        "greater"
+      }
+      null_value <- if (
+        specification$hypothesis %in% c("noninferiority", "superiority")
+      ) specification$margin_lower else 0
+      permutation_result <- tryCatch(
+        suppressMessages(TOSTER::hodges_lehmann(
+          test_comparison, test_reference, alternative = alternative,
+          mu = null_value, alpha = 1 - specification$conf_level,
+          R = specification$permutation$iterations,
+          p_method = specification$permutation$p_method,
+          keep_perm = FALSE
+        )),
+        error = function(error) {
+          bq_abort(
+            "bq_error_analysis_runtime",
+            paste0("Permutation `mann_whitney_test()` failed: ", conditionMessage(error)),
+            analysis_id = context$analysis_id
+          )
+        }
+      )
+    }
+    test_results <- if (specification$inference == "permutation") NULL else tryCatch(
       if (specification$hypothesis == "two_sided") {
         list(primary = run_test(
           comparison, reference, "two.sided", 0, specification$conf_level
@@ -424,7 +597,24 @@ mann_whitney_test <- function(
       }
     )
 
-    if (specification$hypothesis == "equivalence") {
+    if (specification$inference == "permutation") {
+      directional <- specification$hypothesis %in% c(
+        "noninferiority", "superiority"
+      )
+      estimate <- unname(as.double(permutation_result$estimate))
+      raw_estimate <- if (directional) benefit_sign * estimate else estimate
+      benefit_estimate <- if (directional) estimate else NA_real_
+      statistic <- unname(as.double(permutation_result$statistic))
+      statistic_lower <- statistic_upper <- NA_real_
+      p_value <- unname(as.double(permutation_result$p.value))
+      p_lower <- if (directional) p_value else NA_real_
+      p_upper <- NA_real_
+      conf_low <- unname(as.double(permutation_result$conf.int[1L]))
+      conf_high <- unname(as.double(permutation_result$conf.int[2L]))
+      interval_conf_level <- unname(as.double(
+        attr(permutation_result$conf.int, "conf.level")
+      ))
+    } else if (specification$hypothesis == "equivalence") {
       raw_estimate <- unname(as.double(test_results$interval$estimate))
       benefit_estimate <- NA_real_
       estimate <- raw_estimate
@@ -458,7 +648,109 @@ mann_whitney_test <- function(
       interval_conf_level <- unname(as.double(attr(primary$conf.int, "conf.level")))
     }
 
-    exact_requested <- if (identical(specification$exact, "auto")) {
+    std_error <- NA_real_
+    ci_method <- if (specification$inference == "permutation") {
+      "TOSTER_permutation"
+    } else {
+      if (exact_used) "wilcox_exact" else "wilcox_asymptotic"
+    }
+    bootstrap_iterations_valid <- NA_integer_
+    if (!is.null(specification$bootstrap)) {
+      seed_exists <- exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      if (seed_exists) {
+        previous_seed <- get(".Random.seed", envir = .GlobalEnv, inherits = FALSE)
+      }
+      if (!is.null(specification$bootstrap$seed)) {
+        if (
+          specification$inference != "permutation" ||
+            is.null(specification$permutation$seed)
+        ) {
+          on.exit({
+            if (seed_exists) {
+              assign(".Random.seed", previous_seed, envir = .GlobalEnv)
+            } else if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+              rm(".Random.seed", envir = .GlobalEnv)
+            }
+          }, add = TRUE)
+        }
+        set.seed(specification$bootstrap$seed)
+      }
+      bootstrap_data <- data.frame(
+        outcome = c(comparison, reference),
+        group = factor(
+          c(rep("comparison", length(comparison)), rep("reference", length(reference))),
+          levels = c("comparison", "reference")
+        )
+      )
+      ordinary_statistic <- function(bootstrap_data, indices) {
+        sampled <- bootstrap_data[indices, , drop = FALSE]
+        x <- sampled$outcome[sampled$group == "comparison"]
+        y <- sampled$outcome[sampled$group == "reference"]
+        shift <- stats::median(as.vector(outer(x, y, "-")))
+        if (benefit_sign < 0) -shift else shift
+      }
+      bootstrap_result <- tryCatch(
+        boot::boot(
+          bootstrap_data, ordinary_statistic,
+          R = specification$bootstrap$iterations,
+          sim = "ordinary", stype = "i", strata = bootstrap_data$group
+        ),
+        error = function(error) {
+          bq_abort(
+            "bq_error_analysis_runtime",
+            paste0("Ordinary Hodges-Lehmann bootstrap failed: ", conditionMessage(error)),
+            analysis_id = context$analysis_id
+          )
+        }
+      )
+      bootstrap_values <- as.double(bootstrap_result$t[, 1L])
+      bootstrap_iterations_valid <- as.integer(sum(is.finite(bootstrap_values)))
+      if (bootstrap_iterations_valid < 2L) {
+        bq_abort(
+          "bq_error_analysis_runtime",
+          "Ordinary bootstrap produced fewer than two finite estimates.",
+          analysis_id = context$analysis_id
+        )
+      }
+      std_error <- stats::sd(bootstrap_values[is.finite(bootstrap_values)])
+      boot_ci_type <- switch(
+        specification$bootstrap$conf_type,
+        bca = "bca", percentile = "perc", basic = "basic"
+      )
+      interval <- tryCatch(
+        boot::boot.ci(
+          bootstrap_result, conf = specification$conf_level,
+          type = boot_ci_type
+        ),
+        error = function(error) {
+          bq_abort(
+            "bq_error_analysis_runtime",
+            paste0("Ordinary Hodges-Lehmann bootstrap interval failed: ", conditionMessage(error)),
+            analysis_id = context$analysis_id
+          )
+        }
+      )
+      interval_values <- switch(
+        specification$bootstrap$conf_type,
+        bca = interval$bca, percentile = interval$percent,
+        basic = interval$basic
+      )
+      if (is.null(interval_values) || anyNA(interval_values[1L, 4:5])) {
+        bq_abort(
+          "bq_error_analysis_runtime",
+          "The requested Hodges-Lehmann bootstrap interval could not be computed.",
+          analysis_id = context$analysis_id
+        )
+      }
+      conf_low <- as.double(interval_values[1L, 4L])
+      conf_high <- as.double(interval_values[1L, 5L])
+      interval_conf_level <- specification$conf_level
+      ci_method <- paste0("bootstrap_", specification$bootstrap$conf_type)
+    }
+
+    exact_requested <- if (specification$inference == "permutation") {
+      NA_character_
+    } else if (identical(specification$exact, "auto")) {
       "auto"
     } else if (specification$exact) {
       "exact"
@@ -469,7 +761,9 @@ mann_whitney_test <- function(
       test_id = context$test_id,
       analysis_id = context$analysis_id,
       outcome_var_id = context$outcome_var_id,
-      test = "mann_whitney_test",
+      test = if (specification$inference == "permutation") {
+        "hodges_lehmann_permutation_test"
+      } else "mann_whitney_test",
       reference_value = context$reference_value,
       comparison_value = comparison_value,
       hypothesis = specification$hypothesis,
@@ -479,6 +773,7 @@ mann_whitney_test <- function(
       raw_estimate = raw_estimate,
       benefit_estimate = benefit_estimate,
       estimate = estimate,
+      std_error = std_error,
       statistic = statistic,
       statistic_lower = statistic_lower,
       statistic_upper = statistic_upper,
@@ -489,10 +784,40 @@ mann_whitney_test <- function(
       conf_high = conf_high,
       requested_conf_level = specification$conf_level,
       interval_conf_level = interval_conf_level,
+      ci_method = ci_method,
+      bootstrap_method = if (is.null(specification$bootstrap)) NA_character_ else
+        specification$bootstrap$method,
+      bootstrap_engine = if (is.null(specification$bootstrap)) NA_character_ else
+        specification$bootstrap$engine,
+      bootstrap_iterations_requested = if (is.null(specification$bootstrap)) NA_integer_ else
+        specification$bootstrap$iterations,
+      bootstrap_iterations_valid = bootstrap_iterations_valid,
+      bootstrap_seed = if (
+        is.null(specification$bootstrap) || is.null(specification$bootstrap$seed)
+      ) NA_integer_ else specification$bootstrap$seed,
+      inference = specification$inference,
       exact_requested = exact_requested,
       exact_used = exact_used,
       has_ties = has_ties,
-      continuity_correction = !exact_used && specification$continuity_correction
+      continuity_correction = if (specification$inference == "permutation") {
+        NA
+      } else !exact_used && specification$continuity_correction,
+      permutation_sampling = if (specification$inference == "permutation") {
+        specification$permutation$sampling
+      } else NA_character_,
+      permutation_p_method = if (specification$inference == "permutation") {
+        specification$permutation$p_method
+      } else NA_character_,
+      permutation_iterations_requested = if (
+        specification$inference == "permutation"
+      ) specification$permutation$iterations else NA_integer_,
+      permutation_iterations_performed = if (
+        specification$inference == "permutation"
+      ) as.integer(permutation_result$R.used) else NA_integer_,
+      permutation_seed = if (
+        specification$inference == "permutation" &&
+          !is.null(specification$permutation$seed)
+      ) specification$permutation$seed else NA_integer_
     )
     estimates <- tibble::tibble(
       estimate_id = character(),

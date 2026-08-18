@@ -27,7 +27,8 @@ test_that("kruskal_wallis_test() returns an inspectable analytic function", {
   expect_identical(
     attr(analysis, "specification"),
     list(
-      kind = "kruskal_wallis_test", effect_size = "none", conf_level = 0.9,
+      kind = "kruskal_wallis_test", effect_size = "none",
+      inference = "analytical", permutation = NULL, conf_level = 0.9,
       bootstrap = NULL
     )
   )
@@ -54,6 +55,20 @@ test_that("kruskal_wallis_test() validates its arguments", {
       class = "bq_error_invalid_analysis_function"
     )
   }
+  for (value in list(NULL, NA_character_, "", "exact", 1)) {
+    expect_error(
+      kruskal_wallis_test(inference = value),
+      class = "bq_error_invalid_analysis_function"
+    )
+  }
+  expect_error(
+    kruskal_wallis_test(inference = "permutation"),
+    class = "bq_error_invalid_analysis_function"
+  )
+  expect_error(
+    kruskal_wallis_test(permutation = permutation_control()),
+    class = "bq_error_invalid_analysis_function"
+  )
   for (value in list(TRUE, list(), structure(list(), class = "bq_bootstrap_control"))) {
     expect_error(
       kruskal_wallis_test(
@@ -73,6 +88,62 @@ test_that("kruskal_wallis_test() validates its arguments", {
     ),
     "does not support fractional weighted bootstrap",
     class = "bq_error_invalid_analysis_function"
+  )
+})
+
+test_that("kruskal_wallis_test() performs a reproducible random permutation test", {
+  input <- kruskal_wallis_input(
+    c(1, 2, 4, 5, 3, 7, 8, 10, 6, 9, 11, 12),
+    rep(c("a", "b", "c"), each = 4L)
+  )
+  control <- permutation_control(iterations = 99L, seed = 2038L)
+  analysis <- kruskal_wallis_test(
+    inference = "permutation", permutation = control
+  )
+
+  set.seed(81)
+  state_before <- .Random.seed
+  result <- analysis(input$data, input$context)
+  expect_identical(.Random.seed, state_before)
+
+  observed <- unname(as.double(stats::kruskal.test(
+    input$data$.outcome, input$data$.group
+  )$statistic))
+  set.seed(2038)
+  exceedances <- sum(replicate(99L, {
+    permuted_group <- sample(input$data$.group, replace = FALSE)
+    unname(as.double(stats::kruskal.test(
+      input$data$.outcome, permuted_group
+    )$statistic)) >= observed
+  }))
+
+  expect_identical(result$tests$test, "kruskal_wallis_permutation")
+  expect_equal(result$tests$statistic, observed, tolerance = 1e-12)
+  expect_true(is.na(result$tests$df))
+  expect_equal(result$tests$p_value, (exceedances + 1) / 100)
+  expect_identical(result$tests$inference, "permutation")
+  expect_identical(result$tests$permutation_sampling, "random")
+  expect_identical(result$tests$permutation_p_method, "plusone")
+  expect_identical(result$tests$permutation_iterations_requested, 99L)
+  expect_identical(result$tests$permutation_iterations_performed, 99L)
+  expect_identical(result$tests$permutation_seed, 2038L)
+  expect_identical(
+    analysis(input$data, input$context)$tests,
+    result$tests
+  )
+})
+
+test_that("kruskal_wallis_test() does not silently enumerate exact permutations", {
+  input <- kruskal_wallis_input(c(1, 2, 3, 4), c("a", "a", "b", "b"))
+  analysis <- kruskal_wallis_test(
+    inference = "permutation",
+    permutation = permutation_control(iterations = 6L, seed = 1L)
+  )
+
+  expect_error(
+    analysis(input$data, input$context),
+    "exact enumeration is not part",
+    class = "bq_error_analysis_runtime"
   )
 })
 

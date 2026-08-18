@@ -10,6 +10,9 @@ mann_whitney_test(
   hypothesis = "two_sided",
   margin = NULL,
   benefit = NULL,
+  inference = "analytical",
+  permutation = NULL,
+  bootstrap = NULL,
   conf_level = 0.95
 )
 }
@@ -29,6 +32,15 @@ The rules are the same as for \code{\link[=t_test]{t_test()}}.}
 
 \item{benefit}{Which outcome direction is beneficial for noninferiority and
 superiority: \code{"higher"} or \code{"lower"}.}
+
+\item{inference}{\code{"analytical"} for \code{\link[stats:wilcox.test]{stats::wilcox.test()}} or
+\code{"permutation"} for a randomization Hodges-Lehmann test.}
+
+\item{permutation}{A \code{\link[=permutation_control]{permutation_control()}} specification when
+\code{inference = "permutation"}; otherwise \code{NULL}.}
+
+\item{bootstrap}{\code{NULL} for the inference-engine interval or an ordinary
+\code{\link[=bootstrap_control]{bootstrap_control()}} specification for the Hodges-Lehmann interval.}
 
 \item{conf_level}{Confidence level for the Hodges-Lehmann location-shift
 interval. Must be one finite number strictly between zero and one.}
